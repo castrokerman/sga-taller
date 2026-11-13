@@ -1,47 +1,43 @@
-import type { Page } from '../App';
 import type { User } from '../api';
 
 interface Tile {
   title: string;
   text: string;
-  page?: Page;
+  /** Pantalla a la que lleva. Sin ella, la función aún no está disponible. */
+  path?: string;
   permission?: string;
   phase?: number;
 }
 
 const TILES: Tile[] = [
-  { title: 'Escáner QR', text: 'Escanear ubicaciones y contenedores', phase: 2 },
-  { title: 'Almacén', text: 'Ubicaciones y contenedores', phase: 2 },
+  { title: 'Escáner QR', text: 'Escanear ubicaciones y contenedores', path: 'escaner', permission: 'container.read' },
+  { title: 'Almacén', text: 'Ubicaciones y contenedores', path: 'almacen', permission: 'location.read' },
   { title: 'Buscador', text: 'Materiales, lotes y proyectos', phase: 3 },
   { title: 'Movimientos', text: 'Entradas, salidas y traslados', phase: 3 },
   { title: 'Autorizaciones', text: 'Solicitudes de material restringido', phase: 4 },
   { title: 'Documentación', text: 'Certificados y documentos técnicos', phase: 5 },
-  { title: 'Usuarios', text: 'Altas, roles y contraseñas', page: 'usuarios', permission: 'admin.users.manage' },
-  { title: 'Auditoría', text: 'Quién hizo qué y cuándo', page: 'auditoria', permission: 'audit.read' },
+  { title: 'Usuarios', text: 'Altas, roles y contraseñas', path: 'usuarios', permission: 'admin.users.manage' },
+  { title: 'Tipos', text: 'Tipos de ubicación y de contenedor', path: 'tipos', permission: 'admin.masterdata.manage' },
+  { title: 'Auditoría', text: 'Quién hizo qué y cuándo', path: 'auditoria', permission: 'audit.read' },
 ];
 
-export function HomePage({ user, go }: { user: User; go: (page: Page) => void }) {
+export function HomePage({ user }: { user: User }) {
   const can = (permission?: string) => !permission || user.permissions.includes(permission);
   // Primero lo que ya se puede usar; después lo que llegará en fases posteriores.
-  const tiles = [
-    ...TILES.filter((t) => t.page && can(t.permission)),
-    ...TILES.filter((t) => t.phase !== undefined),
-  ];
+  const tiles = [...TILES.filter((t) => t.path && can(t.permission)), ...TILES.filter((t) => t.phase !== undefined)];
 
   return (
     <>
       <h2>Hola, {user.fullName.split(' ')[0]}</h2>
-      <p className="muted">
-        El sistema está en construcción. Las funciones de almacén se irán activando fase a fase.
-      </p>
+      <p className="muted">El sistema está en construcción. El registro de material llega en la Fase 3.</p>
 
       <div className="tiles">
         {tiles.map((t) =>
-          t.page ? (
-            <button key={t.title} className="tile tile-active" onClick={() => go(t.page!)}>
+          t.path ? (
+            <a key={t.title} className="tile tile-active" href={`#/${t.path}`}>
               <strong>{t.title}</strong>
               <span>{t.text}</span>
-            </button>
+            </a>
           ) : (
             <div key={t.title} className="tile tile-pending" aria-disabled="true">
               <strong>{t.title}</strong>

@@ -49,32 +49,131 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  let res: Response;
+/** Clave única por operación: si el móvil reenvía la petición, el servidor no la repite. */
+export function newOperationKey(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+}
+
+async function send(method: string, path: string, body?: unknown, key?: string): Promise<Response> {
   try {
-    res = await fetch(path, {
+    return await fetch(path, {
       method,
       credentials: 'same-origin',
       headers: {
         'x-sga-client': 'web',
         ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
+        ...(key ? { 'idempotency-key': key } : {}),
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   } catch {
     throw new ApiError(0, 'SIN_CONEXION', 'No hay conexión con el servidor. Comprueba la red y vuelve a intentarlo');
   }
-
-  const data = await res.json().catch(() => null);
-  if (!res.ok) {
-    throw new ApiError(
-      res.status,
-      data?.error?.code ?? 'ERROR',
-      data?.error?.message ?? 'Ha ocurrido un error inesperado',
-    );
-  }
-  return data as T;
 }
+
+async function failure(res: Response): Promise<ApiError> {
+  const data = await res.json().catch(() => null);
+  return new ApiError(res.status, data?.error?.code ?? 'ERROR', data?.error?.message ?? 'Ha ocurrido un error inesperado');
+}
+
+async function request<T>(method: string, path: string, body?: unknown, key?: string): Promise<T> {
+  const res = await send(method, path, body, key);
+  if (!res.ok) throw await failure(res);
+  return (await res.json()) as T;
+}
+
+// ---- Almacén ---------------------------------------------------------------
+
+export interface LocationSummary {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  parentId: string | null;
+  qrToken: string;
+  typeCode: string;
+  typeName: string;
+  maxCapacity: number | null;
+  allowedHazardClasses: string[];
+  active: boolean;
+  childCount: number;
+  containerCount: number;
+}
+
+export interface ContainerSummary {
+  id: string;
+  code: string;
+  qrToken: string;
+  status: 'ACTIVE' | 'RETIRED';
+  reusePolicy: 'REUSABLE' | 'DISPOSABLE';
+  description: string | null;
+  locationId: string | null;
+  parentContainerId: string | null;
+  responsibleUserId: string | null;
+  responsibleName: string | null;
+  typeCode: string;
+  typeName: string;
+  createdAt: string;
+  retiredAt: string | null;
+  childCount: number;
+}
+
+export interface PathItem {
+  id: string;
+  code: string;
+  name?: string;
+}
+
+export interface LocationDetail {
+  location: LocationSummary;
+  path: PathItem[];
+  children: LocationSummary[];
+  containers: ContainerSummary[];
+}
+
+export interface ContainerMovement {
+  movementNumber: number;
+  movementType: string;
+  performedAt: string;
+  performedBy: string;
+  reason: string | null;
+  fromLocation: string | null;
+  fromContainer: string | null;
+  toLocation: string | null;
+  toContainer: string | null;
+}
+
+export interface ContainerContent {
+  stockBalanceId: string;
+  internalRef: string;
+  description: string;
+  unitCode: string;
+  quantityTracking: string;
+  lotCode: string | null;
+  quantity: number | null;
+}
+
+export interface ContainerDetail {
+  container: ContainerSummary;
+  containerPath: PathItem[];
+  locationPath: PathItem[];
+  children: ContainerSummary[];
+  content: ContainerContent[];
+  movements: ContainerMovement[];
+}
+
+export interface MoveResult extends ContainerDetail {
+  movementNumber: number;
+  descendantsMoved: number;
+  destination: string;
+}
+
+export interface LocationType { code: string; name: string; active: boolean }
+export interface ContainerType { code: string; name: string; codePrefix: string; defaultReusePolicy: string; active: boolean }
+export interface ScanHit { kind: 'container' | 'location' | 'equipment'; id: string; code: string; name: string | null }
+export type LabelFormat = '4x6' | 'a4-24';
+export interface LabelRef { kind: 'location' | 'container'; id: string }
 
 export const api = {
   me: () => request<{ user: User }>('GET', '/api/auth/me'),
@@ -93,6 +192,51 @@ export const api = {
   resetPassword: (id: string, newPassword: string) =>
     request<{ ok: true }>('POST', `/api/admin/users/${id}/reset-password`, { newPassword }),
   audit: () => request<{ entries: AuditEntry[] }>('GET', '/api/admin/audit?limit=100'),
+
+  locationTypes: () => request<{ types: LocationType[] }>('GET', '/api/location-types'),
+  createLocationType: (data: { code: string; name: string }) =>
+    request<{ type: LocationType }>('POST', '/api/location-types', data),
+  containerTypes: () => request<{ types: ContainerType[] }>('GET', '/api/container-types'),
+  createContainerType: (data: { code: string; name: string; codePrefix: string; defaultReusePolicy: string }) =>
+    request<{ type: ContainerType }>('POST', '/api/container-types', data),
+
+  rootLocations: () => request<{ locations: LocationSummary[] }>('GET', '/api/locations'),
+  location: (id: string) => request<LocationDetail>('GET', `/api/locations/${id}`),
+  createLocation: (data: { code: string; name: string; typeCode: string; parentId?: string; maxCapacity?: number }) =>
+    request<{ location: LocationSummary }>('POST', '/api/locations', data),
+  updateLocation: (id: string, data: { code?: string; name?: string; maxCapacity?: number | null; active?: boolean }) =>
+    request<{ location: LocationSummary }>('PATCH', `/api/locations/${id}`, data),
+
+  searchContainers: (q: string) =>
+    request<{ containers: ContainerSummary[] }>('GET', `/api/containers?q=${encodeURIComponent(q)}`),
+  container: (id: string) => request<ContainerDetail>('GET', `/api/containers/${id}`),
+  createContainers: (
+    data: { typeCode: string; locationId?: string; parentContainerId?: string; quantity: number; description?: string; force?: boolean },
+    key: string,
+  ) => request<{ containers: ContainerSummary[] }>('POST', '/api/containers', data, key),
+  updateContainer: (id: string, data: { description?: string; reusePolicy?: string; responsibleUserId?: string | null }) =>
+    request<ContainerDetail>('PATCH', `/api/containers/${id}`, data),
+  moveContainer: (id: string, data: { toLocationId?: string; toParentContainerId?: string; force?: boolean }, key: string) =>
+    request<MoveResult>('POST', `/api/containers/${id}/move`, data, key),
+  retireContainer: (id: string, reason: string, key: string) =>
+    request<ContainerDetail>('POST', `/api/containers/${id}/retire`, { reason }, key),
+
+  scan: (code: string) => request<ScanHit>('GET', `/api/scan/${encodeURIComponent(code)}`),
+  basicUsers: () => request<{ users: Array<{ id: string; fullName: string }> }>('GET', '/api/users/basic'),
+
+  /** Pide el PDF de etiquetas y lo descarga. */
+  async downloadLabels(items: LabelRef[], format: LabelFormat): Promise<void> {
+    const res = await send('POST', '/api/labels', { items, format });
+    if (!res.ok) throw await failure(res);
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'etiquetas-sga.pdf';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  },
 };
 
 export const ROLE_NAMES: Record<string, string> = {
@@ -109,3 +253,5 @@ export const formatDateTime = (iso: string | null) =>
   iso
     ? new Date(iso).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
     : 'Nunca';
+
+export const errorMessage = (e: unknown) => (e instanceof ApiError ? e.message : 'Ha ocurrido un error inesperado');

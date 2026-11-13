@@ -2,16 +2,19 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, ApiError, roleName, type User } from './api';
 import { AuditPage } from './pages/Audit';
 import { ChangePasswordPage } from './pages/ChangePassword';
+import { ContainerPage } from './pages/Container';
 import { HomePage } from './pages/Home';
 import { LoginPage } from './pages/Login';
+import { ScannerPage } from './pages/ScannerPage';
+import { TypesPage } from './pages/Types';
 import { UsersPage } from './pages/Users';
-
-export type Page = 'inicio' | 'usuarios' | 'auditoria' | 'contrasena';
+import { WarehousePage } from './pages/Warehouse';
+import { navigate, useRoute } from './router';
 
 export function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState<Page>('inicio');
+  const route = useRoute();
 
   const refresh = useCallback(async () => {
     try {
@@ -30,7 +33,7 @@ export function App() {
   const logout = async () => {
     await api.logout().catch(() => undefined);
     setUser(null);
-    setPage('inicio');
+    navigate('inicio');
   };
 
   if (loading) return <div className="centered muted">Cargando…</div>;
@@ -45,40 +48,45 @@ export function App() {
     );
   }
 
+  const can = (p: string) => user.permissions.includes(p);
+  const home = () => navigate('inicio');
+
+  // Cada pantalla comprueba el permiso; el servidor lo vuelve a comprobar siempre.
+  let page: React.ReactNode;
+  if (route.name === 'almacen' && can('location.read')) page = <WarehousePage user={user} locationId={route.id} />;
+  else if (route.name === 'contenedor' && route.id && can('container.read')) page = <ContainerPage user={user} containerId={route.id} />;
+  else if (route.name === 'escaner' && can('container.read')) page = <ScannerPage />;
+  else if (route.name === 'usuarios' && can('admin.users.manage')) page = <UsersPage me={user} back={home} />;
+  else if (route.name === 'auditoria' && can('audit.read')) page = <AuditPage back={home} />;
+  else if (route.name === 'tipos' && can('admin.masterdata.manage')) page = <TypesPage />;
+  else if (route.name === 'contrasena') page = <ChangePasswordPage onDone={home} onCancel={home} />;
+  else page = <HomePage user={user} />;
+
   return (
-    <Shell user={user} onLogout={logout} onHome={() => setPage('inicio')} onPassword={() => setPage('contrasena')}>
-      {page === 'inicio' && <HomePage user={user} go={setPage} />}
-      {page === 'usuarios' && <UsersPage me={user} back={() => setPage('inicio')} />}
-      {page === 'auditoria' && <AuditPage back={() => setPage('inicio')} />}
-      {page === 'contrasena' && <ChangePasswordPage onDone={() => setPage('inicio')} onCancel={() => setPage('inicio')} />}
+    <Shell user={user} onLogout={logout} withNav>
+      {page}
     </Shell>
   );
 }
 
-function Shell(props: {
-  user: User;
-  onLogout: () => void;
-  onHome?: () => void;
-  onPassword?: () => void;
-  children: React.ReactNode;
-}) {
+function Shell(props: { user: User; onLogout: () => void; withNav?: boolean; children: React.ReactNode }) {
   const { user } = props;
   return (
     <div className="shell">
       <header className="topbar">
-        <button className="brand" onClick={props.onHome} disabled={!props.onHome}>
+        <a className="brand" href={props.withNav ? '#/inicio' : undefined}>
           <img src="/icono.svg" alt="" width="36" height="36" />
           <span>SGA Taller</span>
-        </button>
+        </a>
         <div className="topbar-user">
           <div className="who">
             <strong>{user.fullName}</strong>
             <span>{user.roles.map(roleName).join(' · ') || 'Sin rol'}</span>
           </div>
-          {props.onPassword && (
-            <button className="btn btn-ghost" onClick={props.onPassword}>
+          {props.withNav && (
+            <a className="btn btn-ghost" href="#/contrasena">
               Contraseña
-            </button>
+            </a>
           )}
           <button className="btn btn-ghost" onClick={props.onLogout}>
             Salir

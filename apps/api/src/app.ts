@@ -7,6 +7,9 @@ import type { Config } from './config.js';
 import { AppError } from './errors.js';
 import { adminRoutes } from './routes/admin.js';
 import { authRoutes } from './routes/auth.js';
+import { containerRoutes } from './routes/containers.js';
+import { labelRoutes } from './routes/labels.js';
+import { locationRoutes } from './routes/locations.js';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
@@ -78,6 +81,9 @@ export async function buildApp(deps: { pool: pg.Pool; config: Config }): Promise
 
   authRoutes(app, { pool, config });
   adminRoutes(app, { pool });
+  locationRoutes(app, { pool });
+  containerRoutes(app, { pool });
+  labelRoutes(app, { pool });
 
   return app;
 }

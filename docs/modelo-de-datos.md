@@ -2,7 +2,7 @@
 
 Estado: **propuesta de la Fase 1, pendiente de validación.**
 
-El modelo tiene 35 tablas y 5 vistas en PostgreSQL 16. Está definido en cuatro
+El modelo tiene 35 tablas y 5 vistas en PostgreSQL 16. Está definido en cinco
 migraciones dentro de `apps/api/migrations`:
 
 | Fichero | Contenido |
@@ -11,6 +11,7 @@ migraciones dentro de `apps/api/migrations`:
 | `0002_reglas_de_integridad.sql` | Triggers y vistas que protegen el inventario. |
 | `0003_datos_de_sistema.sql` | Roles, permisos, tipos, unidades y parámetros. |
 | `0004_restringido_sin_proyecto.sql` | Material restringido que no pertenece a ningún proyecto. |
+| `0005_autorizacion_general.sql` | Quién autoriza el material restringido sin proyecto. |
 
 ## Idea central
 
@@ -28,7 +29,7 @@ migraciones dentro de `apps/api/migrations`:
 | Uso genérico del taller | Sin asignación. Es lo normal al dar entrada. | Cualquier usuario con permiso de retirada. |
 | Libre, ligado a un proyecto | Asignación `FREE` con proyecto. | Cualquiera; el proyecto es informativo. |
 | Restringido de un proyecto | Asignación `RESTRICTED` con proyecto. | Solo con autorización del responsable o de un autorizador del proyecto. |
-| Restringido sin proyecto | Asignación `RESTRICTED` sin proyecto y con responsable designado. | Solo con autorización de ese responsable. |
+| Restringido sin proyecto | Asignación `RESTRICTED` sin proyecto, con responsable designado opcional. | Con autorización del responsable designado, de un responsable de almacén o de un administrador. |
 
 Un mismo saldo puede repartirse entre varias situaciones: de 100 unidades,
 40 restringidas sin proyecto, 50 de un proyecto y 10 de uso genérico.
@@ -245,7 +246,7 @@ erDiagram
 | --- | --- |
 | `app_user` | Usuarios de la aplicación. La contraseña se guarda como hash. |
 | `role` | Los cinco roles iniciales; se pueden añadir más. |
-| `permission` | Acciones concretas que un rol puede hacer (34 al inicio). |
+| `permission` | Acciones concretas que un rol puede hacer (35 al inicio). |
 | `role_permission` | Qué permisos tiene cada rol. |
 | `user_role` | Qué roles tiene cada usuario. |
 | `user_session` | Sesiones iniciadas. Se guarda la huella del token, nunca el token. |
@@ -334,14 +335,14 @@ dato.
 | 10 | Las reservas activas no superan la asignación. | Trigger. |
 | 11 | La solicitud queda ligada a material, lugar y proyecto. | Trigger. |
 | 12 | Nadie aprueba su propia solicitud, salvo política del proyecto. | Trigger. |
-| 13 | Solo el responsable o un autorizador del proyecto puede decidir. Sin proyecto, solo el responsable designado. | Trigger. |
+| 13 | Solo el responsable o un autorizador del proyecto puede decidir. Sin proyecto, el responsable designado o quien tenga el permiso de autorización general. | Trigger. |
 | 14 | Una decisión por solicitud; parcial significa menos de lo pedido. | Clave única y trigger. |
 | 15 | Movimientos, autorizaciones y auditoría no se editan ni se borran. | Trigger. |
 | 16 | Un movimiento se revierte una sola vez. | Clave única. |
 | 17 | Una operación reenviada no se registra dos veces. | Clave única de idempotencia. |
 | 18 | Un documento se liga exactamente a una cosa por relación. | Restricción CHECK. |
 | 19 | Un equipo tiene como mucho un préstamo abierto. | Índice único parcial. |
-| 20 | El material restringido sin proyecto exige un responsable designado. | Restricción CHECK. |
+| 20 | Sin proyecto solo cabe la modalidad restringida: el material libre sin proyecto es stock sin asignar. | Restricción CHECK. |
 
 ## Decisiones de diseño que conviene revisar
 
@@ -365,9 +366,15 @@ dato.
 7. **Préstamos:** un equipo solo puede estar prestado a una persona a la vez.
    Las herramientas gestionadas como material (por cantidad) pueden tener
    varios préstamos abiertos.
-8. **Material restringido sin proyecto:** lo autoriza únicamente el
-   responsable designado en la asignación, y nunca su propia solicitud. Ser
-   responsable de almacén o administrador no basta.
+8. **Material restringido sin proyecto:** lo autorizan la persona designada en
+   la asignación, si la hay, los responsables de almacén y los administradores
+   técnicos (permiso `restricted.authorize_general`). Nadie aprueba su propia
+   solicitud. Es una excepción acotada a la regla de que ser administrador no
+   da capacidad de autorizar: el material restringido de un proyecto lo sigue
+   autorizando solo el proyecto.
+9. **Capacidad de una ubicación:** se mide en número de contenedores colocados
+   directamente en ella. Superarla avisa y deja continuar; el parámetro
+   `capacity.policy` permite pasar a bloqueo.
 
 ## Cómo se ha comprobado
 

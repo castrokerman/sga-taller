@@ -9,25 +9,23 @@ documentación técnica y calibración de equipos.
 | Fase | Contenido | Estado |
 | --- | --- | --- |
 | 0 | Análisis y planificación | Completada |
-| 1 | Cimientos: base de datos, login, roles, auditoría, backup | Completada, pendiente de probar con Docker |
-| 2 | Almacén físico: ubicaciones, contenedores, QR, escáner | Pendiente |
+| 1 | Cimientos: base de datos, login, roles, auditoría, backup | Completada y arrancada con Docker en Windows |
+| 2 | Almacén físico: ubicaciones, contenedores, QR, escáner | Completada, pendiente de probar con móviles reales |
 | 3 | Inventario: entradas, retiradas, recuentos. Piloto en el taller | Pendiente |
 | 4 | Proyectos y autorizaciones | Pendiente |
 | 5 | Documentación y metrología | Pendiente |
 | 6 | Cierre y migración a servidor online | Pendiente |
 
-### Fase 1, paso a paso
+### Qué se puede hacer ya
 
-- [x] Modelo de datos completo, con migraciones y pruebas de integridad
-- [x] API: inicio de sesión, sesiones, roles, permisos, gestión de usuarios y auditoría
-- [x] Web: inicio de sesión, cambio de contraseña, inicio, usuarios y auditoría
-- [x] Proxy HTTPS y Docker Compose con todos los servicios
-- [x] Usuarios de demostración ficticios
-- [x] Copia de seguridad diaria y restauración
-- [x] Documento de instrucciones de la fase
+- Entrar con usuario y contraseña, con cinco roles y permisos distintos.
+- Montar el árbol de ubicaciones del almacén.
+- Dar de alta contenedores, anidarlos y moverlos, con historial.
+- Imprimir etiquetas QR en formato 6 × 4 pulgadas o en hojas A4 de 24.
+- Escanear etiquetas con la cámara, con un lector USB o tecleando el código.
+- Consultar la auditoría y hacer copias de seguridad.
 
-Ya se puede entrar al sistema, gestionar usuarios y consultar la auditoría.
-Las funciones de almacén llegan a partir de la Fase 2.
+El registro de material llega en la Fase 3.
 
 ## Arranque
 
@@ -51,9 +49,14 @@ sistema obliga a cambiar su contraseña al entrar.
 | --- | --- |
 | Base de datos y reglas de integridad | Sí, 38 pruebas contra PostgreSQL 16 |
 | API de acceso | Sí, 28 pruebas |
+| Ubicaciones, contenedores y movimientos | Sí, 26 pruebas |
+| Etiquetas QR legibles en los dos formatos | Sí, 4 pruebas que leen el QR del PDF |
 | Web, API y proxy HTTPS funcionando juntos | Sí, recorrido completo con un navegador real |
+| Mover escaneando con la cámara | Sí, con una cámara simulada que muestra una etiqueta real |
 | Copia de seguridad y restauración sobre una base nueva | Sí, ejecutando los scripts contra PostgreSQL 16 |
-| Imágenes Docker y `docker compose up` | **No.** El entorno de desarrollo no tiene Docker; se probará en el PC del taller |
+| Arranque con `docker compose` en Windows | Sí, en el PC del taller (Fase 1) |
+| Cámara e instalación del certificado en móviles reales | **No** |
+| Impresión en papel de las etiquetas | **No** |
 
 ## Estructura
 
@@ -71,6 +74,7 @@ docker-compose.yml    Arranque del sistema completo
 ## Documentación
 
 - [Instrucciones de instalación y uso (Fase 1)](docs/fase-1-instrucciones.md)
+- [Almacén físico, etiquetas y móviles (Fase 2)](docs/fase-2-instrucciones.md)
 - [Modelo de datos](docs/modelo-de-datos.md)
 
 ## Tecnología
