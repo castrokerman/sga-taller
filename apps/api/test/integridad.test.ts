@@ -167,7 +167,7 @@ describe('migraciones', () => {
   it('se pueden ejecutar dos veces sin cambios', async () => {
     const again = await runMigrations(url);
     expect(again.applied).toEqual([]);
-    expect(again.skipped).toHaveLength(3);
+    expect(again.skipped).toHaveLength(4);
   });
 
   it('crean las 35 tablas del modelo y las 5 vistas', async () => {
@@ -537,6 +537,100 @@ describe('autorizaciones', () => {
       await expectSqlError(c, '23514', sql, [request, f.luis, 'REJECTED', 5]);
       await c.query(sql, [request, f.luis, 'PARTIALLY_APPROVED', 20]);
       await expectSqlError(c, '23505', sql, [request, f.luis, 'REJECTED', null]);
+    }));
+});
+
+describe('material restringido sin proyecto', () => {
+  /** Saldo de 100 con 40 restringidas sin proyecto, bajo la responsabilidad de Luis. */
+  async function noProject(c: pg.PoolClient, f: Fx) {
+    const balance = await newBalance(c, f.material, f.pallet, 100);
+    const allocation = await one(
+      c,
+      `INSERT INTO stock_allocation (stock_balance_id, availability, quantity, responsible_user_id)
+       VALUES ($1, 'RESTRICTED', 40, $2) RETURNING id`,
+      [balance, f.luis],
+    );
+    const request = (who: string) =>
+      one(
+        c,
+        `INSERT INTO withdrawal_request
+           (requester_id, stock_allocation_id, material_id, container_id, quantity_requested, reason)
+         VALUES ($1, $2, $3, $4, 10, 'FICTICIO uso puntual') RETURNING id`,
+        [who, allocation, f.material, f.pallet],
+      );
+    return { balance, allocation, request };
+  }
+  const approve = `INSERT INTO withdrawal_authorization (request_id, authorizer_id, decision, quantity_authorized)
+                   VALUES ($1, $2, 'APPROVED', 10)`;
+
+  it('exige un responsable y solo admite la modalidad restringida', () =>
+    tx(async (c) => {
+      const f = await fixtures(c);
+      const b = await newBalance(c, f.material, f.pallet, 100);
+      await expectSqlError(
+        c, '23514',
+        `INSERT INTO stock_allocation (stock_balance_id, availability, quantity) VALUES ($1, 'RESTRICTED', 10)`,
+        [b],
+      );
+      await expectSqlError(
+        c, '23514',
+        `INSERT INTO stock_allocation (stock_balance_id, availability, quantity, responsible_user_id)
+         VALUES ($1, 'FREE', 10, $2)`,
+        [b, f.luis],
+      );
+    }));
+
+  it('cuenta como restringido y convive con el reparto por proyecto sin superar el físico', () =>
+    tx(async (c) => {
+      const f = await fixtures(c);
+      const { balance } = await noProject(c, f);
+      await c.query(
+        `INSERT INTO stock_allocation (stock_balance_id, project_id, availability, quantity) VALUES ($1, $2, 'RESTRICTED', 50)`,
+        [balance, f.project],
+      );
+      const r = await c.query(
+        `SELECT quantity_restricted, quantity_free FROM stock_availability WHERE stock_balance_id = $1`,
+        [balance],
+      );
+      expect(r.rows[0]).toMatchObject({ quantity_restricted: '90.0000', quantity_free: '10.0000' });
+      await expectSqlError(
+        c, 'SG006',
+        `UPDATE stock_allocation SET quantity = 61 WHERE stock_balance_id = $1 AND project_id IS NOT NULL`,
+        [balance],
+      );
+      // No puede haber dos asignaciones restringidas sin proyecto sobre el mismo saldo.
+      await expectSqlError(
+        c, '23505',
+        `INSERT INTO stock_allocation (stock_balance_id, availability, quantity, responsible_user_id)
+         VALUES ($1, 'RESTRICTED', 5, $2)`,
+        [balance, f.ana],
+      );
+    }));
+
+  it('solo autoriza el responsable designado, y nunca su propia solicitud', () =>
+    tx(async (c) => {
+      const f = await fixtures(c);
+      const { request } = await noProject(c, f);
+      const fromAna = await request(f.ana);
+      await expectSqlError(c, 'SG009', approve, [fromAna, f.marta]); // administradora técnica
+      await expectSqlError(c, 'SG009', approve, [fromAna, f.ana]);
+      await c.query(approve, [fromAna, f.luis]);
+
+      const fromLuis = await request(f.luis);
+      await expectSqlError(c, 'SG008', approve, [fromLuis, f.luis]);
+    }));
+
+  it('la solicitud sin proyecto no puede apuntar a una asignación de proyecto', () =>
+    tx(async (c) => {
+      const f = await fixtures(c);
+      const { allocation } = await requestFixture(c, f);
+      await expectSqlError(
+        c, 'SG012',
+        `INSERT INTO withdrawal_request
+           (requester_id, stock_allocation_id, material_id, container_id, quantity_requested, reason)
+         VALUES ($1, $2, $3, $4, 5, 'FICTICIO')`,
+        [f.ana, allocation, f.material, f.pallet],
+      );
     }));
 });
 

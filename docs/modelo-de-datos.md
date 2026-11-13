@@ -2,7 +2,7 @@
 
 Estado: **propuesta de la Fase 1, pendiente de validación.**
 
-El modelo tiene 35 tablas y 5 vistas en PostgreSQL 16. Está definido en tres
+El modelo tiene 35 tablas y 5 vistas en PostgreSQL 16. Está definido en cuatro
 migraciones dentro de `apps/api/migrations`:
 
 | Fichero | Contenido |
@@ -10,15 +10,28 @@ migraciones dentro de `apps/api/migrations`:
 | `0001_esquema_inicial.sql` | Tablas, claves, índices y restricciones. |
 | `0002_reglas_de_integridad.sql` | Triggers y vistas que protegen el inventario. |
 | `0003_datos_de_sistema.sql` | Roles, permisos, tipos, unidades y parámetros. |
+| `0004_restringido_sin_proyecto.sql` | Material restringido que no pertenece a ningún proyecto. |
 
 ## Idea central
 
 - **`stock_balance` es el stock físico:** cuánto hay de un material (y lote) en
   un lugar. El lugar es un contenedor o una ubicación.
 - **`stock_allocation` es el reparto lógico:** qué parte de ese saldo está
-  asignada a cada proyecto. Lo no asignado es de libre disposición.
+  reservada o restringida. Lo no asignado es de uso genérico del taller.
 - **Solo los movimientos cambian el físico**, y los movimientos nunca se editan
   ni se borran.
+
+## Las cuatro situaciones de un material
+
+| Situación | Cómo se registra | Quién puede retirarlo |
+| --- | --- | --- |
+| Uso genérico del taller | Sin asignación. Es lo normal al dar entrada. | Cualquier usuario con permiso de retirada. |
+| Libre, ligado a un proyecto | Asignación `FREE` con proyecto. | Cualquiera; el proyecto es informativo. |
+| Restringido de un proyecto | Asignación `RESTRICTED` con proyecto. | Solo con autorización del responsable o de un autorizador del proyecto. |
+| Restringido sin proyecto | Asignación `RESTRICTED` sin proyecto y con responsable designado. | Solo con autorización de ese responsable. |
+
+Un mismo saldo puede repartirse entre varias situaciones: de 100 unidades,
+40 restringidas sin proyecto, 50 de un proyecto y 10 de uso genérico.
 
 ## Diagramas
 
@@ -113,7 +126,7 @@ erDiagram
     app_user ||--o{ project_authorizer : autoriza
 
     stock_balance ||--o{ stock_allocation : "se reparte en"
-    project ||--o{ stock_allocation : "tiene asignado"
+    project |o--o{ stock_allocation : "tiene asignado"
 
     stock_allocation ||--o{ withdrawal_request : "se solicita sobre"
     app_user ||--o{ withdrawal_request : solicita
@@ -126,7 +139,8 @@ erDiagram
     stock_allocation {
         uuid id PK
         uuid stock_balance_id FK
-        uuid project_id FK
+        uuid project_id FK "opcional"
+        uuid responsible_user_id FK "obligatorio sin proyecto"
         text availability "FREE o RESTRICTED"
         numeric quantity "suma menor o igual al físico"
     }
@@ -266,7 +280,7 @@ erDiagram
 | `material` | Catálogo de materiales, con su modo de control de cantidad. |
 | `material_lot` | Lotes o coladas de cada material. |
 | `stock_balance` | Stock físico: cantidad de un material y lote en un lugar. |
-| `stock_allocation` | Reparto de un saldo entre proyectos. |
+| `stock_allocation` | Reparto de un saldo: por proyecto, o restringido sin proyecto con un responsable. |
 | `stock_movement` | Cabecera de cada operación de inventario. Inmutable. |
 | `stock_movement_line` | Líneas del movimiento: variaciones de stock o traslados de contenedor. Inmutable. |
 
@@ -320,13 +334,14 @@ dato.
 | 10 | Las reservas activas no superan la asignación. | Trigger. |
 | 11 | La solicitud queda ligada a material, lugar y proyecto. | Trigger. |
 | 12 | Nadie aprueba su propia solicitud, salvo política del proyecto. | Trigger. |
-| 13 | Solo el responsable o un autorizador del proyecto puede decidir. | Trigger. |
+| 13 | Solo el responsable o un autorizador del proyecto puede decidir. Sin proyecto, solo el responsable designado. | Trigger. |
 | 14 | Una decisión por solicitud; parcial significa menos de lo pedido. | Clave única y trigger. |
 | 15 | Movimientos, autorizaciones y auditoría no se editan ni se borran. | Trigger. |
 | 16 | Un movimiento se revierte una sola vez. | Clave única. |
 | 17 | Una operación reenviada no se registra dos veces. | Clave única de idempotencia. |
 | 18 | Un documento se liga exactamente a una cosa por relación. | Restricción CHECK. |
 | 19 | Un equipo tiene como mucho un préstamo abierto. | Índice único parcial. |
+| 20 | El material restringido sin proyecto exige un responsable designado. | Restricción CHECK. |
 
 ## Decisiones de diseño que conviene revisar
 
@@ -337,8 +352,9 @@ dato.
 2. **El administrador técnico no opera inventario.** Gestiona usuarios, datos
    maestros y parámetros, pero no tiene permisos de entrada, retirada ni
    ajuste. Si una persona hace ambas cosas, se le asignan dos roles.
-3. **El material sin control de cantidad no se puede asignar a proyectos.**
+3. **El material sin control de cantidad no se puede reservar ni restringir.**
    Sin cantidad no hay forma de comprobar que el reparto no supera el físico.
+   Sigue siendo de uso genérico del taller.
 4. **Los armarios, cajoneras y cajones son ubicaciones**, no contenedores. Los
    tipos de contenedor iniciales son palet, caja, bandeja y genérico.
 5. **Peligrosidad por etiquetas.** Un material puede marcarse como `LIQUIDO` o
@@ -349,10 +365,13 @@ dato.
 7. **Préstamos:** un equipo solo puede estar prestado a una persona a la vez.
    Las herramientas gestionadas como material (por cantidad) pueden tener
    varios préstamos abiertos.
+8. **Material restringido sin proyecto:** lo autoriza únicamente el
+   responsable designado en la asignación, y nunca su propia solicitud. Ser
+   responsable de almacén o administrador no basta.
 
 ## Cómo se ha comprobado
 
-`apps/api/test/integridad.test.ts` contiene 34 pruebas que se ejecutan contra
+`apps/api/test/integridad.test.ts` contiene 38 pruebas que se ejecutan contra
 un PostgreSQL 16 real. Cada regla de la tabla anterior tiene al menos una
 prueba que intenta romperla y verifica que la base de datos lo impide. Todos
 los datos de prueba son ficticios y se descartan al terminar.
