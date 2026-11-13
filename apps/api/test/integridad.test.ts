@@ -167,7 +167,7 @@ describe('migraciones', () => {
   it('se pueden ejecutar dos veces sin cambios', async () => {
     const again = await runMigrations(url);
     expect(again.applied).toEqual([]);
-    expect(again.skipped).toHaveLength(4);
+    expect(again.skipped).toHaveLength(5);
   });
 
   it('crean las 35 tablas del modelo y las 5 vistas', async () => {
@@ -563,21 +563,21 @@ describe('material restringido sin proyecto', () => {
   const approve = `INSERT INTO withdrawal_authorization (request_id, authorizer_id, decision, quantity_authorized)
                    VALUES ($1, $2, 'APPROVED', 10)`;
 
-  it('exige un responsable y solo admite la modalidad restringida', () =>
+  it('solo admite la modalidad restringida; la persona designada es opcional', () =>
     tx(async (c) => {
       const f = await fixtures(c);
       const b = await newBalance(c, f.material, f.pallet, 100);
-      await expectSqlError(
-        c, '23514',
-        `INSERT INTO stock_allocation (stock_balance_id, availability, quantity) VALUES ($1, 'RESTRICTED', 10)`,
-        [b],
-      );
       await expectSqlError(
         c, '23514',
         `INSERT INTO stock_allocation (stock_balance_id, availability, quantity, responsible_user_id)
          VALUES ($1, 'FREE', 10, $2)`,
         [b, f.luis],
       );
+      const r = await c.query(
+        `INSERT INTO stock_allocation (stock_balance_id, availability, quantity) VALUES ($1, 'RESTRICTED', 10)`,
+        [b],
+      );
+      expect(r.rowCount).toBe(1);
     }));
 
   it('cuenta como restringido y convive con el reparto por proyecto sin superar el físico', () =>
@@ -607,17 +607,34 @@ describe('material restringido sin proyecto', () => {
       );
     }));
 
-  it('solo autoriza el responsable designado, y nunca su propia solicitud', () =>
+  it('autorizan la persona designada, los responsables de almacén y los administradores; nunca la propia solicitud', () =>
     tx(async (c) => {
       const f = await fixtures(c);
-      const { request } = await noProject(c, f);
-      const fromAna = await request(f.ana);
-      await expectSqlError(c, 'SG009', approve, [fromAna, f.marta]); // administradora técnica
-      await expectSqlError(c, 'SG009', approve, [fromAna, f.ana]);
-      await c.query(approve, [fromAna, f.luis]);
+      const { request } = await noProject(c, f); // Luis es la persona designada
+      const warehouse = await one(
+        c,
+        `INSERT INTO app_user (username, full_name, password_hash) VALUES ('ficticio.almacenero', 'FICTICIO almacén', 'x') RETURNING id`,
+      );
+      await c.query(`INSERT INTO user_role (user_id, role_id) SELECT $1, id FROM role WHERE code = 'RESP_ALMACEN'`, [warehouse]);
+      const standard = await one(
+        c,
+        `INSERT INTO app_user (username, full_name, password_hash) VALUES ('ficticio.estandar', 'FICTICIO estándar', 'x') RETURNING id`,
+      );
+      await c.query(`INSERT INTO user_role (user_id, role_id) SELECT $1, id FROM role WHERE code = 'USUARIO'`, [standard]);
 
-      const fromLuis = await request(f.luis);
-      await expectSqlError(c, 'SG008', approve, [fromLuis, f.luis]);
+      // Un usuario estándar no puede autorizar.
+      await expectSqlError(c, 'SG009', approve, [await request(f.ana), standard]);
+      // La persona designada, el responsable de almacén y la administradora, sí.
+      await c.query(approve, [await request(f.ana), f.luis]);
+      await c.query(approve, [await request(f.ana), warehouse]);
+      await c.query(approve, [await request(f.ana), f.marta]);
+      // Nadie aprueba lo que ha pedido él mismo.
+      await expectSqlError(c, 'SG008', approve, [await request(f.luis), f.luis]);
+      await expectSqlError(c, 'SG008', approve, [await request(f.marta), f.marta]);
+      await expectSqlError(c, 'SG008', approve, [await request(warehouse), warehouse]);
+      // Un responsable de almacén desactivado deja de poder autorizar.
+      await c.query(`UPDATE app_user SET active = false WHERE id = $1`, [warehouse]);
+      await expectSqlError(c, 'SG009', approve, [await request(f.ana), warehouse]);
     }));
 
   it('la solicitud sin proyecto no puede apuntar a una asignación de proyecto', () =>
