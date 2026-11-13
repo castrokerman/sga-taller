@@ -1,0 +1,40 @@
+# Proxy del SGA: única puerta de entrada.
+# Sirve la web, reenvía /api a la API y pone HTTPS siempre.
+#
+# Variables (se definen en el fichero .env):
+#   SITE_ADDRESS  Direcciones por las que se accede. Por defecto, localhost.
+#                 En la red del taller: "localhost, 192.168.1.50" (la IP del PC).
+#                 En un servidor online: el dominio, p. ej. "sga.miempresa.com".
+#   TLS_MODE      "internal" = certificado propio (red local).
+#                 Un correo electrónico = certificado público automático (servidor online).
+{
+	admin off
+}
+
+{$SITE_ADDRESS:localhost} {
+	tls {$TLS_MODE:internal}
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "same-origin"
+		Content-Security-Policy "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'"
+		Permissions-Policy "camera=(self), microphone=(), geolocation=()"
+		-Server
+	}
+
+	handle /api/* {
+		reverse_proxy {$API_UPSTREAM:api:3000}
+	}
+
+	handle {
+		root * {$WEB_ROOT:/srv}
+		try_files {path} /index.html
+		file_server
+
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+	}
+}

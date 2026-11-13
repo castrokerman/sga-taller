@@ -1,10 +1,12 @@
-# SGA Taller · Fase 1 (parcial)
+# SGA Taller
 #
-# De momento arranca la base de datos y aplica las migraciones.
-# La API, la web y el proxy HTTPS se añadirán a este mismo fichero
-# en los siguientes pasos de la Fase 1.
+# Arranca el sistema completo: base de datos, API y proxy HTTPS con la web.
 #
-# Uso:  docker compose up --build
+#   1. Copia .env.example como .env y cambia las contraseñas.
+#   2. docker compose up --build -d
+#   3. Abre https://localhost en el navegador.
+#
+# Los datos viven en volúmenes de Docker y sobreviven a reinicios y actualizaciones.
 
 name: sga-taller
 
@@ -19,23 +21,45 @@ services:
       TZ: Europe/Madrid
     volumes:
       - sga_pgdata:/var/lib/postgresql/data
-    ports:
-      - "127.0.0.1:${DB_PORT:-5432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 3s
       retries: 20
 
-  migrate:
+  api:
     build: ./apps/api
-    command: ["npm", "run", "migrate"]
+    restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-sga}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-sga}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Define ADMIN_PASSWORD en el fichero .env}
+      SEED_DEMO: ${SEED_DEMO:-false}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      TZ: Europe/Madrid
     depends_on:
       db:
         condition: service_healthy
-    restart: "no"
+
+  proxy:
+    build:
+      context: .
+      dockerfile: infra/proxy/Dockerfile
+    restart: unless-stopped
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-localhost}
+      TLS_MODE: ${TLS_MODE:-internal}
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - sga_caddy_data:/data
+      - sga_caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
 
 volumes:
   sga_pgdata:
+  sga_caddy_data:
+  sga_caddy_config:
