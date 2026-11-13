@@ -19,10 +19,12 @@ documentación técnica y calibración de equipos.
 ### Qué se puede hacer ya
 
 - Entrar con usuario y contraseña, con cinco roles y permisos distintos.
-- Montar el árbol de ubicaciones del almacén.
+- Montar el árbol de ubicaciones del almacén, duplicando estanterías enteras.
 - Dar de alta contenedores, anidarlos y moverlos, con historial.
 - Imprimir etiquetas QR en formato 6 × 4 pulgadas o en hojas A4 de 24.
 - Escanear etiquetas con la cámara, con un lector USB o tecleando el código.
+- Exportar ubicaciones y contenedores a Excel.
+- Conectar móviles con una página de ayuda que descarga el certificado.
 - Consultar la auditoría y hacer copias de seguridad.
 
 El registro de material llega en la Fase 3.
@@ -50,6 +52,7 @@ sistema obliga a cambiar su contraseña al entrar.
 | Base de datos y reglas de integridad | Sí, 38 pruebas contra PostgreSQL 16 |
 | API de acceso | Sí, 28 pruebas |
 | Ubicaciones, contenedores y movimientos | Sí, 26 pruebas |
+| Duplicar y exportar a Excel | Sí, 18 pruebas |
 | Etiquetas QR legibles en los dos formatos | Sí, 4 pruebas que leen el QR del PDF |
 | Web, API y proxy HTTPS funcionando juntos | Sí, recorrido completo con un navegador real |
 | Mover escaneando con la cámara | Sí, con una cámara simulada que muestra una etiqueta real |
