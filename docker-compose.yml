@@ -41,6 +41,26 @@ services:
       db:
         condition: service_healthy
 
+  # Copia de seguridad diaria de la base de datos en la carpeta ./backups
+  # (o en la indicada en BACKUP_PATH, mejor en otro disco).
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/scripts/run.sh"]
+    environment:
+      PGHOST: db
+      PGDATABASE: ${POSTGRES_DB:-sga}
+      PGUSER: ${POSTGRES_USER:-sga}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-30}
+      TZ: Europe/Madrid
+    volumes:
+      - ./infra/backup:/scripts:ro
+      - ${BACKUP_PATH:-./backups}:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+
   proxy:
     build:
       context: .
