@@ -271,3 +271,5 @@ section > h3 { margin-bottom: 0.6rem; }
   .toolbar .btn { flex: 1 1 45%; }
   .page-head h2 { font-size: 1.4rem; overflow-wrap: anywhere; }
 }
+
+.scanner-link { display: block; margin-top: 0.75rem; color: var(--accent); font-weight: 600; text-decoration: underline; }

@@ -221,6 +221,15 @@ export const api = {
   retireContainer: (id: string, reason: string, key: string) =>
     request<ContainerDetail>('POST', `/api/containers/${id}/retire`, { reason }, key),
 
+  locationDuplicateProposal: (id: string) =>
+    request<{ code: string; name: string; descendantCount: number; childrenCopyable: boolean; blockingChildCode: string | null }>(
+      'GET', `/api/locations/${id}/duplicate-proposal`,
+    ),
+  duplicateLocation: (id: string, data: { code: string; name: string; includeChildren: boolean }, key: string) =>
+    request<{ location: LocationSummary; created: number }>('POST', `/api/locations/${id}/duplicate`, data, key),
+  duplicateContainer: (id: string, data: { quantity: number; includeChildren: boolean; force?: boolean }, key: string) =>
+    request<{ containers: ContainerSummary[] }>('POST', `/api/containers/${id}/duplicate`, data, key),
+
   scan: (code: string) => request<ScanHit>('GET', `/api/scan/${encodeURIComponent(code)}`),
   basicUsers: () => request<{ users: Array<{ id: string; fullName: string }> }>('GET', '/api/users/basic'),
 

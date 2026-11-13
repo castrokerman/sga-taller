@@ -6,7 +6,7 @@ import {
 import { Breadcrumbs, ContainerCard, LabelPanel, LocationCard } from '../components/Common';
 import { navigate } from '../router';
 
-type Panel = 'none' | 'location' | 'container' | 'labels' | 'edit';
+type Panel = 'none' | 'location' | 'container' | 'labels' | 'edit' | 'duplicate' | 'export';
 
 export function WarehousePage({ user, locationId }: { user: User; locationId?: string }) {
   const [detail, setDetail] = useState<LocationDetail | null>(null);
@@ -104,6 +104,16 @@ export function WarehousePage({ user, locationId }: { user: User; locationId?: s
             Editar
           </button>
         )}
+        {loc && can('location.manage') && (
+          <button className="btn" onClick={() => open('duplicate')}>
+            Duplicar
+          </button>
+        )}
+        {!loc && (
+          <button className="btn" onClick={() => open('export')}>
+            Exportar a Excel
+          </button>
+        )}
       </div>
 
       {panel === 'location' && (
@@ -119,6 +129,10 @@ export function WarehousePage({ user, locationId }: { user: User; locationId?: s
       {panel === 'edit' && loc && (
         <EditLocationForm location={loc} onCancel={() => setPanel('none')} onDone={(text) => done(text)} onGone={() => navigate(loc.parentId ? `almacen/${loc.parentId}` : 'almacen')} />
       )}
+      {panel === 'duplicate' && loc && (
+        <DuplicateLocationForm location={loc} onCancel={() => setPanel('none')} onDone={(text) => done(text)} />
+      )}
+      {panel === 'export' && <ExportPanel onClose={() => setPanel('none')} />}
       {panel === 'labels' && (
         <LabelPanel
           onClose={() => setPanel('none')}
@@ -235,7 +249,7 @@ function LocationForm(props: { parent?: LocationSummary; onCancel: () => void; o
         </label>
         <label className="field">
           <span>Capacidad (opcional)</span>
-          <input value={capacity} onChange={(e) => setCapacity(e.target.value.replace(/\D/g, ''))} inputMode="numeric" />
+          <input value={capacity} onChange={(e) => setCapacity(e.target.value.replace(/\D/g, ''))} inputMode="numeric" onFocus={(e) => e.target.select()} />
           <small className="muted">Número máximo de contenedores. Si se supera, el sistema avisa.</small>
         </label>
       </div>
@@ -302,7 +316,7 @@ function EditLocationForm(props: { location: LocationSummary; onCancel: () => vo
         </label>
         <label className="field">
           <span>Capacidad (opcional)</span>
-          <input value={capacity} onChange={(e) => setCapacity(e.target.value.replace(/\D/g, ''))} inputMode="numeric" />
+          <input value={capacity} onChange={(e) => setCapacity(e.target.value.replace(/\D/g, ''))} inputMode="numeric" onFocus={(e) => e.target.select()} />
         </label>
       </div>
       {error && <p className="alert alert-error">{error}</p>}
@@ -381,7 +395,7 @@ export function ContainerForm(props: {
         </label>
         <label className="field">
           <span>Cuántos</span>
-          <input value={quantity} onChange={(e) => setQuantity(e.target.value.replace(/\D/g, '').slice(0, 3))} inputMode="numeric" required />
+          <input value={quantity} onChange={(e) => setQuantity(e.target.value.replace(/\D/g, '').slice(0, 3))} inputMode="numeric" onFocus={(e) => e.target.select()} required />
           <small className="muted">Hasta 100 de una vez. Cada uno recibe su código y su QR.</small>
         </label>
       </div>
@@ -408,5 +422,126 @@ export function ContainerForm(props: {
         </button>
       </div>
     </form>
+  );
+}
+
+/** Duplicar una ubicación: mismo tipo, capacidad y restricciones, en el mismo sitio y con QR nuevo. */
+function DuplicateLocationForm(props: { location: LocationSummary; onCancel: () => void; onDone: (text: string) => void }) {
+  const { location } = props;
+  const [code, setCode] = useState('');
+  const [name, setName] = useState('');
+  const [proposal, setProposal] = useState<Awaited<ReturnType<typeof api.locationDuplicateProposal>> | null>(null);
+  const [includeChildren, setIncludeChildren] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [key, setKey] = useState(newOperationKey);
+
+  useEffect(() => {
+    api.locationDuplicateProposal(location.id).then((p) => {
+      setProposal(p);
+      setCode(p.code);
+      setName(p.name);
+      setIncludeChildren(p.childrenCopyable && p.descendantCount > 0);
+    }).catch((e) => setError(errorMessage(e)));
+  }, [location.id]);
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await api.duplicateLocation(location.id, { code: code.trim().toUpperCase(), name, includeChildren }, key);
+      const extra = r.created > 1 ? `, con ${r.created - 1} ubicaciones dentro` : '';
+      props.onDone(`Creada ${r.location.code}${extra}. Puedes volver a duplicar para crear la siguiente.`);
+    } catch (err) {
+      setError(errorMessage(err));
+      setKey(newOperationKey());
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const n = proposal?.descendantCount ?? 0;
+
+  return (
+    <form className="card form" onSubmit={submit}>
+      <h3>Duplicar {location.code}</h3>
+      <p className="muted">
+        La copia tendrá el mismo tipo, capacidad y restricciones, y estará en el mismo sitio. Su etiqueta QR será nueva.
+      </p>
+      <div className="grid-2">
+        <label className="field">
+          <span>Código de la copia</span>
+          <input
+            value={code}
+            onChange={(e) => setCode(e.target.value.toUpperCase())}
+            required
+            autoFocus
+            pattern="[A-Z0-9][A-Z0-9\-]{0,39}"
+            spellCheck={false}
+          />
+        </label>
+        <label className="field">
+          <span>Nombre</span>
+          <input value={name} onChange={(e) => setName(e.target.value)} required maxLength={120} />
+        </label>
+      </div>
+
+      {n > 0 && (
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={includeChildren}
+            disabled={!proposal?.childrenCopyable}
+            onChange={(e) => setIncludeChildren(e.target.checked)}
+          />
+          <span>
+            <strong>Copiar también las {n} ubicaciones de dentro</strong>
+            <small className="muted">
+              {proposal?.childrenCopyable
+                ? ` — sus códigos cambiarán de ${location.code}-… a ${code || '…'}-…`
+                : proposal?.blockingChildCode
+                  ? ` — no se puede: ${proposal.blockingChildCode} no empieza por ${location.code}`
+                  : ' — no se puede: son demasiadas'}
+            </small>
+          </span>
+        </label>
+      )}
+      <p className="muted small">Los contenedores no se copian.</p>
+
+      {error && <p className="alert alert-error">{error}</p>}
+      <div className="actions">
+        <button type="button" className="btn" onClick={props.onCancel}>
+          Cancelar
+        </button>
+        <button className="btn btn-primary" disabled={busy || !proposal}>
+          {busy ? 'Creando…' : 'Crear copia'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/** Descarga de ubicaciones y contenedores en ficheros de Excel. */
+function ExportPanel(props: { onClose: () => void }) {
+  return (
+    <div className="card form">
+      <h3>Exportar a Excel</h3>
+      <p className="muted">Se descarga un fichero .xlsx con todo el almacén, tal como está ahora.</p>
+      <div className="stack">
+        <a className="btn" href="/api/export/ubicaciones.xlsx" download>
+          Ubicaciones
+        </a>
+        <a className="btn" href="/api/export/contenedores.xlsx" download>
+          Contenedores
+        </a>
+      </div>
+      <p className="muted small">Es una copia para consultar. Los cambios hechos en el Excel no vuelven al sistema.</p>
+      <div className="actions">
+        <button className="btn" onClick={props.onClose}>
+          Cerrar
+        </button>
+      </div>
+    </div>
   );
 }

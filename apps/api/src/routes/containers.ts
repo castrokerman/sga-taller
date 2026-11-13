@@ -239,6 +239,127 @@ export function containerRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
       }),
   );
 
+  // ---- Duplicar -----------------------------------------------------------
+  // Crea contenedores nuevos iguales al indicado (tipo, descripción, responsable
+  // y política) en el mismo sitio, con código y QR propios.
+  // Con includeChildren reproduce también los contenedores de dentro, vacíos.
+  // Nunca se copia el material.
+  app.post(
+    '/api/containers/:id/duplicate',
+    {
+      preHandler: requirePermission('container.manage'),
+      schema: {
+        params: idParams,
+        body: {
+          type: 'object', additionalProperties: false,
+          properties: {
+            quantity: { type: 'integer', minimum: 1, maximum: 50, default: 1 },
+            includeChildren: { type: 'boolean', default: false },
+            force: { type: 'boolean', default: false },
+          },
+        },
+      },
+    },
+    (request, reply) =>
+      idempotent(pool, request, reply, async () => {
+        const { id } = request.params as { id: string };
+        const body = request.body as { quantity: number; includeChildren: boolean; force: boolean };
+
+        const ids = await withTransaction(pool, async (c) => {
+          const src = (await c.query(`SELECT * FROM container WHERE id = $1`, [id])).rows[0];
+          if (!src) throw notFound('El contenedor no existe');
+          if (src.status !== 'ACTIVE') throw conflict('No se puede duplicar un contenedor retirado', 'CONTENEDOR_RETIRADO');
+
+          // Árbol de contenedores activos de dentro, de arriba abajo.
+          const tree = body.includeChildren
+            ? (
+                await c.query(
+                  `WITH RECURSIVE down AS (
+                     SELECT id, parent_container_id, 1 AS depth FROM container
+                      WHERE parent_container_id = $1 AND status = 'ACTIVE'
+                     UNION ALL
+                     SELECT k.id, k.parent_container_id, down.depth + 1
+                       FROM container k JOIN down ON k.parent_container_id = down.id
+                      WHERE k.status = 'ACTIVE'
+                   )
+                   SELECT k.*, down.depth FROM down JOIN container k ON k.id = down.id ORDER BY down.depth, k.code`,
+                  [id],
+                )
+              ).rows
+            : [];
+          const total = body.quantity * (1 + tree.length);
+          if (total > 200) {
+            throw conflict(`Se crearían ${total} contenedores; el máximo de una vez es 200`, 'DEMASIADOS_CONTENEDORES');
+          }
+
+          await resolveDestination(
+            c,
+            { locationId: src.location_id ?? undefined, parentContainerId: src.parent_container_id ?? undefined },
+            { adding: body.quantity, force: body.force },
+          );
+
+          // Reserva códigos consecutivos por tipo, con el tipo bloqueado para no repetir.
+          const typeIds = [...new Set([src.container_type_id, ...tree.map((k) => k.container_type_id)])];
+          const types = await c.query(
+            `SELECT id, code_prefix, next_number FROM container_type WHERE id = ANY($1) ORDER BY id FOR UPDATE`,
+            [typeIds],
+          );
+          const counters = new Map(types.rows.map((t) => [t.id as string, { prefix: t.code_prefix as string, next: t.next_number as number, used: 0 }]));
+          const nextCode = (typeId: string) => {
+            const t = counters.get(typeId)!;
+            const code = `${t.prefix}-${String(t.next + t.used).padStart(6, '0')}`;
+            t.used++;
+            return code;
+          };
+
+          const insert = async (row: Record<string, unknown>, where: { locationId: unknown; parentId: unknown }) => {
+            const r = await c.query(
+              `INSERT INTO container
+                 (qr_token, code, container_type_id, location_id, parent_container_id, reuse_policy,
+                  responsible_user_id, description)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, code`,
+              [
+                newQrToken(), nextCode(row.container_type_id as string), row.container_type_id, where.locationId,
+                where.parentId, row.reuse_policy, row.responsible_user_id, row.description,
+              ],
+            );
+            const created = r.rows[0] as { id: string; code: string };
+            await recordContainerMove(c, {
+              userId: request.user!.id, containerId: created.id, fromLocationId: null, fromParentId: null,
+              toLocationId: where.locationId as string | null, toParentId: where.parentId as string | null,
+              reason: `Alta por duplicado de ${src.code}`,
+            });
+            return created;
+          };
+
+          const roots: string[] = [];
+          for (let i = 0; i < body.quantity; i++) {
+            const root = await insert(src, { locationId: src.location_id, parentId: src.parent_container_id });
+            roots.push(root.id);
+            const newIds = new Map<string, string>([[id, root.id]]);
+            for (const k of tree) {
+              const child = await insert(k, { locationId: null, parentId: newIds.get(k.parent_container_id) });
+              newIds.set(k.id, child.id);
+            }
+          }
+          for (const [typeId, t] of counters) {
+            await c.query(`UPDATE container_type SET next_number = next_number + $2 WHERE id = $1`, [typeId, t.used]);
+          }
+
+          await writeAudit(c, {
+            userId: request.user!.id, action: 'contenedor.duplicado', entityType: 'container', entityId: id,
+            after: { original: src.code, copias: body.quantity, contenedoresCreados: total },
+            ip: request.ip, requestId: request.id,
+          });
+          return roots;
+        });
+
+        const r = await pool.query(`${CONTAINER_SELECT} WHERE c.id = ANY($1) ORDER BY c.code`, [ids]);
+        reply.code(201);
+        return { containers: r.rows };
+      }),
+  );
+
   // ---- Edición ------------------------------------------------------------
   app.patch(
     '/api/containers/:id',

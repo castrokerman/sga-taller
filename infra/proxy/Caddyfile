@@ -9,6 +9,30 @@
 #                 Un correo electrónico = certificado público automático (servidor online).
 {
 	admin off
+	http_port {$HTTP_LISTEN_PORT:80}
+	# La redirección a HTTPS la hace el bloque de abajo, que deja pasar la página del móvil.
+	auto_https disable_redirects
+}
+
+# Sin HTTPS solo se sirve la página para conectar un móvil y el certificado
+# raíz del sistema. Todo lo demás se redirige a la versión segura.
+:{$HTTP_LISTEN_PORT:80} {
+	handle /movil {
+		root * {$MOBILE_ROOT:/srv-movil}
+		rewrite * /index.html
+		file_server
+	}
+
+	handle /sga-raiz.crt {
+		root * {$CA_ROOT_DIR:/data/caddy/pki/authorities/local}
+		rewrite * /root.crt
+		header Content-Type application/x-x509-ca-cert
+		file_server
+	}
+
+	handle {
+		redir https://{host}{$HTTPS_SUFFIX}{uri} 308
+	}
 }
 
 {$SITE_ADDRESS:localhost} {
@@ -23,6 +47,20 @@
 		Content-Security-Policy "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'"
 		Permissions-Policy "camera=(self), microphone=(), geolocation=()"
 		-Server
+	}
+
+	# La página del móvil y el certificado también se pueden abrir con HTTPS.
+	handle /movil {
+		root * {$MOBILE_ROOT:/srv-movil}
+		rewrite * /index.html
+		file_server
+	}
+
+	handle /sga-raiz.crt {
+		root * {$CA_ROOT_DIR:/data/caddy/pki/authorities/local}
+		rewrite * /root.crt
+		header Content-Type application/x-x509-ca-cert
+		file_server
 	}
 
 	handle /api/* {

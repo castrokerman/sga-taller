@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Conectar un móvil al SGA Taller</title>
+<style>
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 17px; line-height: 1.5; color: #16202b; background: #eef1f4; }
+  header { background: #1c2733; color: #fff; padding: 1rem 1.2rem; border-bottom: 4px solid #f5a524; }
+  header h1 { margin: 0; font-size: 1.3rem; }
+  main { max-width: 640px; margin: 0 auto; padding: 1.2rem; }
+  section { background: #fff; border: 1px solid #d3d9e0; border-radius: 10px; padding: 1rem 1.2rem; margin-bottom: 1rem; }
+  h2 { font-size: 1.15rem; margin: 0 0 .5rem; }
+  ol { padding-left: 1.3rem; margin: .5rem 0; }
+  li { margin-bottom: .45rem; }
+  .btn { display: block; text-align: center; min-height: 52px; line-height: 52px; margin: .8rem 0; border-radius: 8px; font-weight: 700; text-decoration: none; font-size: 1.05rem; }
+  .primary { background: #f5a524; color: #1c2733; }
+  .secondary { background: #fff; color: #1c2733; border: 2px solid #1c2733; line-height: 48px; }
+  .note { color: #55616f; font-size: .92rem; }
+</style>
+</head>
+<body>
+<header><h1>Conectar un móvil al SGA Taller</h1></header>
+<main>
+  <section>
+    <p>Para usar la cámara como escáner, el móvil tiene que confiar en este sistema. Se hace <strong>una sola vez</strong> por móvil, instalando su certificado.</p>
+    <a class="btn primary" href="/sga-raiz.crt">1. Descargar el certificado</a>
+    <p class="note">El certificado no es secreto: solo sirve para que el móvil reconozca este sistema como seguro.</p>
+  </section>
+
+  <section>
+    <h2>iPhone y iPad</h2>
+    <p class="note">Abre esta página en <strong>Safari</strong>. Desde Chrome el iPhone no permite instalar el certificado.</p>
+    <ol>
+      <li>Pulsa <b>«Descargar el certificado»</b> y, en el aviso, <b>«Permitir»</b>.</li>
+      <li>Abre <b>Ajustes</b>. Arriba del todo aparece <b>«Perfil descargado»</b>: tócalo y pulsa <b>«Instalar»</b> (te pedirá el código del iPhone).</li>
+      <li>Ve a <b>Ajustes › General › Información</b>, baja al final y entra en <b>«Ajustes de confianza de certificados»</b>.</li>
+      <li>Activa el interruptor del certificado <b>«Caddy Local Authority»</b> (el nombre sigue con el año y «ECC Root») y confirma con <b>«Continuar»</b>.</li>
+    </ol>
+    <p class="note">Si en el paso 2 no aparece «Perfil descargado», búscalo en Ajustes › General › VPN y gestión de dispositivos.</p>
+  </section>
+
+  <section>
+    <h2>Android</h2>
+    <ol>
+      <li>Pulsa <b>«Descargar el certificado»</b>.</li>
+      <li>Abre <b>Ajustes</b> y escribe <b>«certificado»</b> en el buscador.</li>
+      <li>Entra en <b>«Instalar un certificado»</b> y elige <b>«Certificado de CA»</b>. Si avisa de que puede ser peligroso, pulsa <b>«Instalar de todos modos»</b>.</li>
+      <li>Elige el fichero <b>sga-raiz.crt</b> de la carpeta Descargas.</li>
+    </ol>
+    <p class="note">Los nombres de los menús cambian según la marca. En Samsung suele estar en Seguridad y privacidad › Más ajustes de seguridad › Instalar desde almacenamiento.</p>
+  </section>
+
+  <section>
+    <h2>2. Entrar al sistema</h2>
+    <p>Cierra el navegador del todo, vuelve a abrirlo y entra:</p>
+    <a class="btn secondary" id="entrar" href="/">Abrir el SGA Taller</a>
+    <p class="note">Si ya no aparece ningún aviso de seguridad, está listo. Para tenerlo como una aplicación: en iPhone, botón Compartir › «Añadir a pantalla de inicio»; en Android, menú › «Instalar aplicación».</p>
+  </section>
+</main>
+<script>
+  // El enlace apunta a la versión segura (https) de esta misma dirección.
+  document.getElementById('entrar').href = 'https://' + location.hostname + (window.SGA_HTTPS_PORT || '') + '/';
+</script>
+</body>
+</html>
