@@ -5,6 +5,8 @@
 #   SITE_ADDRESS  Direcciones por las que se accede. Por defecto, localhost.
 #                 En la red del taller: "localhost, 192.168.1.50" (la IP del PC).
 #                 En un servidor online: el dominio, p. ej. "sga.miempresa.com".
+#   DEFAULT_SNI   La IP del PC en la red del taller. Los móviles que entran por IP
+#                 no dicen a qué sitio van; sin esto, el cifrado falla.
 #   TLS_MODE      "internal" = certificado propio (red local).
 #                 Un correo electrónico = certificado público automático (servidor online).
 {
@@ -12,6 +14,7 @@
 	http_port {$HTTP_LISTEN_PORT:80}
 	# La redirección a HTTPS la hace el bloque de abajo, que deja pasar la página del móvil.
 	auto_https disable_redirects
+	default_sni {$DEFAULT_SNI:localhost}
 }
 
 # Sin HTTPS solo se sirve la página para conectar un móvil y el certificado
