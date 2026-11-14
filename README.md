@@ -1,4 +1,4 @@
-# SGA Taller
+# IDOM ADA · Sistema de gestión de almacén
 
 Sistema de Gestión de Almacén para un taller industrial: ubicaciones,
 contenedores con QR, inventario, material restringido por proyecto,
@@ -13,13 +13,16 @@ documentación técnica y calibración de equipos.
 | 2 | Almacén físico: ubicaciones, contenedores, QR, escáner | Completada, pendiente de probar con móviles reales |
 | 3 | Inventario: entradas, retiradas, recuentos. Piloto en el taller | Pendiente |
 | 4 | Proyectos y autorizaciones | Pendiente |
-| 5 | Documentación y metrología | Pendiente |
+| 5 | Documentación, metrología y avisos: notificaciones y correo electrónico | Pendiente |
 | 6 | Cierre y migración a servidor online | Pendiente |
+| — | Mapa del taller con zonas pulsables | Más adelante, cuando esté el plano |
 
 ### Qué se puede hacer ya
 
 - Entrar con usuario y contraseña, con cinco roles y permisos distintos.
 - Montar el árbol de ubicaciones del almacén, duplicando estanterías enteras.
+- Ver todo el almacén como un árbol desplegable y buscar dónde está cada cosa.
+- Ordenar y filtrar las listas de ubicaciones, contenedores y usuarios.
 - Dar de alta contenedores, anidarlos y moverlos, con historial.
 - Imprimir etiquetas QR en formato 6 × 4 pulgadas o en hojas A4 de 24.
 - Escanear etiquetas con la cámara, con un lector USB o tecleando el código.
@@ -52,7 +55,8 @@ sistema obliga a cambiar su contraseña al entrar.
 | Base de datos y reglas de integridad | Sí, 38 pruebas contra PostgreSQL 16 |
 | API de acceso | Sí, 28 pruebas |
 | Ubicaciones, contenedores y movimientos | Sí, 26 pruebas |
-| Duplicar y exportar a Excel | Sí, 18 pruebas |
+| Duplicar, exportar a Excel y árbol | Sí, 17 pruebas |
+| Ordenar, filtrar y vista de árbol | Sí, recorrido con un navegador real |
 | Etiquetas QR legibles en los dos formatos | Sí, 4 pruebas que leen el QR del PDF |
 | Web, API y proxy HTTPS funcionando juntos | Sí, recorrido completo con un navegador real |
 | Mover escaneando con la cámara | Sí, con una cámara simulada que muestra una etiqueta real |

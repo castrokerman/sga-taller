@@ -99,6 +99,7 @@ export interface LocationSummary {
   active: boolean;
   childCount: number;
   containerCount: number;
+  createdAt: string;
 }
 
 export interface ContainerSummary {
@@ -169,6 +170,26 @@ export interface MoveResult extends ContainerDetail {
   destination: string;
 }
 
+export interface TreeLocation {
+  id: string;
+  parentId: string | null;
+  code: string;
+  name: string;
+  typeName: string;
+  maxCapacity: number | null;
+  containerCount: number;
+  childCount: number;
+}
+
+export interface TreeContainer {
+  id: string;
+  code: string;
+  typeName: string;
+  description: string | null;
+  locationId: string | null;
+  parentContainerId: string | null;
+}
+
 export interface LocationType { code: string; name: string; active: boolean }
 export interface ContainerType { code: string; name: string; codePrefix: string; defaultReusePolicy: string; active: boolean }
 export interface ScanHit { kind: 'container' | 'location' | 'equipment'; id: string; code: string; name: string | null }
@@ -230,6 +251,7 @@ export const api = {
   duplicateContainer: (id: string, data: { quantity: number; includeChildren: boolean; force?: boolean }, key: string) =>
     request<{ containers: ContainerSummary[] }>('POST', `/api/containers/${id}/duplicate`, data, key),
 
+  tree: () => request<{ locations: TreeLocation[]; containers: TreeContainer[] }>('GET', '/api/tree'),
   scan: (code: string) => request<ScanHit>('GET', `/api/scan/${encodeURIComponent(code)}`),
   basicUsers: () => request<{ users: Array<{ id: string; fullName: string }> }>('GET', '/api/users/basic'),
 

@@ -6,13 +6,15 @@ interface Tile {
   /** Pantalla a la que lleva. Sin ella, la función aún no está disponible. */
   path?: string;
   permission?: string;
-  phase?: number;
+  /** Fase en la que llega, o «más adelante» si aún no tiene fase. */
+  phase?: number | 'later';
 }
 
 const TILES: Tile[] = [
   { title: 'Escáner QR', text: 'Escanear ubicaciones y contenedores', path: 'escaner', permission: 'container.read' },
   { title: 'Almacén', text: 'Ubicaciones y contenedores', path: 'almacen', permission: 'location.read' },
   { title: 'Buscador', text: 'Materiales, lotes y proyectos', phase: 3 },
+  { title: 'Mapa', text: 'Plano del taller para ir a cada zona', phase: 'later' },
   { title: 'Movimientos', text: 'Entradas, salidas y traslados', phase: 3 },
   { title: 'Autorizaciones', text: 'Solicitudes de material restringido', phase: 4 },
   { title: 'Documentación', text: 'Certificados y documentos técnicos', phase: 5 },
@@ -42,7 +44,7 @@ export function HomePage({ user }: { user: User }) {
             <div key={t.title} className="tile tile-pending" aria-disabled="true">
               <strong>{t.title}</strong>
               <span>{t.text}</span>
-              <em>Disponible en la fase {t.phase}</em>
+              <em>{t.phase === 'later' ? 'Próximamente' : `Disponible en la fase ${t.phase}`}</em>
             </div>
           ),
         )}

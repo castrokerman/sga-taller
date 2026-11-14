@@ -6,7 +6,7 @@ export const LOCATION_SELECT = `
   SELECT l.id, l.code, l.name, l.description, l.parent_id AS "parentId", l.qr_token AS "qrToken",
          t.code AS "typeCode", t.name AS "typeName",
          l.max_capacity::float AS "maxCapacity", l.allowed_hazard_classes AS "allowedHazardClasses",
-         l.restrictions_note AS "restrictionsNote", l.active,
+         l.restrictions_note AS "restrictionsNote", l.active, l.created_at AS "createdAt",
          (SELECT count(*)::int FROM storage_location c WHERE c.parent_id = l.id AND c.active) AS "childCount",
          (SELECT count(*)::int FROM container c WHERE c.location_id = l.id AND c.status = 'ACTIVE') AS "containerCount"
     FROM storage_location l

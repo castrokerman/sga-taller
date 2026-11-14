@@ -3,7 +3,9 @@ import {
   api, errorMessage, newOperationKey, ApiError,
   type ContainerType, type LocationDetail, type LocationSummary, type LocationType, type User,
 } from '../api';
-import { Breadcrumbs, ContainerCard, LabelPanel, LocationCard } from '../components/Common';
+import { Breadcrumbs, ContainerCard, containerListConfig, LabelPanel, LocationCard, locationListConfig, ViewSwitch } from '../components/Common';
+import { useListControls } from '../components/ListControls';
+import { WarehouseTree } from './Tree';
 import { navigate } from '../router';
 
 type Panel = 'none' | 'location' | 'container' | 'labels' | 'edit' | 'duplicate' | 'export';
@@ -57,6 +59,28 @@ export function WarehousePage({ user, locationId }: { user: User; locationId?: s
   const loc = detail?.location;
   const children = detail?.children ?? roots ?? [];
   const containers = detail?.containers ?? [];
+  const locList = useListControls(children, locationListConfig(children, 'ubicaciones'));
+  const contList = useListControls(containers, containerListConfig(containers, 'contenedores'));
+
+  // En la raíz del almacén se puede elegir entre la lista y el árbol completo.
+  const [view, setView] = useState<'lista' | 'arbol'>(() => {
+    try {
+      return window.localStorage.getItem('sga.vista-almacen') === 'arbol' ? 'arbol' : 'lista';
+    } catch {
+      return 'lista';
+    }
+  });
+  const chooseView = (v: 'lista' | 'arbol') => {
+    setView(v);
+    try {
+      window.localStorage.setItem('sga.vista-almacen', v);
+    } catch {
+      /* sin almacenamiento local */
+    }
+  };
+  if (!locationId && view === 'arbol') {
+    return <WarehouseTree user={user} onList={() => chooseView('lista')} />;
+  }
 
   return (
     <>
@@ -72,7 +96,8 @@ export function WarehousePage({ user, locationId }: { user: User; locationId?: s
             </p>
           )}
         </div>
-        <button className="btn btn-primary push-right" onClick={() => navigate('escaner')}>
+        {!loc && <ViewSwitch view="lista" onChange={chooseView} />}
+        <button className={`btn btn-primary ${loc ? 'push-right' : ''}`} onClick={() => navigate('escaner')}>
           Escanear
         </button>
       </div>
@@ -149,11 +174,13 @@ export function WarehousePage({ user, locationId }: { user: User; locationId?: s
       {children.length > 0 && (
         <section>
           <h3>Ubicaciones</h3>
+          {children.length > 1 && locList.bar}
           <div className="items">
-            {children.map((l) => (
-              <LocationCard key={l.id} l={l} />
+            {locList.visible.map((l) => (
+              <LocationCard key={l.id} l={l} q={locList.query} />
             ))}
           </div>
+          {locList.visible.length === 0 && <p className="muted">Ninguna ubicación cumple los filtros.</p>}
         </section>
       )}
 
@@ -161,11 +188,15 @@ export function WarehousePage({ user, locationId }: { user: User; locationId?: s
         <section>
           <h3>Contenedores</h3>
           {containers.length > 0 ? (
-            <div className="items">
-              {containers.map((c) => (
-                <ContainerCard key={c.id} c={c} />
-              ))}
-            </div>
+            <>
+              {containers.length > 1 && contList.bar}
+              <div className="items">
+                {contList.visible.map((c) => (
+                  <ContainerCard key={c.id} c={c} q={contList.query} />
+                ))}
+              </div>
+              {contList.visible.length === 0 && <p className="muted">Ningún contenedor cumple los filtros.</p>}
+            </>
           ) : (
             <p className="muted">No hay contenedores colocados directamente aquí.</p>
           )}
@@ -545,3 +576,4 @@ function ExportPanel(props: { onClose: () => void }) {
     </div>
   );
 }
+

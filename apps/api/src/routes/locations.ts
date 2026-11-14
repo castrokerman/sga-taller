@@ -188,6 +188,34 @@ export function locationRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
     },
   );
 
+  // ---- Árbol completo -----------------------------------------------------
+  // Todas las ubicaciones activas y, si el usuario puede verlos, todos los
+  // contenedores activos, en listas planas: la web monta el árbol.
+  app.get('/api/tree', { preHandler: requirePermission('location.read') }, async (request) => {
+    const locations = await pool.query(
+      `SELECT l.id, l.parent_id AS "parentId", l.code, l.name, t.name AS "typeName",
+              l.max_capacity::float AS "maxCapacity",
+              (SELECT count(*)::int FROM container c WHERE c.location_id = l.id AND c.status = 'ACTIVE') AS "containerCount",
+              (SELECT count(*)::int FROM storage_location h WHERE h.parent_id = l.id AND h.active) AS "childCount"
+         FROM storage_location l JOIN location_type t ON t.id = l.location_type_id
+        WHERE l.active
+        ORDER BY l.code`,
+    );
+    const canSeeContainers = request.user!.permissions.includes('container.read');
+    const containers = canSeeContainers
+      ? (
+          await pool.query(
+            `SELECT c.id, c.code, t.name AS "typeName", c.description,
+                    c.location_id AS "locationId", c.parent_container_id AS "parentContainerId"
+               FROM container c JOIN container_type t ON t.id = c.container_type_id
+              WHERE c.status = 'ACTIVE'
+              ORDER BY c.code`,
+          )
+        ).rows
+      : [];
+    return { locations: locations.rows, containers };
+  });
+
   // ---- Duplicar -----------------------------------------------------------
   // Propuesta para el formulario: el siguiente código libre y cuántas ubicaciones
   // de dentro se copiarían.

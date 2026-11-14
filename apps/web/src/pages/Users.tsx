@@ -1,5 +1,42 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { api, ApiError, formatDateTime, roleName, type AdminUser, type Role, type User } from '../api';
+import { Highlight, useListControls, type ListConfig } from '../components/ListControls';
+
+const userStatus = (u: AdminUser) =>
+  !u.active ? 'off' : u.locked ? 'locked' : u.mustChangePassword ? 'provisional' : 'ok';
+
+function usersConfig(roles: Role[]): ListConfig<AdminUser> {
+  return {
+    storageKey: 'usuarios',
+    noun: 'usuarios',
+    placeholder: 'Filtrar por nombre o usuario',
+    text: (u) => [u.fullName, u.username, u.email],
+    sorts: [
+      { key: 'nombre', label: 'Nombre', value: (u) => u.fullName },
+      { key: 'usuario', label: 'Usuario', value: (u) => u.username },
+      { key: 'rol', label: 'Rol', value: (u) => u.roles.map(roleName).join(', ') },
+      { key: 'acceso', label: 'Último acceso', value: (u) => (u.lastLoginAt ? Date.parse(u.lastLoginAt) : null), defaultDir: 'desc' },
+      { key: 'alta', label: 'Fecha de alta', value: (u) => Date.parse(u.createdAt), defaultDir: 'desc' },
+    ],
+    filters: [
+      {
+        key: 'rol', label: 'Rol',
+        options: roles.map((r) => ({ value: r.code, label: r.name })),
+        test: (u, v) => u.roles.includes(v),
+      },
+      {
+        key: 'estado', label: 'Estado',
+        options: [
+          { value: 'ok', label: 'Activo' },
+          { value: 'provisional', label: 'Contraseña provisional' },
+          { value: 'locked', label: 'Bloqueado' },
+          { value: 'off', label: 'Desactivado' },
+        ],
+        test: (u, v) => userStatus(u) === v,
+      },
+    ],
+  };
+}
 
 const message = (e: unknown) => (e instanceof ApiError ? e.message : 'Ha ocurrido un error inesperado');
 
@@ -10,6 +47,7 @@ export function UsersPage({ me, back }: { me: User; back: () => void }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<AdminUser | null>(null);
+  const list = useListControls(users ?? [], usersConfig(roles));
 
   const load = useCallback(async () => {
     try {
@@ -65,7 +103,9 @@ export function UsersPage({ me, back }: { me: User; back: () => void }) {
 
       {!users && !error && <p className="muted">Cargando…</p>}
 
-      {users && (
+      {users && users.length > 1 && list.bar}
+      {users && list.visible.length === 0 && <p className="muted">Ningún usuario cumple los filtros.</p>}
+      {users && list.visible.length > 0 && (
         <div className="table-wrap card">
           <table>
             <thead>
@@ -79,10 +119,10 @@ export function UsersPage({ me, back }: { me: User; back: () => void }) {
               </tr>
             </thead>
             <tbody>
-              {users.map((u) => (
+              {list.visible.map((u) => (
                 <tr key={u.id} className={u.active ? '' : 'row-off'}>
-                  <td>{u.fullName}</td>
-                  <td className="mono">{u.username}</td>
+                  <td><Highlight text={u.fullName} query={list.query} /></td>
+                  <td className="mono"><Highlight text={u.username} query={list.query} /></td>
                   <td>{u.roles.map(roleName).join(', ') || '—'}</td>
                   <td>
                     {!u.active ? (

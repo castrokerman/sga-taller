@@ -111,6 +111,34 @@ responsable y política) en el mismo sitio, hasta 50 de una vez. Si lleva
 otros contenedores dentro, puedes copiarlos también: se crean vacíos y con
 códigos nuevos. El material nunca se copia.
 
+### Ordenar y filtrar
+
+Encima de cada lista de ubicaciones, contenedores o usuarios hay una barra:
+
+- **Casilla de búsqueda:** filtra mientras escribes, sin importar tildes ni
+  mayúsculas, y resalta en amarillo lo que coincide.
+- **«Ordenar por»** y el botón de la flecha, que invierte el sentido. Cada
+  lista recuerda en ese dispositivo el último orden elegido.
+- **«Filtros»** abre filtros por campos. Por ejemplo, en contenedores: tipo,
+  responsable, política y si llevan otros contenedores dentro. En ubicaciones:
+  tipo y estado (vacías, con contenido o con la capacidad superada).
+
+Cada filtro activo aparece como una etiqueta con su aspa para quitarlo, junto
+al recuento («3 de 14 contenedores»).
+
+### Vista de árbol
+
+En la pantalla principal de «Almacén», el selector «Lista | Árbol» muestra todo
+el almacén anidado.
+
+- Cada rama se despliega o se pliega con su flecha. «Desplegar todo» y «Plegar
+  todo» lo hacen de golpe.
+- «Mostrar contenedores» añade los palets, cajas y bandejas, en azul, dentro de
+  su ubicación.
+- La búsqueda deja solo lo que coincide y el camino hasta ello, ya desplegado.
+  Sirve para saber dónde está algo sin recorrer el almacén.
+- Pulsar una línea abre su ficha. La vista elegida se recuerda la próxima vez.
+
 ### Exportar a Excel
 
 En la pantalla principal de «Almacén», pulsa «Exportar a Excel» y elige
@@ -262,6 +290,10 @@ Se abre a pantalla completa, como una aplicación más.
       códigos de la copia.
 - [ ] Duplicar un palet con sus cajas, pidiendo 2 copias.
 - [ ] Exportar ubicaciones y contenedores a Excel y abrir los ficheros.
+- [ ] Ordenar una lista por número de contenedores e invertir el orden.
+- [ ] Filtrar contenedores escribiendo parte de una descripción y con un filtro
+      por tipo; quitar los filtros con su aspa.
+- [ ] Pasar a la vista de árbol, desplegar todo y buscar el código de una caja.
 - [ ] En el móvil, abrir `http://IP/movil` e instalar el certificado.
 
 ## 8. Si algo falla
@@ -288,7 +320,8 @@ docker compose logs --tail 200
 | Elemento | Estado |
 | --- | --- |
 | Ubicaciones, contenedores anidados, movimientos y retiradas | Comprobado: 26 pruebas automáticas |
-| Duplicar ubicaciones y contenedores, y exportar a Excel | Comprobado: 18 pruebas automáticas y navegador real |
+| Duplicar ubicaciones y contenedores, y exportar a Excel | Comprobado: pruebas automáticas y navegador real |
+| Ordenar, filtrar y vista de árbol | Comprobado con un navegador real, en escritorio y móvil |
 | Página para conectar el móvil y descarga del certificado | Comprobado: el certificado descargado valida la conexión segura |
 | Los QR de las etiquetas en PDF se leen, en los dos formatos | Comprobado: se genera el PDF, se convierte en imagen y se lee el QR |
 | Recorrido completo en la web, en escritorio y móvil | Comprobado con un navegador real |
