@@ -5,6 +5,7 @@ type Db = pg.Pool | pg.PoolClient;
 export const LOCATION_SELECT = `
   SELECT l.id, l.code, l.segment, l.name, l.description, l.parent_id AS "parentId", l.qr_token AS "qrToken",
          (SELECT p.code FROM storage_location p WHERE p.id = l.parent_id) AS "parentCode",
+         (SELECT ph.id FROM photo ph WHERE ph.entity_type = 'location' AND ph.entity_id = l.id ORDER BY ph.position LIMIT 1) AS "photoId",
          t.code AS "typeCode", t.name AS "typeName",
          l.max_capacity::float AS "maxCapacity", l.allowed_hazard_classes AS "allowedHazardClasses",
          l.restrictions_note AS "restrictionsNote", l.active, l.created_at AS "createdAt",
@@ -19,6 +20,7 @@ export const CONTAINER_SELECT = `
          c.responsible_user_id AS "responsibleUserId", ru.full_name AS "responsibleName",
          t.code AS "typeCode", t.name AS "typeName",
          c.created_at AS "createdAt", c.retired_at AS "retiredAt",
+         (SELECT ph.id FROM photo ph WHERE ph.entity_type = 'container' AND ph.entity_id = c.id ORDER BY ph.position LIMIT 1) AS "photoId",
          (SELECT count(*)::int FROM container k WHERE k.parent_container_id = c.id AND k.status = 'ACTIVE') AS "childCount"
     FROM container c
     JOIN container_type t ON t.id = c.container_type_id

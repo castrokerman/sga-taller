@@ -4,6 +4,7 @@ import {
   type MaterialDetail, type MovementLine, type OpResult, type User,
 } from '../api';
 import { can, LineActions, OpNotice, OpPanel, StockKind } from '../components/Stock';
+import { ItemExtras } from '../components/ItemExtras';
 import { MaterialForm } from './Materials';
 import { navigate } from '../router';
 import { ReverseButton } from './Movements';
@@ -209,6 +210,12 @@ export function MaterialPage({ user, materialId }: { user: User; materialId: str
           {d.movements.length === 0 ? <p className="muted">Sin movimientos todavía.</p> : <History user={user} lines={d.movements} onReversed={done} />}
           <p className="muted small">Nada se borra: un error se corrige con un movimiento nuevo, que también queda registrado.</p>
         </section>
+      </div>
+
+      <div className="two">
+        <div>
+          <ItemExtras user={user} entityType="material" entityId={m.id} />
+        </div>
       </div>
     </>
   );

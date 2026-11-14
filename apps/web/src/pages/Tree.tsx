@@ -3,6 +3,7 @@ import { api, errorMessage, type TreeContainer, type TreeLocation, type User } f
 import { ViewSwitch } from '../components/Common';
 import { Highlight, normalize } from '../components/ListControls';
 import { navigate } from '../router';
+import { BulkContainers, BulkLocations } from './Warehouse';
 
 /** Un elemento del árbol: una ubicación o un contenedor. */
 interface Node {
@@ -81,6 +82,14 @@ function prune(nodes: Node[], query: string) {
   return { nodes: walk(nodes), open, hits };
 }
 
+/** Lo que se ve ahora en el árbol, de arriba abajo y con su profundidad. */
+function visibleNodes(nodes: Node[], isOpen: (key: string) => boolean, depth = 0): Array<{ node: Node; depth: number }> {
+  return nodes.flatMap((n) => [
+    { node: n, depth },
+    ...(n.children.length && isOpen(n.key) ? visibleNodes(n.children, isOpen, depth + 1) : []),
+  ]);
+}
+
 const allKeys = (nodes: Node[]): string[] => nodes.flatMap((n) => (n.children.length ? [n.key, ...allKeys(n.children)] : []));
 
 function readPref(key: string, fallback: boolean): boolean {
@@ -107,13 +116,20 @@ export function WarehouseTree({ user, onList }: { user: User; onList: () => void
   const canSeeContainers = user.permissions.includes('container.read');
   const [withContainers, setWithContainers] = useState(() => canSeeContainers && readPref('sga.arbol-contenedores', true));
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [editing, setEditing] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const canEditLocations = user.permissions.includes('location.manage');
+  const canEditContainers = user.permissions.includes('container.manage');
 
-  useEffect(() => {
+  const load = (first: boolean) =>
     api.tree().then((d) => {
       setData(d);
       // Al abrir, se ven desplegadas las zonas: el primer nivel bajo cada raíz.
-      setExpanded(new Set(d.locations.filter((l) => !l.parentId).map((l) => `l:${l.id}`)));
+      if (first) setExpanded(new Set(d.locations.filter((l) => !l.parentId).map((l) => `l:${l.id}`)));
     }).catch((e) => setError(errorMessage(e)));
+
+  useEffect(() => {
+    void load(true);
   }, []);
 
   const tree = useMemo(() => (data ? buildTree(data.locations, data.containers, withContainers) : []), [data, withContainers]);
@@ -122,6 +138,20 @@ export function WarehouseTree({ user, onList }: { user: User; onList: () => void
   const view = useMemo(() => (searching ? prune(tree, q) : null), [tree, q, searching]);
   const shown = view ? view.nodes : tree;
   const isOpen = (key: string) => (view ? view.open.has(key) : expanded.has(key));
+
+  // Para editar en tabla: exactamente lo que se ve desplegado (o lo encontrado al buscar).
+  const visible = editing ? visibleNodes(shown, isOpen) : [];
+  const locById = new Map((data?.locations ?? []).map((l) => [l.id, l]));
+  const contById = new Map((data?.containers ?? []).map((c) => [c.id, c]));
+  const depthOf = new Map(visible.map((v) => [v.node.key, v.depth]));
+  const editLocations = visible.filter((v) => v.node.kind === 'location').map((v) => locById.get(v.node.id)!).filter(Boolean);
+  const editContainers = visible.filter((v) => v.node.kind === 'container').map((v) => contById.get(v.node.id)!).filter(Boolean);
+  const closeEditor = async (message?: string) => {
+    if (!message) return;
+    setEditing(false);
+    await load(false);
+    setNotice(message);
+  };
 
   const toggle = (key: string) => {
     const next = new Set(expanded);
@@ -212,7 +242,36 @@ export function WarehouseTree({ user, onList }: { user: User; onList: () => void
         <button className="btn" disabled={searching} onClick={() => setExpanded(new Set())}>
           Plegar todo
         </button>
+        {(canEditLocations || canEditContainers) && (
+          <button className={`btn ${editing ? 'on' : ''}`} onClick={() => { setNotice(null); setEditing(!editing); }}>
+            {editing ? 'Cerrar tabla' : 'Editar en tabla'}
+          </button>
+        )}
       </div>
+
+      {notice && <p className="alert alert-ok">{notice}</p>}
+      {editing && (
+        <>
+          {canEditLocations && editLocations.length > 0 && (
+            <BulkLocations
+              key={`l${editLocations.map((l) => l.id).join()}`}
+              rows={editLocations}
+              depth={(l) => depthOf.get(`l:${l.id}`) ?? 0}
+              hint="Están las ubicaciones que se ven en el árbol: despliega, pliega o busca para elegir cuáles. Lo cambiado se marca en amarillo y se guarda todo junto. Si cambias el código de una, cambian los de las de dentro."
+              onClose={(m) => (m ? closeEditor(m) : setEditing(false))}
+            />
+          )}
+          {canEditContainers && editContainers.length > 0 && (
+            <BulkContainers
+              key={`c${editContainers.map((c) => c.id).join()}`}
+              rows={editContainers}
+              hint="Están los contenedores que se ven en el árbol. Se guardan aparte de las ubicaciones."
+              onClose={(m) => (m ? closeEditor(m) : setEditing(false))}
+            />
+          )}
+          {editLocations.length === 0 && editContainers.length === 0 && <p className="muted">No hay nada desplegado que editar.</p>}
+        </>
+      )}
 
       {searching && view && (
         <p className="muted">

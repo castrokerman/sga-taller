@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { api, errorMessage, formatQty, TRACKING_NAMES, type Family, type Material, type MaterialInput, type Unit, type User } from '../api';
+import { api, errorMessage, formatQty, photoUrl, TRACKING_NAMES, type Family, type Material, type MaterialInput, type Unit, type User } from '../api';
 import { Highlight, optionsFrom, useListControls, type ListConfig } from '../components/ListControls';
 import { navigate } from '../router';
 import { BulkEditor, type BulkChanges } from '../components/BulkEditor';
@@ -190,7 +190,9 @@ export function MaterialsPage({ user }: { user: User }) {
                   <tbody>
                     {list.visible.map((m) => (
                       <tr key={m.id} className="clickable" onClick={() => navigate(`material/${m.id}`)}>
-                        <td>
+                        <td className="mat-cell">
+                          {m.photoId ? <img className="mat-photo" src={photoUrl(m.photoId)} alt="" loading="lazy" /> : <span className="mat-photo empty" />}
+                          <div>
                           <a href={`#/material/${m.id}`} onClick={(e) => e.stopPropagation()}>
                             <strong>
                               <Highlight text={m.description} query={list.query} />
@@ -201,6 +203,7 @@ export function MaterialsPage({ user }: { user: User }) {
                             {m.manufacturerRef && <> · <Highlight text={m.manufacturerRef} query={list.query} /></>}
                             {m.status === 'OBSOLETE' && <span className="badge badge-off"> De baja</span>}
                             {m.isLoanable && <span className="badge badge-ok"> Prestable</span>}
+                          </div>
                           </div>
                         </td>
                         <td className="hide-m">{m.familyName}</td>
@@ -233,7 +236,8 @@ function materialListConfig(items: Material[]): ListConfig<Material> {
     text: (m) => [m.description, m.internalRef, m.manufacturer, m.manufacturerRef, m.materialSpec, m.qualityGrade, m.dimensions, m.familyName],
     sorts: [
       { key: 'nombre', label: 'Nombre', value: (m) => m.description },
-      { key: 'referencia', label: 'Referencia', value: (m) => m.internalRef },
+      { key: 'referencia', label: 'Referencia (1, 2, 10)', value: (m) => m.internalRef },
+      { key: 'referencia-alfa', label: 'Referencia alfanumérica (1, 10, 2)', value: (m) => m.internalRef, alphanumeric: true },
       { key: 'familia', label: 'Familia', value: (m) => m.familyName },
       { key: 'cantidad', label: 'Cantidad', value: (m) => (m.quantityTracking === 'NOT_TRACKED' ? null : m.quantity ?? 0), defaultDir: 'desc' },
       { key: 'alta', label: 'Fecha de alta', value: (m) => m.createdAt, defaultDir: 'desc' },
