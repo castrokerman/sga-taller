@@ -11,7 +11,7 @@ documentación técnica y calibración de equipos.
 | 0 | Análisis y planificación | Completada |
 | 1 | Cimientos: base de datos, login, roles, auditoría, backup | Completada y arrancada con Docker en Windows |
 | 2 | Almacén físico: ubicaciones, contenedores, QR, escáner | Completada, pendiente de probar con móviles reales |
-| 3 | Inventario: entradas, retiradas, recuentos. Piloto en el taller | Pendiente |
+| 3 | Inventario: materiales, entradas, retiradas, recuentos, préstamos. Piloto en el taller | Completada, pendiente del piloto |
 | 4 | Proyectos y autorizaciones | Pendiente |
 | 5 | Documentación, metrología y avisos: notificaciones y correo electrónico | Pendiente |
 | 6 | Cierre y migración a servidor online | Pendiente |
@@ -28,6 +28,11 @@ documentación técnica y calibración de equipos.
 - Escanear etiquetas con la cámara, con un lector USB o tecleando el código.
 - Exportar ubicaciones y contenedores a Excel.
 - Conectar móviles con una página de ayuda que descarga el certificado.
+- Llevar el catálogo de materiales con familias y subfamilias propias.
+- Meter, sacar, trasladar y recontar material escaneando la caja, con huella
+  de quién, cuándo y para qué. Corregir errores revirtiendo movimientos.
+- Prestar herramientas con fecha de devolución (14 días por defecto).
+- Exportar materiales y stock a Excel.
 - Consultar la auditoría y hacer copias de seguridad.
 
 El registro de material llega en la Fase 3.
@@ -56,6 +61,7 @@ sistema obliga a cambiar su contraseña al entrar.
 | API de acceso | Sí, 28 pruebas |
 | Ubicaciones, contenedores y movimientos | Sí, 26 pruebas |
 | Duplicar, exportar a Excel y árbol | Sí, 17 pruebas |
+| Inventario (Fase 3) | Sí, 27 pruebas |
 | Ordenar, filtrar y vista de árbol | Sí, recorrido con un navegador real |
 | Etiquetas QR legibles en los dos formatos | Sí, 4 pruebas que leen el QR del PDF |
 | Web, API y proxy HTTPS funcionando juntos | Sí, recorrido completo con un navegador real |
@@ -82,6 +88,7 @@ docker-compose.yml    Arranque del sistema completo
 
 - [Instrucciones de instalación y uso (Fase 1)](docs/fase-1-instrucciones.md)
 - [Almacén físico, etiquetas y móviles (Fase 2)](docs/fase-2-instrucciones.md)
+- [Inventario: materiales, entradas, retiradas y préstamos (Fase 3)](docs/fase-3-instrucciones.md)
 - [Modelo de datos](docs/modelo-de-datos.md)
 
 ## Tecnología

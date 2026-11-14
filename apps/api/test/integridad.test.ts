@@ -165,12 +165,13 @@ async function requestFixture(c: pg.PoolClient, f: Fx) {
 
 describe('migraciones', () => {
   it('se pueden ejecutar dos veces sin cambios', async () => {
+    const files = (await import('node:fs')).readdirSync(new URL('../migrations/', import.meta.url)).filter((f) => f.endsWith('.sql'));
     const again = await runMigrations(url);
     expect(again.applied).toEqual([]);
-    expect(again.skipped).toHaveLength(5);
+    expect(again.skipped).toHaveLength(files.length);
   });
 
-  it('crean las 35 tablas del modelo y las 5 vistas', async () => {
+  it('crean las 35 tablas del modelo y las 6 vistas', async () => {
     const tables = await pool.query(
       `SELECT table_name FROM information_schema.tables
         WHERE table_schema = 'public' AND table_type = 'BASE TABLE' AND table_name <> 'schema_migrations'`,
@@ -189,7 +190,7 @@ describe('migraciones', () => {
     const views = await pool.query(`SELECT table_name FROM information_schema.views WHERE table_schema = 'public'`);
     expect(views.rows.map((r) => r.table_name).sort()).toEqual([
       'container_content', 'container_effective_location', 'container_lot_document',
-      'equipment_calibration_status', 'stock_availability',
+      'equipment_calibration_status', 'material_stock', 'stock_availability',
     ]);
   });
 });

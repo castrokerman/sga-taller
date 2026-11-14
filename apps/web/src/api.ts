@@ -190,6 +190,147 @@ export interface TreeContainer {
   parentContainerId: string | null;
 }
 
+
+// ---- Inventario ------------------------------------------------------------
+
+export type Tracking = 'EXACT' | 'ESTIMATED' | 'NOT_TRACKED';
+
+export interface Unit { code: string; name: string; decimals: number }
+
+export interface Family {
+  id: string;
+  code: string;
+  name: string;
+  parentId: string | null;
+  defaultUnitCode: string | null;
+  active: boolean;
+  path: string;
+  ancestorIds: string[];
+  materialCount: number;
+  childCount: number;
+}
+
+export interface Material {
+  id: string;
+  internalRef: string;
+  description: string;
+  familyId: string;
+  familyName: string;
+  manufacturer: string | null;
+  manufacturerRef: string | null;
+  materialSpec: string | null;
+  qualityGrade: string | null;
+  dimensions: string | null;
+  unitCode: string;
+  decimals: number;
+  quantityTracking: Tracking;
+  lotTracked: boolean;
+  isLoanable: boolean;
+  minStock: number | null;
+  notes: string | null;
+  status: 'ACTIVE' | 'OBSOLETE';
+  createdAt: string;
+  quantity: number | null;
+  quantityFree: number;
+  places: number;
+  needsRecount: boolean;
+  lowStock: boolean;
+  onLoan: number;
+}
+
+export type MaterialInput = Partial<Omit<Material,
+  'id' | 'familyName' | 'decimals' | 'createdAt' | 'quantity' | 'quantityFree' | 'places' | 'needsRecount' | 'lowStock' | 'onLoan'>>;
+
+export interface Allocation { availability: 'FREE' | 'RESTRICTED'; quantity: number; projectCode: string | null; projectName: string | null }
+
+export interface StockLine {
+  id: string;
+  materialId: string;
+  internalRef: string;
+  description: string;
+  unitCode: string;
+  decimals: number;
+  quantityTracking: Tracking;
+  isLoanable: boolean;
+  lotId: string | null;
+  lotCode: string | null;
+  containerId: string | null;
+  locationId: string | null;
+  placeCode: string;
+  locationCode: string | null;
+  quantity: number | null;
+  quantityFree: number | null;
+  quantityRestricted: number;
+  quantityProjectFree: number;
+  needsRecount: boolean;
+  lastCountedAt: string | null;
+  updatedAt: string;
+  allocations: Allocation[];
+}
+
+export interface MovementLine {
+  movementId: string;
+  movementNumber: number;
+  movementType: string;
+  performedAt: string;
+  performedBy: string;
+  reason: string | null;
+  externalReference: string | null;
+  reversesNumber: number | null;
+  reversedByNumber: number | null;
+  lineNo: number;
+  materialId: string;
+  internalRef: string;
+  description: string;
+  unitCode: string;
+  quantityTracking: Tracking;
+  quantityDelta: number | null;
+  quantityAfter: number | null;
+  lotCode: string | null;
+  containerId: string | null;
+  locationId: string | null;
+  placeCode: string;
+}
+
+export interface Loan {
+  id: string;
+  materialId: string;
+  internalRef: string;
+  description: string;
+  unitCode: string;
+  quantity: number;
+  borrowerId: string;
+  borrowerName: string;
+  loanedAt: string;
+  dueAt: string;
+  returnedAt: string | null;
+  status: 'OPEN' | 'RETURNED' | 'LOST';
+  notes: string | null;
+  overdue: boolean;
+  fromCode: string | null;
+  containerId: string | null;
+  locationId: string | null;
+  lotCode: string | null;
+}
+
+export interface MaterialDetail {
+  material: Material;
+  familyPath: string;
+  stock: StockLine[];
+  movements: MovementLine[];
+  loans: Loan[];
+}
+
+export interface OpResult {
+  movementNumber: number;
+  message: string;
+  remaining: number | null;
+  needsRecount?: boolean;
+  emptyDisposable?: string | null;
+}
+
+export interface PlaceRef { containerId?: string; locationId?: string }
+
 export interface LocationType { code: string; name: string; active: boolean }
 export interface ContainerType { code: string; name: string; codePrefix: string; defaultReusePolicy: string; active: boolean }
 export interface ScanHit { kind: 'container' | 'location' | 'equipment'; id: string; code: string; name: string | null }
@@ -251,6 +392,40 @@ export const api = {
   duplicateContainer: (id: string, data: { quantity: number; includeChildren: boolean; force?: boolean }, key: string) =>
     request<{ containers: ContainerSummary[] }>('POST', `/api/containers/${id}/duplicate`, data, key),
 
+
+  units: () => request<{ units: Unit[] }>('GET', '/api/units'),
+  families: () => request<{ families: Family[] }>('GET', '/api/material-families'),
+  createFamily: (data: { name: string; parentId?: string; defaultUnitCode?: string }) =>
+    request<{ family: Family }>('POST', '/api/material-families', data, newOperationKey()),
+  updateFamily: (id: string, data: { name?: string; parentId?: string | null; defaultUnitCode?: string | null; active?: boolean }) =>
+    request<{ family: Family }>('PATCH', `/api/material-families/${id}`, data),
+  deleteFamily: (id: string) => request<{ ok: true }>('DELETE', `/api/material-families/${id}`),
+
+  materials: (includeObsolete = false) =>
+    request<{ materials: Material[] }>('GET', `/api/materials?includeObsolete=${includeObsolete}`),
+  material: (id: string) => request<MaterialDetail>('GET', `/api/materials/${id}`),
+  createMaterial: (data: MaterialInput) => request<{ material: Material }>('POST', '/api/materials', data, newOperationKey()),
+  updateMaterial: (id: string, data: MaterialInput) => request<{ material: Material }>('PATCH', `/api/materials/${id}`, data),
+
+  stockAt: (place: PlaceRef) =>
+    request<{ stock: StockLine[] }>('GET', `/api/stock?${place.containerId ? `containerId=${place.containerId}` : `locationId=${place.locationId}`}`),
+  movements: (limit = 300) => request<{ movements: MovementLine[] }>('GET', `/api/stock/movements?limit=${limit}`),
+  receive: (data: PlaceRef & { materialId: string; quantity?: number; lotCode?: string; reason?: string; externalReference?: string; isReturn?: boolean }, key: string) =>
+    request<OpResult>('POST', '/api/stock/receipt', data, key),
+  withdraw: (data: { balanceId: string; quantity?: number; reason?: string; exhausted?: boolean }, key: string) =>
+    request<OpResult>('POST', '/api/stock/withdraw', data, key),
+  transfer: (data: { balanceId: string; quantity?: number; toContainerId?: string; toLocationId?: string; reason?: string }, key: string) =>
+    request<OpResult>('POST', '/api/stock/transfer', data, key),
+  count: (data: { balanceId: string; counted?: number; present?: boolean; reason?: string }, key: string) =>
+    request<OpResult>('POST', '/api/stock/count', data, key),
+  reverse: (movementId: string, reason: string, key: string) =>
+    request<OpResult>('POST', `/api/stock/movements/${movementId}/reverse`, { reason }, key),
+  loans: (all = false) => request<{ loans: Loan[] }>('GET', `/api/loans?all=${all}`),
+  lend: (data: { balanceId: string; quantity?: number; dueDate?: string; borrowerId?: string; notes?: string }, key: string) =>
+    request<OpResult>('POST', '/api/loans', data, key),
+  returnLoan: (id: string, data: PlaceRef & { notes?: string }, key: string) =>
+    request<OpResult>('POST', `/api/loans/${id}/return`, data, key),
+
   tree: () => request<{ locations: TreeLocation[]; containers: TreeContainer[] }>('GET', '/api/tree'),
   scan: (code: string) => request<ScanHit>('GET', `/api/scan/${encodeURIComponent(code)}`),
   basicUsers: () => request<{ users: Array<{ id: string; fullName: string }> }>('GET', '/api/users/basic'),
@@ -286,3 +461,33 @@ export const formatDateTime = (iso: string | null) =>
     : 'Nunca';
 
 export const errorMessage = (e: unknown) => (e instanceof ApiError ? e.message : 'Ha ocurrido un error inesperado');
+
+/** Cantidad con la unidad, en formato español: «1.250 ud», «6,25 m». */
+export const formatQty = (n: number | null | undefined, unit: string, tracking?: Tracking) => {
+  if (tracking === 'NOT_TRACKED') return 'Hay';
+  if (n === null || n === undefined) return '—';
+  const text = `${n.toLocaleString('es-ES', { maximumFractionDigits: 4 })} ${unit}`;
+  return tracking === 'ESTIMATED' ? `≈ ${text}` : text;
+};
+
+export const TRACKING_NAMES: Record<Tracking, string> = {
+  EXACT: 'Exacto',
+  ESTIMATED: 'Aproximado',
+  NOT_TRACKED: 'Sin contar',
+};
+
+export const MOVEMENT_NAMES: Record<string, string> = {
+  RECEIPT: 'Entrada',
+  WITHDRAWAL: 'Retirada',
+  RETURN: 'Devolución',
+  TRANSFER: 'Traslado',
+  CONTAINER_MOVE: 'Movimiento de contenedor',
+  COUNT: 'Recuento',
+  ADJUSTMENT: 'Ajuste',
+  LOAN_OUT: 'Préstamo',
+  LOAN_RETURN: 'Devolución de préstamo',
+  REVERSAL: 'Reverso',
+};
+
+export const formatDate = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—';

@@ -5,6 +5,7 @@ import {
 } from '../api';
 import { Breadcrumbs, ContainerCard, containerListConfig, LabelPanel, LocationCard, locationListConfig, ViewSwitch } from '../components/Common';
 import { useListControls } from '../components/ListControls';
+import { StockSection } from '../components/Stock';
 import { WarehouseTree } from './Tree';
 import { navigate } from '../router';
 
@@ -202,6 +203,8 @@ export function WarehousePage({ user, locationId }: { user: User; locationId?: s
           )}
         </section>
       )}
+
+      {loc && <StockSection user={user} place={{ locationId: loc.id }} placeCode={loc.code} active={loc.active} />}
 
       {roots && roots.length === 0 && (
         <p className="alert alert-info">
@@ -558,13 +561,19 @@ function ExportPanel(props: { onClose: () => void }) {
   return (
     <div className="card form">
       <h3>Exportar a Excel</h3>
-      <p className="muted">Se descarga un fichero .xlsx con todo el almacén, tal como está ahora.</p>
+      <p className="muted">Se descarga un fichero .xlsx con todo, tal como está ahora.</p>
       <div className="stack">
         <a className="btn" href="/api/export/ubicaciones.xlsx" download>
           Ubicaciones
         </a>
         <a className="btn" href="/api/export/contenedores.xlsx" download>
           Contenedores
+        </a>
+        <a className="btn" href="/api/export/materiales.xlsx" download>
+          Materiales
+        </a>
+        <a className="btn" href="/api/export/stock.xlsx" download>
+          Stock por sitio
         </a>
       </div>
       <p className="muted small">Es una copia para consultar. Los cambios hechos en el Excel no vuelven al sistema.</p>

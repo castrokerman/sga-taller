@@ -3,6 +3,7 @@ import { api, ApiError, errorMessage, formatDateTime, newOperationKey, type Cont
 import { Breadcrumbs, ContainerCard, containerListConfig, LabelPanel } from '../components/Common';
 import { useListControls } from '../components/ListControls';
 import { Scanner } from '../components/Scanner';
+import { StockSection } from '../components/Stock';
 import { ContainerForm } from './Warehouse';
 
 type Panel = 'none' | 'move' | 'inside' | 'labels' | 'edit' | 'duplicate';
@@ -169,41 +170,10 @@ export function ContainerPage({ user, containerId }: { user: User; containerId: 
         )}
       </section>
 
-      <section>
-        <h3>Material</h3>
-        {detail.content.length > 0 ? (
-          <div className="table-wrap card">
-            <table>
-              <thead>
-                <tr>
-                  <th>Referencia</th>
-                  <th>Descripción</th>
-                  <th>Lote</th>
-                  <th>Cantidad</th>
-                </tr>
-              </thead>
-              <tbody>
-                {detail.content.map((m) => (
-                  <tr key={m.stockBalanceId}>
-                    <td className="mono">{m.internalRef}</td>
-                    <td>{m.description}</td>
-                    <td>{m.lotCode ?? '—'}</td>
-                    <td className="nowrap">
-                      {m.quantity === null ? 'Sin control' : `${m.quantity} ${m.unitCode}`}
-                      {m.quantityTracking === 'ESTIMATED' && <span className="badge badge-warn"> Estimada</span>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p className="muted">Sin material registrado. El registro de material llega en la Fase 3.</p>
-        )}
-      </section>
+      <StockSection user={user} place={{ containerId: c.id }} placeCode={c.code} active={active} />
 
       <section>
-        <h3>Historial</h3>
+        <h3>Historial del contenedor</h3>
         <div className="table-wrap card">
           <table>
             <thead>
