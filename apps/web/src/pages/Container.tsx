@@ -4,6 +4,7 @@ import { Breadcrumbs, ContainerCard, containerListConfig, LabelPanel } from '../
 import { useListControls } from '../components/ListControls';
 import { Scanner } from '../components/Scanner';
 import { StockSection } from '../components/Stock';
+import { ItemExtras } from '../components/ItemExtras';
 import { BulkContainers, ContainerForm } from './Warehouse';
 
 type Panel = 'none' | 'move' | 'inside' | 'labels' | 'edit' | 'duplicate' | 'bulk';
@@ -179,6 +180,8 @@ export function ContainerPage({ user, containerId }: { user: User; containerId: 
       </section>
 
       <StockSection user={user} place={{ containerId: c.id }} placeCode={c.code} active={active} />
+
+      <ItemExtras user={user} entityType="container" entityId={c.id} />
 
       <section>
         <h3>Historial del contenedor</h3>

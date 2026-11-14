@@ -17,6 +17,8 @@ export interface BulkColumn<T> {
   get: (row: T) => CellValue;
   options?: Array<{ value: string; label: string }>;
   prefix?: (row: T) => string | null;
+  /** Sangría (niveles) para ver la jerarquía, como en el árbol. */
+  indent?: (row: T) => number;
   width?: string;
   placeholder?: string;
   required?: boolean;
@@ -37,8 +39,10 @@ export function BulkEditor<T extends { id: string }>(props: {
 }) {
   const { rows, columns } = props;
   const [edits, setEdits] = useState<Record<string, Record<string, CellValue>>>({});
+  const startValue = (c?: BulkColumn<T>): CellValue =>
+    c?.type === 'check' ? true : c?.type === 'select' && c.required ? c.options?.[0]?.value ?? '' : '';
   const [fillKey, setFillKey] = useState(columns.find((c) => c.fillAll)?.key ?? '');
-  const [fillValue, setFillValue] = useState<CellValue>('');
+  const [fillValue, setFillValue] = useState<CellValue>(() => startValue(columns.find((c) => c.fillAll)));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -99,14 +103,14 @@ export function BulkEditor<T extends { id: string }>(props: {
       {fillable.length > 0 && (
         <div className="bulk-fill">
           <span>Poner en las {rows.length} filas:</span>
-          <select value={fillKey} onChange={(e) => { setFillKey(e.target.value); setFillValue(''); }}>
+          <select value={fillKey} onChange={(e) => { setFillKey(e.target.value); setFillValue(startValue(columns.find((c) => c.key === e.target.value))); }}>
             {fillable.map((c) => (
               <option key={c.key} value={c.key}>
                 {c.label}
               </option>
             ))}
           </select>
-          {fillCol && <Editor col={fillCol} value={fillValue === '' && fillCol.type === 'check' ? false : fillValue} onChange={setFillValue} />}
+          {fillCol && <Editor col={fillCol} value={fillValue} onChange={setFillValue} />}
           <button type="button" className="btn btn-small" onClick={fill}>
             Aplicar a todas
           </button>
@@ -128,7 +132,11 @@ export function BulkEditor<T extends { id: string }>(props: {
             {rows.map((row) => (
               <tr key={row.id} className={edits[row.id] ? 'row-changed' : undefined}>
                 {columns.map((c) => (
-                  <td key={c.key} className={changed(row, c) ? 'changed' : undefined}>
+                  <td
+                    key={c.key}
+                    className={changed(row, c) ? 'changed' : undefined}
+                    style={c.indent ? { paddingLeft: `${0.35 + c.indent(row) * 1.1}rem` } : undefined}
+                  >
                     {c.type === 'static' ? (
                       <span className="mono">{String(c.get(row))}</span>
                     ) : (

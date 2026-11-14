@@ -11,6 +11,11 @@ export interface SortOption<T> {
   value: (item: T) => string | number | null | undefined;
   /** Sentido al elegirlo: los números y fechas suelen interesar de mayor a menor. */
   defaultDir?: 'asc' | 'desc';
+  /**
+   * Orden alfanumérico estricto, carácter a carácter: E1, E10, E2.
+   * Sin esto, los números del texto se ordenan por su valor: E1, E2, E10.
+   */
+  alphanumeric?: boolean;
 }
 
 export interface FilterOption<T> {
@@ -35,6 +40,13 @@ export interface ListConfig<T> {
 type Dir = 'asc' | 'desc';
 
 const collator = new Intl.Collator('es', { numeric: true, sensitivity: 'base' });
+
+/** Carácter a carácter, sin mayúsculas ni tildes: los dígitos van antes que las letras y el guion antes que ambos. */
+const alphanumericCompare = (a: string, b: string) => {
+  const x = normalize(a);
+  const y = normalize(b);
+  return x < y ? -1 : x > y ? 1 : 0;
+};
 
 /** Minúsculas y sin tildes, para buscar sin que importen. */
 export const normalize = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
@@ -93,7 +105,12 @@ export function useListControls<T>(items: T[], config: ListConfig<T>) {
         // Los vacíos van siempre al final, sea cual sea el sentido.
         if (empty(va)) return empty(vb) ? 0 : 1;
         if (empty(vb)) return -1;
-        const cmp = typeof va === 'number' && typeof vb === 'number' ? va - vb : collator.compare(String(va), String(vb));
+        const cmp =
+          typeof va === 'number' && typeof vb === 'number'
+            ? va - vb
+            : option.alphanumeric
+              ? alphanumericCompare(String(va), String(vb))
+              : collator.compare(String(va), String(vb));
         return cmp * factor;
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps

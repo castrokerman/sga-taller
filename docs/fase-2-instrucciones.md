@@ -106,6 +106,11 @@ en tabla»**. Abre las filas que se ven en ese momento como una hoja de cálculo
   ninguna y el mensaje dice cuál es.
 - Para editar solo unas cuantas, filtra primero la lista: la tabla coge
   únicamente las que se ven.
+- También funciona desde la **vista de árbol** de «Almacén»: «Editar en
+  tabla» coge todo lo que esté desplegado (o lo encontrado al buscar), con
+  sangría para ver qué va dentro de qué. Pulsa «Desplegar todo» antes para
+  editarlo todo. Si están visibles los contenedores, salen en una segunda
+  tabla.
 
 En ubicaciones se puede cambiar la parte final del código, el nombre, el tipo,
 la capacidad, la descripción y si está activa. En contenedores, la
@@ -151,6 +156,9 @@ Encima de cada lista de ubicaciones, contenedores o usuarios hay una barra:
   mayúsculas, y resalta en amarillo lo que coincide.
 - **«Ordenar por»** y el botón de la flecha, que invierte el sentido. Cada
   lista recuerda en ese dispositivo el último orden elegido.
+- Por código hay dos órdenes: **«Código (1, 2, 10)»** ordena los números por
+  su valor, y **«Código alfanumérico (1, 10, 2)»** compara carácter a
+  carácter, como un ordenador o Excel.
 - **«Filtros»** abre filtros por campos. Por ejemplo, en contenedores: tipo,
   responsable, política y si llevan otros contenedores dentro. En ubicaciones:
   tipo y estado (vacías, con contenido o con la capacidad superada).

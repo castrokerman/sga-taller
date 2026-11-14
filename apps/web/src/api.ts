@@ -91,6 +91,8 @@ export interface LocationSummary {
   /** Parte propia del código; el resto lo pone la ubicación superior. */
   segment: string;
   parentCode: string | null;
+  /** Foto principal, si tiene. */
+  photoId: string | null;
   name: string;
   description: string | null;
   parentId: string | null;
@@ -121,6 +123,7 @@ export interface ContainerSummary {
   createdAt: string;
   retiredAt: string | null;
   childCount: number;
+  photoId: string | null;
 }
 
 export interface PathItem {
@@ -173,25 +176,9 @@ export interface MoveResult extends ContainerDetail {
   destination: string;
 }
 
-export interface TreeLocation {
-  id: string;
-  parentId: string | null;
-  code: string;
-  name: string;
-  typeName: string;
-  maxCapacity: number | null;
-  containerCount: number;
-  childCount: number;
-}
-
-export interface TreeContainer {
-  id: string;
-  code: string;
-  typeName: string;
-  description: string | null;
-  locationId: string | null;
-  parentContainerId: string | null;
-}
+/** El árbol trae los mismos datos que las listas, para poder editarlo en tabla. */
+export type TreeLocation = LocationSummary;
+export type TreeContainer = ContainerSummary;
 
 
 // ---- Inventario ------------------------------------------------------------
@@ -239,6 +226,7 @@ export interface Material {
   needsRecount: boolean;
   lowStock: boolean;
   onLoan: number;
+  photoId: string | null;
 }
 
 export type MaterialInput = Partial<Omit<Material,
@@ -333,6 +321,49 @@ export interface OpResult {
 }
 
 export interface PlaceRef { containerId?: string; locationId?: string }
+
+
+// ---- Fotos, anotaciones y avisos -----------------------------------------------
+
+export type EntityType = 'location' | 'container' | 'material';
+
+export interface Photo {
+  id: string;
+  position: number;
+  width: number;
+  height: number;
+  caption: string | null;
+  mimeType: string;
+  bytes: number;
+  uploadedAt: string;
+  uploadedById: string;
+  uploadedBy: string;
+}
+
+export interface Note {
+  id: string;
+  body: string;
+  notify: boolean;
+  createdAt: string;
+  createdById: string;
+  createdBy: string;
+  recipients: string[];
+}
+
+export interface AppNotification {
+  id: string;
+  createdAt: string;
+  readAt: string | null;
+  noteId: string;
+  body: string;
+  entityType: EntityType;
+  entityId: string;
+  entityCode: string | null;
+  entityName: string | null;
+  createdBy: string;
+}
+
+export const photoUrl = (id: string, size: 'thumb' | 'image' = 'thumb') => `/api/photos/${id}/${size}`;
 
 export interface LocationType { code: string; name: string; active: boolean }
 export interface ContainerType { code: string; name: string; codePrefix: string; defaultReusePolicy: string; active: boolean }
@@ -437,6 +468,26 @@ export const api = {
     request<OpResult>('POST', '/api/loans', data, key),
   returnLoan: (id: string, data: PlaceRef & { notes?: string }, key: string) =>
     request<OpResult>('POST', `/api/loans/${id}/return`, data, key),
+
+
+  photos: (entityType: EntityType, entityId: string) =>
+    request<{ photos: Photo[] }>('GET', `/api/photos?entityType=${entityType}&entityId=${entityId}`),
+  addPhoto: (data: { entityType: EntityType; entityId: string; image: string; thumbnail: string; width: number; height: number }, key: string) =>
+    request<{ photo: Photo }>('POST', '/api/photos', data, key),
+  makePrimaryPhoto: (id: string) => request<{ ok: true }>('POST', `/api/photos/${id}/primary`, {}),
+  deletePhoto: (id: string) => request<{ ok: true }>('DELETE', `/api/photos/${id}`),
+  notes: (entityType: EntityType, entityId: string) =>
+    request<{ notes: Note[] }>('GET', `/api/notes?entityType=${entityType}&entityId=${entityId}`),
+  noteRecipients: (entityType: EntityType, entityId: string) =>
+    request<{ suggested: string[]; users: Array<{ id: string; fullName: string; roles: string[] }> }>(
+      'GET', `/api/notes/recipients?entityType=${entityType}&entityId=${entityId}`,
+    ),
+  addNote: (data: { entityType: EntityType; entityId: string; body: string; notify: boolean; recipientIds?: string[] }, key: string) =>
+    request<{ note: Note; notified: number }>('POST', '/api/notes', data, key),
+  notifications: (all = false) => request<{ notifications: AppNotification[] }>('GET', `/api/notifications?all=${all}`),
+  unreadCount: () => request<{ unread: number }>('GET', '/api/notifications/count'),
+  markRead: (id: string) => request<{ ok: true }>('POST', `/api/notifications/${id}/read`, {}),
+  markAllRead: () => request<{ marked: number }>('POST', '/api/notifications/read-all', {}),
 
   tree: () => request<{ locations: TreeLocation[]; containers: TreeContainer[] }>('GET', '/api/tree'),
   scan: (code: string) => request<ScanHit>('GET', `/api/scan/${encodeURIComponent(code)}`),

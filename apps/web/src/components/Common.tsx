@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { api, errorMessage, type ContainerSummary, type LabelFormat, type LabelRef, type LocationSummary, type PathItem } from '../api';
+import { api, errorMessage, photoUrl, type ContainerSummary, type LabelFormat, type LabelRef, type LocationSummary, type PathItem } from '../api';
 import { navigate } from '../router';
 import { Highlight, optionsFrom, type ListConfig } from './ListControls';
 
@@ -29,6 +29,7 @@ export function LocationCard({ l, q = '' }: { l: LocationSummary; q?: string }) 
   const over = l.maxCapacity !== null && l.containerCount > l.maxCapacity;
   return (
     <button className="item" onClick={() => navigate(`almacen/${l.id}`)}>
+      {l.photoId && <img className="item-photo" src={photoUrl(l.photoId)} alt="" loading="lazy" />}
       <span className="item-main">
         <strong><Highlight text={l.code} query={q} /></strong>
         <span><Highlight text={l.name} query={q} /></span>
@@ -49,6 +50,7 @@ export function LocationCard({ l, q = '' }: { l: LocationSummary; q?: string }) 
 export function ContainerCard({ c, q = '' }: { c: ContainerSummary; q?: string }) {
   return (
     <button className="item item-container" onClick={() => navigate(`contenedor/${c.id}`)}>
+      {c.photoId && <img className="item-photo" src={photoUrl(c.photoId)} alt="" loading="lazy" />}
       <span className="item-main">
         <strong><Highlight text={c.code} query={q} /></strong>
         <span><Highlight text={c.description ?? c.typeName} query={q} /></span>
@@ -153,7 +155,8 @@ export function locationListConfig(items: LocationSummary[], storageKey: string)
     noun: 'ubicaciones',
     text: (l) => [l.code, l.name, l.description],
     sorts: [
-      { key: 'codigo', label: 'Código', value: (l) => l.code },
+      { key: 'codigo', label: 'Código (1, 2, 10)', value: (l) => l.code },
+      { key: 'codigo-alfa', label: 'Código alfanumérico (1, 10, 2)', value: (l) => l.code, alphanumeric: true },
       { key: 'nombre', label: 'Nombre', value: (l) => l.name },
       { key: 'tipo', label: 'Tipo', value: (l) => l.typeName },
       { key: 'contenedores', label: 'Nº de contenedores', value: (l) => l.containerCount, defaultDir: 'desc' },
@@ -183,7 +186,8 @@ export function containerListConfig(items: ContainerSummary[], storageKey: strin
     noun: 'contenedores',
     text: (c) => [c.code, c.description, c.typeName, c.responsibleName],
     sorts: [
-      { key: 'codigo', label: 'Código', value: (c) => c.code },
+      { key: 'codigo', label: 'Código (1, 2, 10)', value: (c) => c.code },
+      { key: 'codigo-alfa', label: 'Código alfanumérico (1, 10, 2)', value: (c) => c.code, alphanumeric: true },
       { key: 'tipo', label: 'Tipo', value: (c) => c.typeName },
       { key: 'descripcion', label: 'Descripción', value: (c) => c.description },
       { key: 'responsable', label: 'Responsable', value: (c) => c.responsibleName },
