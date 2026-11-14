@@ -11,6 +11,8 @@ import { containerRoutes } from './routes/containers.js';
 import { exportRoutes } from './routes/export.js';
 import { labelRoutes } from './routes/labels.js';
 import { locationRoutes } from './routes/locations.js';
+import { materialRoutes } from './routes/materials.js';
+import { stockRoutes } from './routes/stock.js';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
@@ -86,6 +88,8 @@ export async function buildApp(deps: { pool: pg.Pool; config: Config }): Promise
   containerRoutes(app, { pool });
   labelRoutes(app, { pool });
   exportRoutes(app, { pool });
+  materialRoutes(app, { pool });
+  stockRoutes(app, { pool });
 
   return app;
 }

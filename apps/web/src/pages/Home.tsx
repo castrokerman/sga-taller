@@ -13,9 +13,10 @@ interface Tile {
 const TILES: Tile[] = [
   { title: 'Escáner QR', text: 'Escanear ubicaciones y contenedores', path: 'escaner', permission: 'container.read' },
   { title: 'Almacén', text: 'Ubicaciones y contenedores', path: 'almacen', permission: 'location.read' },
-  { title: 'Buscador', text: 'Materiales, lotes y proyectos', phase: 3 },
+  { title: 'Materiales', text: 'Catálogo, dónde está cada cosa y cuánto hay', path: 'materiales', permission: 'material.read' },
+  { title: 'Movimientos', text: 'Entradas, retiradas, traslados y recuentos', path: 'movimientos', permission: 'stock.read' },
+  { title: 'Préstamos', text: 'Herramientas prestadas y fechas de devolución', path: 'prestamos', permission: 'stock.read' },
   { title: 'Mapa', text: 'Plano del taller para ir a cada zona', phase: 'later' },
-  { title: 'Movimientos', text: 'Entradas, salidas y traslados', phase: 3 },
   { title: 'Autorizaciones', text: 'Solicitudes de material restringido', phase: 4 },
   { title: 'Documentación', text: 'Certificados y documentos técnicos', phase: 5 },
   { title: 'Usuarios', text: 'Altas, roles y contraseñas', path: 'usuarios', permission: 'admin.users.manage' },
@@ -31,7 +32,7 @@ export function HomePage({ user }: { user: User }) {
   return (
     <>
       <h2>Hola, {user.fullName.split(' ')[0]}</h2>
-      <p className="muted">El sistema está en construcción. El registro de material llega en la Fase 3.</p>
+      <p className="muted">Escanea una caja o una ubicación para ver qué hay y sacar o meter material.</p>
 
       <div className="tiles">
         {tiles.map((t) =>
