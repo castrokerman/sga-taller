@@ -8,6 +8,7 @@ import { AppError } from './errors.js';
 import { adminRoutes } from './routes/admin.js';
 import { authRoutes } from './routes/auth.js';
 import { containerRoutes } from './routes/containers.js';
+import { exportRoutes } from './routes/export.js';
 import { labelRoutes } from './routes/labels.js';
 import { locationRoutes } from './routes/locations.js';
 
@@ -84,6 +85,7 @@ export async function buildApp(deps: { pool: pg.Pool; config: Config }): Promise
   locationRoutes(app, { pool });
   containerRoutes(app, { pool });
   labelRoutes(app, { pool });
+  exportRoutes(app, { pool });
 
   return app;
 }

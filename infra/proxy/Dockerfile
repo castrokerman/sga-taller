@@ -10,4 +10,5 @@ RUN npm run build
 
 FROM caddy:2-alpine
 COPY infra/proxy/Caddyfile /etc/caddy/Caddyfile
+COPY infra/proxy/movil /srv-movil
 COPY --from=web /web/dist /srv

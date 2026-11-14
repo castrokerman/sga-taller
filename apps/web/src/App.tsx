@@ -75,8 +75,11 @@ function Shell(props: { user: User; onLogout: () => void; withNav?: boolean; chi
     <div className="shell">
       <header className="topbar">
         <a className="brand" href={props.withNav ? '#/inicio' : undefined}>
-          <img src="/icono.svg" alt="" width="36" height="36" />
-          <span>SGA Taller</span>
+          <img className="brand-logo" src="/logo-idom.png" alt="IDOM" />
+          <span className="brand-text">
+            <strong>ADA</strong>
+            <span>Sistema de gestión de almacén</span>
+          </span>
         </a>
         <div className="topbar-user">
           <div className="who">

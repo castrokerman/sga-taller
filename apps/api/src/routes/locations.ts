@@ -4,6 +4,8 @@ import { writeAudit } from '../audit.js';
 import { requirePermission } from '../auth/guard.js';
 import { withTransaction } from '../db/tx.js';
 import { badRequest, conflict, notFound } from '../errors.js';
+import { idempotent } from '../idempotency.js';
+import { incrementCode, incrementName, rebaseCode } from '../warehouse/codes.js';
 import { CONTAINER_SELECT, LOCATION_SELECT, locationPath } from '../warehouse/queries.js';
 import { newQrToken } from '../warehouse/tokens.js';
 
@@ -11,6 +13,34 @@ const CODE_PATTERN = '^[A-Z0-9][A-Z0-9-]{0,39}$';
 const TYPE_CODE_PATTERN = '^[A-Z][A-Z0-9_]{1,29}$';
 const uuid = { type: 'string', format: 'uuid' } as const;
 const idParams = { type: 'object', required: ['id'], properties: { id: uuid } } as const;
+/** Máximo de ubicaciones de dentro que se copian al duplicar con su contenido. */
+const MAX_DUPLICATE_DESCENDANTS = 500;
+
+interface Descendant {
+  id: string;
+  parent_id: string;
+  code: string;
+}
+
+/** Ubicaciones activas que cuelgan de la indicada, de arriba abajo. */
+async function activeDescendants(db: pg.Pool | pg.PoolClient, id: string): Promise<Descendant[]> {
+  const r = await db.query(
+    `WITH RECURSIVE down AS (
+       SELECT id, parent_id, code, 1 AS depth FROM storage_location WHERE parent_id = $1 AND active
+       UNION ALL
+       SELECT l.id, l.parent_id, l.code, down.depth + 1
+         FROM storage_location l JOIN down ON l.parent_id = down.id
+        WHERE l.active
+     )
+     SELECT id, parent_id, code FROM down ORDER BY depth, code`,
+    [id],
+  );
+  return r.rows;
+}
+
+async function codeExists(db: pg.Pool | pg.PoolClient, code: string): Promise<boolean> {
+  return Boolean((await db.query(`SELECT 1 FROM storage_location WHERE code = $1`, [code])).rowCount);
+}
 
 async function getLocation(db: pg.Pool | pg.PoolClient, id: string) {
   const r = await db.query(`${LOCATION_SELECT} WHERE l.id = $1`, [id]);
@@ -156,6 +186,124 @@ export function locationRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
       reply.code(201);
       return { location };
     },
+  );
+
+  // ---- Duplicar -----------------------------------------------------------
+  // Propuesta para el formulario: el siguiente código libre y cuántas ubicaciones
+  // de dentro se copiarían.
+  app.get(
+    '/api/locations/:id/duplicate-proposal',
+    { preHandler: requirePermission('location.manage'), schema: { params: idParams } },
+    async (request) => {
+      const { id } = request.params as { id: string };
+      const original = await getLocation(pool, id);
+      if (!original) throw notFound('La ubicación no existe');
+
+      let code = incrementCode(original.code);
+      for (let i = 0; i < 200 && (await codeExists(pool, code)); i++) code = incrementCode(code);
+
+      const descendants = await activeDescendants(pool, id);
+      const notRenamable = descendants.find((d) => !d.code.startsWith(original.code));
+      return {
+        code,
+        name: incrementName(original.name),
+        descendantCount: descendants.length,
+        // Para copiar lo de dentro, sus códigos deben empezar por el del original.
+        childrenCopyable: !notRenamable && descendants.length <= MAX_DUPLICATE_DESCENDANTS,
+        blockingChildCode: notRenamable?.code ?? null,
+      };
+    },
+  );
+
+  // Crea una copia de la ubicación en el mismo sitio, con QR nuevo.
+  // Con includeChildren copia también las ubicaciones de dentro (no los contenedores),
+  // cambiando el comienzo de sus códigos: ALM-A-P01-E01-N02 → ALM-A-P01-E02-N02.
+  app.post(
+    '/api/locations/:id/duplicate',
+    {
+      preHandler: requirePermission('location.manage'),
+      schema: {
+        params: idParams,
+        body: {
+          type: 'object', required: ['code', 'name'], additionalProperties: false,
+          properties: {
+            code: { type: 'string', pattern: CODE_PATTERN },
+            name: { type: 'string', minLength: 1, maxLength: 120 },
+            includeChildren: { type: 'boolean', default: false },
+          },
+        },
+      },
+    },
+    (request, reply) =>
+      idempotent(pool, request, reply, async () => {
+        const { id } = request.params as { id: string };
+        const body = request.body as { code: string; name: string; includeChildren: boolean };
+
+        const result = await withTransaction(pool, async (c) => {
+          const original = await c.query(`SELECT * FROM storage_location WHERE id = $1`, [id]);
+          const src = original.rows[0];
+          if (!src) throw notFound('La ubicación no existe');
+          if (!src.active) throw conflict('No se puede duplicar una ubicación desactivada', 'UBICACION_INACTIVA');
+          await assertParent(c, src.parent_id);
+
+          const descendants = body.includeChildren ? await activeDescendants(c, id) : [];
+          if (descendants.length > MAX_DUPLICATE_DESCENDANTS) {
+            throw conflict(
+              `Tiene ${descendants.length} ubicaciones dentro; el máximo para duplicar de una vez es ${MAX_DUPLICATE_DESCENDANTS}`,
+              'DEMASIADAS_UBICACIONES',
+            );
+          }
+
+          // Calcula y comprueba todos los códigos nuevos antes de crear nada.
+          const plan = descendants.map((d) => ({ ...d, newCode: rebaseCode(d.code, src.code, body.code) }));
+          const stuck = plan.find((d) => d.newCode === null);
+          if (stuck) {
+            throw conflict(
+              `La ubicación ${stuck.code} no empieza por ${src.code}, así que no se puede renombrar en la copia. Duplica sin lo de dentro o cambia su código`,
+              'CODIGO_HIJO_NO_RENOMBRABLE',
+            );
+          }
+          const newCodes = [body.code, ...plan.map((d) => d.newCode!)];
+          if (new Set(newCodes).size !== newCodes.length) {
+            throw conflict('La copia repetiría algún código', 'CODIGO_DUPLICADO');
+          }
+          const taken = await c.query(`SELECT code FROM storage_location WHERE code = ANY($1) ORDER BY code LIMIT 1`, [newCodes]);
+          if (taken.rowCount) {
+            throw conflict(`Ya existe una ubicación con el código ${taken.rows[0].code}`, 'CODIGO_DUPLICADO');
+          }
+
+          const copy = async (row: Record<string, unknown>, code: string, name: string, parentId: unknown) => {
+            const r = await c.query(
+              `INSERT INTO storage_location
+                 (qr_token, code, name, description, parent_id, location_type_id, max_capacity,
+                  capacity_unit, allowed_hazard_classes, restrictions_note)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+              [
+                newQrToken(), code, name, row.description, parentId, row.location_type_id, row.max_capacity,
+                row.capacity_unit, row.allowed_hazard_classes, row.restrictions_note,
+              ],
+            );
+            return r.rows[0].id as string;
+          };
+
+          const rootId = await copy(src, body.code, body.name.trim(), src.parent_id);
+          const newIds = new Map<string, string>([[id, rootId]]);
+          for (const d of plan) {
+            const full = (await c.query(`SELECT * FROM storage_location WHERE id = $1`, [d.id])).rows[0];
+            newIds.set(d.id, await copy(full, d.newCode!, full.name, newIds.get(d.parent_id)));
+          }
+
+          await writeAudit(c, {
+            userId: request.user!.id, action: 'ubicacion.duplicado', entityType: 'storage_location', entityId: rootId,
+            after: { original: src.code, copia: body.code, ubicacionesDeDentro: plan.length },
+            ip: request.ip, requestId: request.id,
+          });
+          return { location: await getLocation(c, rootId), created: 1 + plan.length };
+        });
+
+        reply.code(201);
+        return result;
+      }),
   );
 
   app.patch(

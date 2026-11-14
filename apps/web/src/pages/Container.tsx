@@ -4,7 +4,7 @@ import { Breadcrumbs, ContainerCard, LabelPanel } from '../components/Common';
 import { Scanner } from '../components/Scanner';
 import { ContainerForm } from './Warehouse';
 
-type Panel = 'none' | 'move' | 'inside' | 'labels' | 'edit';
+type Panel = 'none' | 'move' | 'inside' | 'labels' | 'edit' | 'duplicate';
 
 const place = (location: string | null, container: string | null) => location ?? container ?? '—';
 
@@ -116,6 +116,11 @@ export function ContainerPage({ user, containerId }: { user: User; containerId: 
           </button>
         )}
         {active && can('container.manage') && (
+          <button className="btn" onClick={() => open('duplicate')}>
+            Duplicar
+          </button>
+        )}
+        {active && can('container.manage') && (
           <button className="btn btn-danger" onClick={retire}>
             Retirar
           </button>
@@ -129,6 +134,9 @@ export function ContainerPage({ user, containerId }: { user: User; containerId: 
           onCancel={() => setPanel('none')}
           onDone={(codes) => done(`Creado${codes.length > 1 ? 's' : ''} dentro: ${codes.join(', ')}`)}
         />
+      )}
+      {panel === 'duplicate' && (
+        <DuplicateContainerForm detail={detail} onCancel={() => setPanel('none')} onDone={(text) => done(text)} />
       )}
       {panel === 'edit' && <EditContainerForm detail={detail} onCancel={() => setPanel('none')} onDone={() => done('Cambios guardados')} />}
       {panel === 'labels' && (
@@ -369,6 +377,74 @@ function EditContainerForm(props: { detail: ContainerDetail; onCancel: () => voi
         </button>
         <button className="btn btn-primary" disabled={busy}>
           Guardar
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/** Duplicar un contenedor: mismo tipo, descripción, responsable y política, en el mismo sitio. */
+function DuplicateContainerForm(props: { detail: ContainerDetail; onCancel: () => void; onDone: (text: string) => void }) {
+  const c = props.detail.container;
+  const [quantity, setQuantity] = useState('1');
+  const [includeChildren, setIncludeChildren] = useState(false);
+  const [warning, setWarning] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [key, setKey] = useState(newOperationKey);
+
+  const create = async (force: boolean, operationKey: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await api.duplicateContainer(c.id, { quantity: Number(quantity) || 1, includeChildren, force }, operationKey);
+      const codes = r.containers.map((k) => k.code);
+      props.onDone(`Creado${codes.length > 1 ? 's' : ''}: ${codes.join(', ')}${includeChildren ? ', cada uno con sus contenedores de dentro' : ''}`);
+    } catch (e) {
+      if (e instanceof ApiError && e.code === 'CAPACIDAD_SUPERADA') setWarning(e.message);
+      else setError(errorMessage(e));
+      setKey(newOperationKey());
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form className="card form" onSubmit={(e) => { e.preventDefault(); void create(false, key); }}>
+      <h3>Duplicar {c.code}</h3>
+      <p className="muted">
+        Las copias serán {c.typeName.toLowerCase()}s iguales, en el mismo sitio, cada una con su propio código y QR. El
+        material no se copia.
+      </p>
+      <label className="field">
+        <span>Cuántas copias</span>
+        <input value={quantity} onChange={(e) => setQuantity(e.target.value.replace(/\D/g, '').slice(0, 2))} inputMode="numeric" onFocus={(e) => e.target.select()} required autoFocus />
+        <small className="muted">Hasta 50 de una vez.</small>
+      </label>
+      {props.detail.children.length > 0 && (
+        <label className="check">
+          <input type="checkbox" checked={includeChildren} onChange={(e) => setIncludeChildren(e.target.checked)} />
+          <span>
+            <strong>Copiar también los contenedores de dentro</strong>
+            <small className="muted"> — vacíos, con códigos nuevos</small>
+          </span>
+        </label>
+      )}
+      {warning && (
+        <div className="alert alert-warn">
+          <p>{warning}. ¿Crear de todos modos?</p>
+          <button type="button" className="btn" disabled={busy} onClick={() => create(true, key)}>
+            Sí, crear de todos modos
+          </button>
+        </div>
+      )}
+      {error && <p className="alert alert-error">{error}</p>}
+      <div className="actions">
+        <button type="button" className="btn" onClick={props.onCancel}>
+          Cancelar
+        </button>
+        <button className="btn btn-primary" disabled={busy}>
+          {busy ? 'Creando…' : 'Crear copias'}
         </button>
       </div>
     </form>

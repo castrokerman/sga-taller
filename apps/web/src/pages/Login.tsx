@@ -25,10 +25,10 @@ export function LoginPage({ onLogin }: { onLogin: (user: User) => void }) {
     <div className="login">
       <form className="card login-card" onSubmit={submit}>
         <div className="login-brand">
-          <img src="/icono.svg" alt="" width="56" height="56" />
+          <img src="/logo-idom.png" alt="IDOM" />
           <div>
-            <h1>SGA Taller</h1>
-            <p className="muted">Gestión de almacén</p>
+            <h1>ADA</h1>
+            <p className="muted">Sistema de gestión de almacén</p>
           </div>
         </div>
 

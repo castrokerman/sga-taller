@@ -95,7 +95,10 @@ export function Scanner(props: { onCode: (code: string) => void; busy?: boolean;
         {camera === 'unavailable' && (
           <p>
             La cámara no está disponible en este dispositivo o esta conexión. Escribe el código abajo o usa un lector
-            USB.
+            USB.{' '}
+            <a className="scanner-link" href={`http://${window.location.hostname}/movil`}>
+              Cómo activar la cámara en el móvil
+            </a>
           </p>
         )}
       </div>

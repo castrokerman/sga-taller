@@ -79,6 +79,21 @@ contenedores admite. Si se supera, el sistema avisa y deja continuar.
 **Cambiar un código** no cambia su QR: la etiqueta que ya esté pegada sigue
 valiendo.
 
+**Duplicar.** Para crear muchas ubicaciones iguales, abre una y pulsa
+«Duplicar», junto a «Editar». El sistema propone el siguiente código libre
+(`ALM-A-P01-E01` → `ALM-A-P01-E02`) y el nombre con el número siguiente.
+
+- Si la ubicación tiene otras dentro, puedes marcar «Copiar también las
+  ubicaciones de dentro». Una estantería con 4 niveles y 3 posiciones por nivel
+  se copia entera, con los códigos cambiados: `ALM-A-P01-E01-N02-S03` pasa a
+  `ALM-A-P01-E02-N02-S03`.
+- Para eso, los códigos de dentro tienen que empezar por el de la ubicación
+  que duplicas. Si alguno no lo hace, el sistema lo avisa y solo deja copiar
+  la ubicación sola.
+- Los contenedores no se copian. Las copias tienen QR nuevo.
+- Puedes pulsar «Duplicar» varias veces seguidas desde el original: cada vez
+  propone el siguiente código libre.
+
 ### Contenedores: lo que se mueve
 
 1. Entra en la ubicación donde está físicamente el contenedor y pulsa «Nuevo
@@ -90,6 +105,19 @@ valiendo.
 
 Las cajas son desechables por defecto y los palets y bandejas reutilizables.
 Se cambia en «Editar».
+
+**Duplicar un contenedor** crea copias iguales (tipo, descripción,
+responsable y política) en el mismo sitio, hasta 50 de una vez. Si lleva
+otros contenedores dentro, puedes copiarlos también: se crean vacíos y con
+códigos nuevos. El material nunca se copia.
+
+### Exportar a Excel
+
+En la pantalla principal de «Almacén», pulsa «Exportar a Excel» y elige
+«Ubicaciones» o «Contenedores». Se descarga un fichero `.xlsx` con todo el
+almacén, con la ruta completa de cada elemento y filtros en la cabecera.
+
+Es una copia para consultar: lo que cambies en el Excel no vuelve al sistema.
 
 ## 4. Imprimir las etiquetas QR
 
@@ -169,6 +197,16 @@ El navegador mostrará un aviso de conexión no privada. Pulsa «Avanzado» y
 
 ### 6.3. Instalar el certificado del sistema en el móvil
 
+**La forma fácil:** en el móvil, abre `http://192.168.1.50/movil` (con tu IP,
+y con `http`, sin la «s»). Es una página del propio sistema con un botón para
+descargar el certificado y los pasos para iPhone y Android. En iPhone hay que
+abrirla con **Safari**.
+
+La pantalla del escáner también enlaza a esa página cuando la cámara no está
+disponible.
+
+**La forma manual**, si la anterior no funciona:
+
 1. En el ordenador del SGA, extrae el certificado a la carpeta del proyecto:
 
    ```
@@ -220,6 +258,11 @@ Se abre a pantalla completa, como una aplicación más.
       botones de crear.
 - [ ] Como `admin`, en «Tipos», añadir un tipo de contenedor nuevo y usarlo.
 - [ ] En «Auditoría» aparecen las altas y los movimientos.
+- [ ] Duplicar una estantería con sus niveles y posiciones, y comprobar los
+      códigos de la copia.
+- [ ] Duplicar un palet con sus cajas, pidiendo 2 copias.
+- [ ] Exportar ubicaciones y contenedores a Excel y abrir los ficheros.
+- [ ] En el móvil, abrir `http://IP/movil` e instalar el certificado.
 
 ## 8. Si algo falla
 
@@ -245,6 +288,8 @@ docker compose logs --tail 200
 | Elemento | Estado |
 | --- | --- |
 | Ubicaciones, contenedores anidados, movimientos y retiradas | Comprobado: 26 pruebas automáticas |
+| Duplicar ubicaciones y contenedores, y exportar a Excel | Comprobado: 18 pruebas automáticas y navegador real |
+| Página para conectar el móvil y descarga del certificado | Comprobado: el certificado descargado valida la conexión segura |
 | Los QR de las etiquetas en PDF se leen, en los dos formatos | Comprobado: se genera el PDF, se convierte en imagen y se lee el QR |
 | Recorrido completo en la web, en escritorio y móvil | Comprobado con un navegador real |
 | Mover un contenedor escaneando una etiqueta con la cámara | Comprobado con una cámara simulada que muestra una etiqueta real |
