@@ -100,7 +100,7 @@ describe('duplicar ubicaciones', () => {
     const res = await call('GET', `/api/locations/${e01.id}/duplicate-proposal`, almacen);
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
-      code: 'ALM-A-P01-E02', name: 'FICTICIO ALM-A-P01-E02', descendantCount: 8,
+      code: 'ALM-A-P01-E02', prefix: 'ALM-A-P01', segment: 'E02', name: 'FICTICIO ALM-A-P01-E02', descendantCount: 8,
       childrenCopyable: true, blockingChildCode: null,
     });
   });
@@ -154,17 +154,14 @@ describe('duplicar ubicaciones', () => {
     expect((await pool.query(`SELECT count(*)::int AS n FROM storage_location`)).rows[0].n).toBe(before);
   });
 
-  it('si una ubicación de dentro no sigue el código del padre, lo explica y no copia nada', async () => {
+  it('lo de dentro hereda el código de la copia', async () => {
     const armario = await newLocation('COM-ARM-01', 'ARMARIO');
-    await newLocation('CAJONES-SUELTOS', 'CAJON', armario.id);
+    await newLocation('COM-ARM-01-C01', 'CAJON', armario.id);
     const proposal = (await call('GET', `/api/locations/${armario.id}/duplicate-proposal`, almacen)).json();
-    expect(proposal).toMatchObject({ code: 'COM-ARM-02', childrenCopyable: false, blockingChildCode: 'CAJONES-SUELTOS' });
-
-    const res = await call('POST', `/api/locations/${armario.id}/duplicate`, almacen, { code: 'COM-ARM-02', name: 'X', includeChildren: true });
-    expect(res.statusCode).toBe(409);
-    expect(res.json().error.code).toBe('CODIGO_HIJO_NO_RENOMBRABLE');
-    // Sin lo de dentro sí se puede.
-    expect((await call('POST', `/api/locations/${armario.id}/duplicate`, almacen, { code: 'COM-ARM-02', name: 'X' })).statusCode).toBe(201);
+    expect(proposal).toMatchObject({ code: 'COM-ARM-02', prefix: null, segment: 'COM-ARM-02', childrenCopyable: true });
+    const res = await call('POST', `/api/locations/${armario.id}/duplicate`, almacen, { segment: 'COM-ARM-02', name: 'X', includeChildren: true });
+    expect(res.statusCode, res.body).toBe(201);
+    expect((await pool.query(`SELECT 1 FROM storage_location WHERE code = 'COM-ARM-02-C01'`)).rowCount).toBe(1);
   });
 
   it('reenviar el duplicado con la misma clave no crea una segunda copia', async () => {
@@ -185,7 +182,7 @@ describe('duplicar ubicaciones', () => {
 
 describe('duplicar contenedores', () => {
   it('crea varias copias con código y QR propios, en el mismo sitio y con los mismos datos', async () => {
-    const shelf = await newLocation('FIC-DUP-1', 'POSICION', pasillo.id);
+    const shelf = await newLocation('ALM-A-P01-DUP1', 'POSICION', pasillo.id);
     const [pallet] = await newContainers('PALET', { locationId: shelf.id });
     await app.inject({
       method: 'PATCH', url: `/api/containers/${pallet!.id}`, cookies: almacen,
@@ -205,7 +202,7 @@ describe('duplicar contenedores', () => {
   });
 
   it('con lo de dentro reproduce las cajas y bandejas, vacías y bien anidadas', async () => {
-    const shelf = await newLocation('FIC-DUP-2', 'POSICION', pasillo.id);
+    const shelf = await newLocation('ALM-A-P01-DUP2', 'POSICION', pasillo.id);
     const [pallet] = await newContainers('PALET', { locationId: shelf.id });
     const boxes = await newContainers('CAJA', { parentContainerId: pallet!.id }, 2);
     await newContainers('BANDEJA', { parentContainerId: boxes[0]!.id });
@@ -221,14 +218,14 @@ describe('duplicar contenedores', () => {
         [copy.id],
       );
       expect(inner.rows[0].n).toBe(1); // la bandeja dentro de la primera caja
-      expect(d.locationPath.at(-1).code).toBe('FIC-DUP-2');
+      expect(d.locationPath.at(-1).code).toBe('ALM-A-P01-DUP2');
     }
     // El original sigue igual.
     expect((await call('GET', `/api/containers/${pallet!.id}`, consulta)).json().children).toHaveLength(2);
   });
 
   it('respeta la capacidad: avisa y deja continuar si se confirma', async () => {
-    const small = await newLocation('FIC-DUP-3', 'POSICION', pasillo.id, { maxCapacity: 2 });
+    const small = await newLocation('ALM-A-P01-DUP3', 'POSICION', pasillo.id, { maxCapacity: 2 });
     const [box] = await newContainers('CAJA', { locationId: small.id });
     const warned = await call('POST', `/api/containers/${box!.id}/duplicate`, almacen, { quantity: 2 });
     expect(warned.statusCode).toBe(409);
@@ -238,7 +235,7 @@ describe('duplicar contenedores', () => {
   });
 
   it('no duplica contenedores retirados ni lo permite a quien no gestiona', async () => {
-    const shelf = await newLocation('FIC-DUP-4', 'POSICION', pasillo.id);
+    const shelf = await newLocation('ALM-A-P01-DUP4', 'POSICION', pasillo.id);
     const [box] = await newContainers('CAJA', { locationId: shelf.id });
     expect((await call('POST', `/api/containers/${box!.id}/duplicate`, usuario, {})).statusCode).toBe(403);
     await call('POST', `/api/containers/${box!.id}/retire`, almacen, {});
@@ -274,14 +271,14 @@ describe('exportar a Excel', () => {
     const rows = await read('/api/export/contenedores.xlsx', consulta);
     expect(rows[0]!.slice(0, 6)).toEqual(['Código', 'Tipo', 'Estado', 'Ubicación', 'Ruta completa', 'Dentro de']);
     const tray = rows.find((r) => r[1] === 'Bandeja' && r[2] === 'Activo')!;
-    expect(tray[3]).toBe('FIC-DUP-2');
+    expect(tray[3]).toBe('ALM-A-P01-DUP2');
     expect(String(tray[5])).toMatch(/^CAJ-\d{6}$/);
     expect(rows.some((r) => r[2] === 'Retirado')).toBe(true);
     expect(rows.length - 1).toBe((await pool.query(`SELECT count(*)::int AS n FROM container`)).rows[0].n);
   });
 
   it('un texto que empieza por «=» se guarda como texto, no como fórmula', async () => {
-    const shelf = await newLocation('FIC-FORMULA', 'POSICION', pasillo.id);
+    const shelf = await newLocation('ALM-A-P01-FORMULA', 'POSICION', pasillo.id);
     const [box] = await newContainers('CAJA', { locationId: shelf.id });
     await app.inject({
       method: 'PATCH', url: `/api/containers/${box!.id}`, cookies: almacen,

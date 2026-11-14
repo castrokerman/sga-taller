@@ -453,3 +453,28 @@ tr.clickable:hover td { background: #f7f9fb; }
   .stock-table td:nth-child(4) { grid-column: 1 / -1; grid-row: 3; }
   .stock-table .line-actions .btn { flex: 1; }
 }
+
+/* ---- Código con prefijo fijo y edición en tabla ---- */
+.code-input { display: flex; align-items: stretch; min-width: 0; }
+.code-prefix { display: flex; align-items: center; padding: 0 0.5rem; background: #e3e6ea; color: var(--ink-soft); border: 1px solid var(--line); border-right: 0; border-radius: 8px 0 0 8px; font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace; font-size: 0.9em; white-space: nowrap; user-select: none; }
+.code-input input { flex: 1; min-width: 4rem; font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace; }
+.code-prefix + input { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.code-input-big .code-prefix { font-size: 1rem; }
+
+.bulk { border-left: 5px solid var(--accent); }
+.bulk-fill { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; background: #f1f3f6; border-radius: 8px; padding: 0.5rem 0.7rem; margin: 0.6rem 0; }
+.bulk-fill > span { font-weight: 600; font-size: 0.9rem; }
+.bulk-fill select, .bulk-fill input:not([type=checkbox]) { width: auto; min-width: 9rem; padding: 0.35rem 0.5rem; }
+.bulk-table { overflow: auto; max-height: 65vh; border: 1px solid var(--line); border-radius: 8px; margin: 0.6rem 0; background: #fff; }
+.bulk-table table { border-collapse: collapse; width: 100%; }
+.bulk-table th { position: sticky; top: 0; background: #f7f9fb; z-index: 1; text-align: left; font-size: 0.78rem; text-transform: uppercase; color: var(--ink-soft); padding: 0.45rem 0.5rem; border-bottom: 2px solid var(--line); white-space: nowrap; }
+.bulk-table td { padding: 0.25rem 0.35rem; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.bulk-table td input:not([type=checkbox]), .bulk-table td select { width: 100%; padding: 0.35rem 0.45rem; font-size: 0.92rem; min-height: 0; }
+.bulk-table td .code-prefix { font-size: 0.82rem; padding: 0 0.35rem; }
+.bulk-table td.changed input, .bulk-table td.changed select, .bulk-table td.changed .code-input input { background: #fff6cc; border-color: var(--warn-line); }
+.bulk-table td.changed:has(.bulk-check) { background: #fff6cc; }
+.bulk-table tr.row-changed td:first-child { box-shadow: inset 4px 0 0 var(--warn-line); }
+.bulk-check { width: 22px; height: 22px; accent-color: var(--accent); }
+.recode-list { max-height: 40vh; overflow: auto; margin: 0.6rem 0; background: #fff; color: var(--ink); }
+.field > span.code-input { display: flex; font-weight: 400; margin: 0; }
+.bulk-table td .mono { white-space: nowrap; }

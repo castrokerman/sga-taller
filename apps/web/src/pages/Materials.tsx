@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { api, errorMessage, formatQty, TRACKING_NAMES, type Family, type Material, type MaterialInput, type Unit, type User } from '../api';
 import { Highlight, optionsFrom, useListControls, type ListConfig } from '../components/ListControls';
 import { navigate } from '../router';
+import { BulkEditor, type BulkChanges } from '../components/BulkEditor';
 
 const FAMILY_KEY = 'sga.familia-elegida';
 
@@ -18,6 +19,8 @@ export function MaterialsPage({ user }: { user: User }) {
   });
   const [obsolete, setObsolete] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [bulk, setBulk] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const can = (p: string) => user.permissions.includes(p);
 
@@ -87,14 +90,33 @@ export function MaterialsPage({ user }: { user: User }) {
               Gestionar familias
             </a>
           )}
+          {can('material.manage') && (materials?.length ?? 0) > 1 && (
+            <button className="btn" onClick={() => { setNotice(null); setCreating(false); setBulk(true); }}>
+              Editar en tabla
+            </button>
+          )}
           {can('material.manage') && (
-            <button className="btn btn-primary" onClick={() => setCreating(true)}>
+            <button className="btn btn-primary" onClick={() => { setBulk(false); setCreating(true); }}>
               + Nuevo material
             </button>
           )}
         </div>
       </div>
+      {notice && <p className="alert alert-ok">{notice}</p>}
       {error && <p className="alert alert-error">{error}</p>}
+      {bulk && (
+        <BulkMaterials
+          rows={list.visible}
+          families={families}
+          onClose={async (m) => {
+            setBulk(false);
+            if (m) {
+              await load();
+              setNotice(m);
+            }
+          }}
+        />
+      )}
       {creating && (
         <MaterialForm
           title="Nuevo material"
@@ -453,5 +475,57 @@ export function MaterialForm(props: {
     <form className="card form" onSubmit={save}>
       {body}
     </form>
+  );
+}
+
+/** Edición en tabla de los materiales que se ven en la lista. */
+function BulkMaterials(props: { rows: Material[]; families: Family[]; onClose: (message?: string) => void }) {
+  const famOptions = props.families
+    .filter((f) => f.active)
+    .map((f) => ({ value: f.id, label: `${'\u00a0\u00a0'.repeat(f.ancestorIds.length - 1)}${f.name}` }));
+
+  const save = async (changes: BulkChanges) => {
+    const items = changes.map(({ id, values }) => {
+      const item: { id: string } & MaterialInput = { id };
+      for (const [k, v] of Object.entries(values)) {
+        if (k === 'minStock') {
+          const n = Number(String(v).replace(',', '.'));
+          if (String(v).trim() !== '' && !Number.isFinite(n)) throw new Error('El aviso de stock bajo tiene que ser un número');
+          item.minStock = String(v).trim() === '' ? null : n;
+        } else if (k === 'isLoanable') item.isLoanable = Boolean(v);
+        else if (k === 'status') item.status = v as 'ACTIVE' | 'OBSOLETE';
+        else if (k === 'familyId') item.familyId = String(v);
+        else if (k === 'description') item.description = String(v);
+        else (item as Record<string, unknown>)[k] = String(v).trim() === '' ? null : String(v);
+      }
+      return item;
+    });
+    await api.bulkMaterials(items);
+    return `Guardados los cambios de ${items.length} material${items.length > 1 ? 'es' : ''}`;
+  };
+
+  return (
+    <BulkEditor
+      title={`Editar ${props.rows.length} materiales`}
+      hint="Se editan los que se ven en la lista: usa la familia, la búsqueda y los filtros para elegir cuáles. Lo cambiado se marca en amarillo y se guarda todo junto."
+      rows={props.rows}
+      onSave={save}
+      onClose={props.onClose}
+      columns={[
+        { key: 'ref', label: 'Referencia', type: 'static', get: (m) => m.internalRef },
+        { key: 'description', label: 'Descripción', type: 'text', get: (m) => m.description, width: '260px' },
+        { key: 'familyId', label: 'Familia', type: 'select', required: true, fillAll: true, get: (m) => m.familyId, options: famOptions, width: '170px' },
+        { key: 'minStock', label: 'Avisar si baja de', type: 'number', decimals: true, fillAll: true,
+          get: (m) => (m.minStock === null ? '' : String(m.minStock).replace('.', ',')), width: '90px' },
+        { key: 'isLoanable', label: 'Prestable', type: 'check', fillAll: true, get: (m) => m.isLoanable },
+        { key: 'manufacturer', label: 'Fabricante', type: 'text', fillAll: true, get: (m) => m.manufacturer ?? '', width: '140px' },
+        { key: 'manufacturerRef', label: 'Ref. fabricante', type: 'text', get: (m) => m.manufacturerRef ?? '', width: '130px' },
+        { key: 'materialSpec', label: 'Material', type: 'text', fillAll: true, get: (m) => m.materialSpec ?? '', width: '110px' },
+        { key: 'qualityGrade', label: 'Calidad', type: 'text', fillAll: true, get: (m) => m.qualityGrade ?? '', width: '100px' },
+        { key: 'dimensions', label: 'Dimensiones', type: 'text', get: (m) => m.dimensions ?? '', width: '120px' },
+        { key: 'status', label: 'Estado', type: 'select', required: true, fillAll: true, get: (m) => m.status,
+          options: [{ value: 'ACTIVE', label: 'Activo' }, { value: 'OBSOLETE', label: 'De baja' }], width: '110px' },
+      ]}
+    />
   );
 }

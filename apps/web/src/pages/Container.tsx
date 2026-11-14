@@ -4,9 +4,9 @@ import { Breadcrumbs, ContainerCard, containerListConfig, LabelPanel } from '../
 import { useListControls } from '../components/ListControls';
 import { Scanner } from '../components/Scanner';
 import { StockSection } from '../components/Stock';
-import { ContainerForm } from './Warehouse';
+import { BulkContainers, ContainerForm } from './Warehouse';
 
-type Panel = 'none' | 'move' | 'inside' | 'labels' | 'edit' | 'duplicate';
+type Panel = 'none' | 'move' | 'inside' | 'labels' | 'edit' | 'duplicate' | 'bulk';
 
 const place = (location: string | null, container: string | null) => location ?? container ?? '—';
 
@@ -154,7 +154,15 @@ export function ContainerPage({ user, containerId }: { user: User; containerId: 
       )}
 
       <section>
-        <h3>Contenedores dentro</h3>
+        <div className="section-head">
+          <h3>Contenedores dentro</h3>
+          {active && can('container.manage') && detail.children.length > 1 && (
+            <button className="btn btn-small push-right" onClick={() => open('bulk')}>
+              Editar en tabla
+            </button>
+          )}
+        </div>
+        {panel === 'bulk' && <BulkContainers rows={insideList.visible} onClose={(m) => (m ? done(m) : setPanel('none'))} />}
         {detail.children.length > 0 ? (
           <>
             {detail.children.length > 1 && insideList.bar}

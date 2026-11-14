@@ -88,6 +88,9 @@ async function request<T>(method: string, path: string, body?: unknown, key?: st
 export interface LocationSummary {
   id: string;
   code: string;
+  /** Parte propia del código; el resto lo pone la ubicación superior. */
+  segment: string;
+  parentCode: string | null;
   name: string;
   description: string | null;
   parentId: string | null;
@@ -364,10 +367,15 @@ export const api = {
 
   rootLocations: () => request<{ locations: LocationSummary[] }>('GET', '/api/locations'),
   location: (id: string) => request<LocationDetail>('GET', `/api/locations/${id}`),
-  createLocation: (data: { code: string; name: string; typeCode: string; parentId?: string; maxCapacity?: number }) =>
+  createLocation: (data: { segment: string; name: string; typeCode: string; parentId?: string; maxCapacity?: number }) =>
     request<{ location: LocationSummary }>('POST', '/api/locations', data),
-  updateLocation: (id: string, data: { code?: string; name?: string; maxCapacity?: number | null; active?: boolean }) =>
-    request<{ location: LocationSummary }>('PATCH', `/api/locations/${id}`, data),
+  updateLocation: (id: string, data: { segment?: string; name?: string; maxCapacity?: number | null; active?: boolean }) =>
+    request<{ location: LocationSummary; descendantsRecoded: number }>('PATCH', `/api/locations/${id}`, data),
+  bulkLocations: (items: Array<{ id: string } & Record<string, unknown>>) =>
+    request<{ locations: LocationSummary[]; descendantsRecoded: number }>('PATCH', '/api/locations/bulk', { items }),
+  recodePreview: () =>
+    request<{ changes: Array<{ id: string; code: string; newCode: string; conflictWith: string | null }> }>('GET', '/api/locations/recode-preview'),
+  recode: (key: string) => request<{ recoded: number }>('POST', '/api/locations/recode', undefined, key),
 
   searchContainers: (q: string) =>
     request<{ containers: ContainerSummary[] }>('GET', `/api/containers?q=${encodeURIComponent(q)}`),
@@ -376,6 +384,8 @@ export const api = {
     data: { typeCode: string; locationId?: string; parentContainerId?: string; quantity: number; description?: string; force?: boolean },
     key: string,
   ) => request<{ containers: ContainerSummary[] }>('POST', '/api/containers', data, key),
+  bulkContainers: (items: Array<{ id: string } & Record<string, unknown>>) =>
+    request<{ containers: ContainerSummary[] }>('PATCH', '/api/containers/bulk', { items }),
   updateContainer: (id: string, data: { description?: string; reusePolicy?: string; responsibleUserId?: string | null }) =>
     request<ContainerDetail>('PATCH', `/api/containers/${id}`, data),
   moveContainer: (id: string, data: { toLocationId?: string; toParentContainerId?: string; force?: boolean }, key: string) =>
@@ -384,10 +394,10 @@ export const api = {
     request<ContainerDetail>('POST', `/api/containers/${id}/retire`, { reason }, key),
 
   locationDuplicateProposal: (id: string) =>
-    request<{ code: string; name: string; descendantCount: number; childrenCopyable: boolean; blockingChildCode: string | null }>(
+    request<{ code: string; prefix: string | null; segment: string; name: string; descendantCount: number; childrenCopyable: boolean; blockingChildCode: string | null }>(
       'GET', `/api/locations/${id}/duplicate-proposal`,
     ),
-  duplicateLocation: (id: string, data: { code: string; name: string; includeChildren: boolean }, key: string) =>
+  duplicateLocation: (id: string, data: { segment: string; name: string; includeChildren: boolean }, key: string) =>
     request<{ location: LocationSummary; created: number }>('POST', `/api/locations/${id}/duplicate`, data, key),
   duplicateContainer: (id: string, data: { quantity: number; includeChildren: boolean; force?: boolean }, key: string) =>
     request<{ containers: ContainerSummary[] }>('POST', `/api/containers/${id}/duplicate`, data, key),
@@ -406,6 +416,8 @@ export const api = {
   material: (id: string) => request<MaterialDetail>('GET', `/api/materials/${id}`),
   createMaterial: (data: MaterialInput) => request<{ material: Material }>('POST', '/api/materials', data, newOperationKey()),
   updateMaterial: (id: string, data: MaterialInput) => request<{ material: Material }>('PATCH', `/api/materials/${id}`, data),
+  bulkMaterials: (items: Array<{ id: string } & MaterialInput>) =>
+    request<{ materials: Material[] }>('PATCH', '/api/materials/bulk', { items }),
 
   stockAt: (place: PlaceRef) =>
     request<{ stock: StockLine[] }>('GET', `/api/stock?${place.containerId ? `containerId=${place.containerId}` : `locationId=${place.locationId}`}`),
