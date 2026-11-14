@@ -85,6 +85,11 @@ Más opciones:
 Para dar de baja un material que ya no se usa, «Editar» → **«Dado de baja»**.
 Conserva su historial.
 
+Para cambiar muchos materiales de golpe (por ejemplo, pasar varios a otra
+familia o marcarlos como prestables), usa **«Editar en tabla»** en
+«Materiales». Se explica en las instrucciones de la Fase 2, apartado «Editar
+varias a la vez».
+
 ## 4. El día a día
 
 Todo empieza igual: **escanea la caja o la ubicación**. En su ficha, bajo

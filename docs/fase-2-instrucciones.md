@@ -56,10 +56,17 @@ también son ubicaciones.
 
 1. En «Almacén», pulsa «Nueva ubicación» y crea las zonas principales. Por
    ejemplo, `COM` para la zona común y `ALM-A` para el almacén principal.
-2. Entra en una zona y pulsa «Nueva ubicación dentro». El sistema propone el
-   código del padre como comienzo: dentro de `ALM-A` propone `ALM-A-`, y tú
-   completas, por ejemplo, `ALM-A-P01`.
+2. Entra en una zona y pulsa «Nueva ubicación dentro». El principio del
+   código lo pone la ubicación que la contiene y **no se puede cambiar**: dentro
+   de `ALM-A` aparece `ALM-A-` en gris y tú escribes solo la parte final, por
+   ejemplo `P01`. El código queda `ALM-A-P01`.
 3. Repite hasta el nivel de detalle que necesites.
+
+**El código se hereda.** Si cambias el código de una ubicación, cambian solos
+los de todas las que lleva dentro, a cualquier profundidad. Por ejemplo, si
+`ALM-A-P01` pasa a ser `ALM-A-P10`, su estantería `ALM-A-P01-E01` pasa a
+`ALM-A-P10-E01`, y así hacia abajo. Lo mismo ocurre si mueves una ubicación
+dentro de otra.
 
 Un esquema de códigos que funciona bien:
 
@@ -77,19 +84,44 @@ Un esquema de códigos que funciona bien:
 contenedores admite. Si se supera, el sistema avisa y deja continuar.
 
 **Cambiar un código** no cambia su QR: la etiqueta que ya esté pegada sigue
-valiendo.
+valiendo y lleva a la ubicación correcta. Lo que no cambia es el texto impreso
+en ella, así que conviene reimprimir las etiquetas de las ubicaciones
+afectadas. El sistema te dice cuántas han cambiado.
+
+**Ubicaciones creadas antes de esta regla.** Si alguna tiene un código que no
+empieza por el de la ubicación que la contiene, en «Almacén» aparece un aviso
+con la lista de cambios. Por ejemplo, `ARMARIO-QUIMICOS` dentro de `COM` pasará
+a `COM-ARMARIO-QUIMICOS`: se le pone delante el código de la superior y se
+conserva el suyo. No se aplica nada hasta que pulsas «Recodificar».
+
+### Editar varias a la vez
+
+En las listas de ubicaciones, contenedores y materiales hay un botón **«Editar
+en tabla»**. Abre las filas que se ven en ese momento como una hoja de cálculo:
+
+- Cambia lo que quieras en cualquier fila. Lo cambiado se marca en amarillo.
+- **«Poner en las N filas»** pone el mismo valor en todas de una vez, por
+  ejemplo la misma capacidad o el mismo responsable.
+- **«Guardar»** guarda todo junto. Si alguna fila tiene un error, no se guarda
+  ninguna y el mensaje dice cuál es.
+- Para editar solo unas cuantas, filtra primero la lista: la tabla coge
+  únicamente las que se ven.
+
+En ubicaciones se puede cambiar la parte final del código, el nombre, el tipo,
+la capacidad, la descripción y si está activa. En contenedores, la
+descripción, el responsable y la política. En materiales, la descripción, la
+familia, el aviso de stock bajo, si se presta, el fabricante y su referencia,
+el material, la calidad, las dimensiones y si está de baja.
 
 **Duplicar.** Para crear muchas ubicaciones iguales, abre una y pulsa
-«Duplicar», junto a «Editar». El sistema propone el siguiente código libre
-(`ALM-A-P01-E01` → `ALM-A-P01-E02`) y el nombre con el número siguiente.
+«Duplicar», junto a «Editar». El sistema propone la siguiente parte final
+libre (`E01` → `E02`) y el nombre con el número siguiente. El principio del
+código, como al crear, no se puede cambiar.
 
 - Si la ubicación tiene otras dentro, puedes marcar «Copiar también las
   ubicaciones de dentro». Una estantería con 4 niveles y 3 posiciones por nivel
   se copia entera, con los códigos cambiados: `ALM-A-P01-E01-N02-S03` pasa a
   `ALM-A-P01-E02-N02-S03`.
-- Para eso, los códigos de dentro tienen que empezar por el de la ubicación
-  que duplicas. Si alguno no lo hace, el sistema lo avisa y solo deja copiar
-  la ubicación sola.
 - Los contenedores no se copian. Las copias tienen QR nuevo.
 - Puedes pulsar «Duplicar» varias veces seguidas desde el original: cada vez
   propone el siguiente código libre.

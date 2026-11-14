@@ -1,13 +1,13 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import { writeAudit } from '../audit.js';
 import { requirePermission } from '../auth/guard.js';
 import { withTransaction } from '../db/tx.js';
-import { badRequest, conflict, notFound } from '../errors.js';
+import { AppError, badRequest, conflict, notFound } from '../errors.js';
 
 const uuid = { type: 'string', format: 'uuid' } as const;
 const idParams = { type: 'object', required: ['id'], properties: { id: uuid } } as const;
-const nullableText = (max: number) => ({ anyOf: [{ type: 'string', maxLength: max }, { type: 'null' }] });
+const nullableText = (max: number) => ({ anyOf: [{ type: 'null' }, { type: 'string', maxLength: max }] });
 
 // Gestionar familias: responsables de almacén (material.manage) y administradores.
 const FAMILY_MANAGE = 'material.manage';
@@ -61,7 +61,7 @@ const materialBody = {
   quantityTracking: { type: 'string', enum: ['EXACT', 'ESTIMATED', 'NOT_TRACKED'] },
   lotTracked: { type: 'boolean' },
   isLoanable: { type: 'boolean' },
-  minStock: { anyOf: [{ type: 'number', minimum: 0, maximum: 1e12 }, { type: 'null' }] },
+  minStock: { anyOf: [{ type: 'null' }, { type: 'number', minimum: 0, maximum: 1e12 }] },
   notes: nullableText(1000),
   status: { type: 'string', enum: ['ACTIVE', 'OBSOLETE'] },
 } as const;
@@ -138,8 +138,8 @@ export function materialRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
           type: 'object', additionalProperties: false, minProperties: 1,
           properties: {
             name: { type: 'string', minLength: 1, maxLength: 80 },
-            parentId: { anyOf: [uuid, { type: 'null' }] },
-            defaultUnitCode: { anyOf: [{ type: 'string', maxLength: 10 }, { type: 'null' }] },
+            parentId: { anyOf: [{ type: 'null' }, uuid] },
+            defaultUnitCode: { anyOf: [{ type: 'null' }, { type: 'string', maxLength: 10 }] },
             active: { type: 'boolean' },
           },
         },
@@ -287,58 +287,96 @@ export function materialRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
     },
     async (request) => {
       const { id } = request.params as { id: string };
-      const body = request.body as MaterialInput;
-      await withTransaction(pool, async (c) => {
-        const before = (await c.query(`SELECT * FROM material WHERE id = $1 FOR UPDATE`, [id])).rows[0];
-        if (!before) throw notFound('El material no existe');
-        await checkRefs(c, body);
-        if (body.internalRef) await refCheck(c, body.internalRef, id);
-
-        // Cambiar cómo se cuenta o la unidad de un material que ya tiene stock cambiaría el sentido de lo guardado.
-        const hasStock = (await c.query(`SELECT 1 FROM stock_balance WHERE material_id = $1 LIMIT 1`, [id])).rowCount;
-        if (hasStock && body.unitCode && body.unitCode !== before.unit_code) {
-          throw conflict('No se puede cambiar la unidad de un material que tiene stock', 'MATERIAL_CON_STOCK');
-        }
-        if (hasStock && body.quantityTracking && body.quantityTracking !== before.quantity_tracking
-            && (body.quantityTracking === 'NOT_TRACKED' || before.quantity_tracking === 'NOT_TRACKED')) {
-          throw conflict('Para pasar de «sin contar» a contado, o al revés, el material no puede tener stock', 'MATERIAL_CON_STOCK');
-        }
-        if (body.lotTracked && !before.lot_tracked) {
-          const noLot = await c.query(`SELECT 1 FROM stock_balance WHERE material_id = $1 AND lot_id IS NULL LIMIT 1`, [id]);
-          if (noLot.rowCount) throw conflict('Hay stock de este material sin lote. Para exigir lote, primero tiene que estar todo con lote', 'MATERIAL_CON_STOCK');
-        }
-
-        const set: string[] = [];
-        const values: unknown[] = [id];
-        const col = (name: string, v: unknown) => {
-          values.push(v);
-          set.push(`${name} = $${values.length}`);
-        };
-        if (body.description !== undefined) col('description', body.description.trim());
-        if (body.familyId !== undefined) col('family_id', body.familyId);
-        if (body.internalRef !== undefined) col('internal_ref', body.internalRef.trim().toUpperCase());
-        if (body.manufacturer !== undefined) col('manufacturer', clean(body.manufacturer));
-        if (body.manufacturerRef !== undefined) col('manufacturer_ref', clean(body.manufacturerRef));
-        if (body.materialSpec !== undefined) col('material_spec', clean(body.materialSpec));
-        if (body.qualityGrade !== undefined) col('quality_grade', clean(body.qualityGrade));
-        if (body.dimensions !== undefined) col('dimensions', clean(body.dimensions));
-        if (body.unitCode !== undefined) col('unit_code', body.unitCode);
-        if (body.quantityTracking !== undefined) col('quantity_tracking', body.quantityTracking);
-        if (body.lotTracked !== undefined) col('lot_tracked', body.lotTracked);
-        if (body.isLoanable !== undefined) col('is_loanable', body.isLoanable);
-        if (body.minStock !== undefined) col('min_stock', body.minStock);
-        if (body.notes !== undefined) col('notes', clean(body.notes));
-        if (body.status !== undefined) col('status', body.status);
-        await c.query(`UPDATE material SET ${set.join(', ')}, updated_at = now() WHERE id = $1`, values);
-        await writeAudit(c, {
-          userId: request.user!.id, action: 'material.modificacion', entityType: 'material', entityId: id,
-          before: { ref: before.internal_ref, description: before.description }, after: body, ip: request.ip, requestId: request.id,
-        });
-      });
+      await withTransaction(pool, (c) => updateMaterial(c, request, id, request.body as MaterialInput));
       return { material: (await pool.query(`${MATERIAL_SELECT} WHERE m.id = $1`, [id])).rows[0] };
     },
   );
+
+  // Edición de varios a la vez: todo o nada; si una fila falla, se dice cuál.
+  app.patch(
+    '/api/materials/bulk',
+    {
+      preHandler: requirePermission('material.manage'),
+      schema: {
+        body: {
+          type: 'object', required: ['items'], additionalProperties: false,
+          properties: {
+            items: {
+              type: 'array', minItems: 1, maxItems: 1000,
+              items: { type: 'object', required: ['id'], additionalProperties: false, minProperties: 2, properties: { id: uuid, ...materialBody } },
+            },
+          },
+        },
+      },
+    },
+    async (request) => {
+      const { items } = request.body as { items: Array<MaterialInput & { id: string }> };
+      if (new Set(items.map((i) => i.id)).size !== items.length) throw badRequest('Un material aparece dos veces');
+      await withTransaction(pool, async (c) => {
+        for (const { id, ...changes } of items) {
+          try {
+            await updateMaterial(c, request, id, changes);
+          } catch (e) {
+            const ref = (await c.query(`SELECT internal_ref FROM material WHERE id = $1`, [id]).catch(() => null))?.rows[0]?.internal_ref;
+            if (e instanceof AppError) throw new AppError(e.statusCode, e.code, `${ref ?? 'Un material'}: ${e.message}`);
+            throw e;
+          }
+        }
+      });
+      const r = await pool.query(`${MATERIAL_SELECT} WHERE m.id = ANY($1)`, [items.map((i) => i.id)]);
+      return { materials: r.rows };
+    },
+  );
 }
+
+async function updateMaterial(c: pg.PoolClient, request: FastifyRequest, id: string, body: MaterialInput) {
+  const before = (await c.query(`SELECT * FROM material WHERE id = $1 FOR UPDATE`, [id])).rows[0];
+  if (!before) throw notFound('El material no existe');
+  await checkRefs(c, body);
+  if (body.internalRef) await refCheck(c, body.internalRef, id);
+
+  // Cambiar cómo se cuenta o la unidad de un material que ya tiene stock cambiaría el sentido de lo guardado.
+  const hasStock = (await c.query(`SELECT 1 FROM stock_balance WHERE material_id = $1 LIMIT 1`, [id])).rowCount;
+  if (hasStock && body.unitCode && body.unitCode !== before.unit_code) {
+    throw conflict('No se puede cambiar la unidad de un material que tiene stock', 'MATERIAL_CON_STOCK');
+  }
+  if (hasStock && body.quantityTracking && body.quantityTracking !== before.quantity_tracking
+      && (body.quantityTracking === 'NOT_TRACKED' || before.quantity_tracking === 'NOT_TRACKED')) {
+    throw conflict('Para pasar de «sin contar» a contado, o al revés, el material no puede tener stock', 'MATERIAL_CON_STOCK');
+  }
+  if (body.lotTracked && !before.lot_tracked) {
+    const noLot = await c.query(`SELECT 1 FROM stock_balance WHERE material_id = $1 AND lot_id IS NULL LIMIT 1`, [id]);
+    if (noLot.rowCount) throw conflict('Hay stock de este material sin lote. Para exigir lote, primero tiene que estar todo con lote', 'MATERIAL_CON_STOCK');
+  }
+
+  const set: string[] = [];
+  const values: unknown[] = [id];
+  const col = (name: string, v: unknown) => {
+    values.push(v);
+    set.push(`${name} = $${values.length}`);
+  };
+  if (body.description !== undefined) col('description', body.description.trim());
+  if (body.familyId !== undefined) col('family_id', body.familyId);
+  if (body.internalRef !== undefined) col('internal_ref', body.internalRef.trim().toUpperCase());
+  if (body.manufacturer !== undefined) col('manufacturer', clean(body.manufacturer));
+  if (body.manufacturerRef !== undefined) col('manufacturer_ref', clean(body.manufacturerRef));
+  if (body.materialSpec !== undefined) col('material_spec', clean(body.materialSpec));
+  if (body.qualityGrade !== undefined) col('quality_grade', clean(body.qualityGrade));
+  if (body.dimensions !== undefined) col('dimensions', clean(body.dimensions));
+  if (body.unitCode !== undefined) col('unit_code', body.unitCode);
+  if (body.quantityTracking !== undefined) col('quantity_tracking', body.quantityTracking);
+  if (body.lotTracked !== undefined) col('lot_tracked', body.lotTracked);
+  if (body.isLoanable !== undefined) col('is_loanable', body.isLoanable);
+  if (body.minStock !== undefined) col('min_stock', body.minStock);
+  if (body.notes !== undefined) col('notes', clean(body.notes));
+  if (body.status !== undefined) col('status', body.status);
+  await c.query(`UPDATE material SET ${set.join(', ')}, updated_at = now() WHERE id = $1`, values);
+  await writeAudit(c, {
+    userId: request.user!.id, action: 'material.modificacion', entityType: 'material', entityId: id,
+    before: { ref: before.internal_ref, description: before.description }, after: body, ip: request.ip, requestId: request.id,
+  });
+}
+
 
 async function sameNameCheck(c: pg.PoolClient, name: string, parentId: string | null, exceptId: string | null) {
   const r = await c.query(

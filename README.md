@@ -23,6 +23,8 @@ documentación técnica y calibración de equipos.
 - Montar el árbol de ubicaciones del almacén, duplicando estanterías enteras.
 - Ver todo el almacén como un árbol desplegable y buscar dónde está cada cosa.
 - Ordenar y filtrar las listas de ubicaciones, contenedores y usuarios.
+- Editar varias ubicaciones, contenedores o materiales a la vez en una tabla.
+- Códigos de ubicación heredados: al cambiar uno, cambian los de dentro.
 - Dar de alta contenedores, anidarlos y moverlos, con historial.
 - Imprimir etiquetas QR en formato 6 × 4 pulgadas o en hojas A4 de 24.
 - Escanear etiquetas con la cámara, con un lector USB o tecleando el código.
@@ -62,6 +64,7 @@ sistema obliga a cambiar su contraseña al entrar.
 | Ubicaciones, contenedores y movimientos | Sí, 26 pruebas |
 | Duplicar, exportar a Excel y árbol | Sí, 17 pruebas |
 | Inventario (Fase 3) | Sí, 27 pruebas |
+| Código heredado y edición en tabla | Sí, 12 pruebas y recorrido con navegador real |
 | Ordenar, filtrar y vista de árbol | Sí, recorrido con un navegador real |
 | Etiquetas QR legibles en los dos formatos | Sí, 4 pruebas que leen el QR del PDF |
 | Web, API y proxy HTTPS funcionando juntos | Sí, recorrido completo con un navegador real |

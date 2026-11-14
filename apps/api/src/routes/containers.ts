@@ -372,7 +372,7 @@ export function containerRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
           properties: {
             description: { type: 'string', maxLength: 300 },
             reusePolicy: { type: 'string', enum: ['REUSABLE', 'DISPOSABLE'] },
-            responsibleUserId: { anyOf: [uuid, { type: 'null' }] },
+            responsibleUserId: { anyOf: [{ type: 'null' }, uuid] },
           },
         },
       },
@@ -406,6 +406,64 @@ export function containerRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
         });
       });
       return containerDetail(pool, id);
+    },
+  );
+
+  // ---- Edición de varios a la vez -----------------------------------------
+  app.patch(
+    '/api/containers/bulk',
+    {
+      preHandler: requirePermission('container.manage'),
+      schema: {
+        body: {
+          type: 'object', required: ['items'], additionalProperties: false,
+          properties: {
+            items: {
+              type: 'array', minItems: 1, maxItems: 1000,
+              items: {
+                type: 'object', required: ['id'], additionalProperties: false, minProperties: 2,
+                properties: {
+                  id: uuid,
+                  description: { type: 'string', maxLength: 300 },
+                  reusePolicy: { type: 'string', enum: ['REUSABLE', 'DISPOSABLE'] },
+                  responsibleUserId: { anyOf: [{ type: 'null' }, uuid] },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (request) => {
+      const { items } = request.body as { items: Array<{ id: string; description?: string; reusePolicy?: string; responsibleUserId?: string | null }> };
+      if (new Set(items.map((i) => i.id)).size !== items.length) throw badRequest('Un contenedor aparece dos veces');
+      await withTransaction(pool, async (c) => {
+        for (const body of items) {
+          const before = (await c.query(`${CONTAINER_SELECT} WHERE c.id = $1`, [body.id])).rows[0];
+          if (!before) throw notFound('Un contenedor de la lista ya no existe');
+          if (before.status !== 'ACTIVE') throw conflict(`${before.code}: está retirado`, 'CONTENEDOR_RETIRADO');
+          if (body.responsibleUserId) {
+            const u = await c.query(`SELECT 1 FROM app_user WHERE id = $1 AND active`, [body.responsibleUserId]);
+            if (!u.rowCount) throw badRequest(`${before.code}: el responsable indicado no existe`, 'USUARIO_NO_EXISTE');
+          }
+          await c.query(
+            `UPDATE container
+                SET description = CASE WHEN $2::text IS NULL THEN description ELSE nullif($2, '') END,
+                    reuse_policy = coalesce($3, reuse_policy),
+                    responsible_user_id = CASE WHEN $4 THEN $5::uuid ELSE responsible_user_id END,
+                    updated_at = now()
+              WHERE id = $1`,
+            [body.id, body.description?.trim() ?? null, body.reusePolicy ?? null, 'responsibleUserId' in body, body.responsibleUserId ?? null],
+          );
+          await writeAudit(c, {
+            userId: request.user!.id, action: 'contenedor.modificacion', entityType: 'container', entityId: body.id,
+            before: { description: before.description, reusePolicy: before.reusePolicy, responsibleUserId: before.responsibleUserId },
+            after: body, ip: request.ip, requestId: request.id,
+          });
+        }
+      });
+      const r = await pool.query(`${CONTAINER_SELECT} WHERE c.id = ANY($1) ORDER BY c.code`, [items.map((i) => i.id)]);
+      return { containers: r.rows };
     },
   );
 

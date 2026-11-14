@@ -239,25 +239,25 @@ describe('movimientos', () => {
     const [pallet] = await newContainers('PALET', { locationId: s02.id });
     const [box] = await newContainers('CAJA', { parentContainerId: pallet!.id });
     const [tray] = await newContainers('BANDEJA', { parentContainerId: box!.id });
-    const dest = await newLocation('FIC-DESTINO-1', 'POSICION', zona.id);
+    const dest = await newLocation('ALM-A-DESTINO1', 'POSICION', zona.id);
 
     const lines = async () => (await pool.query(`SELECT count(*)::int AS n FROM stock_movement_line`)).rows[0].n;
     const before = await lines();
 
     const res = await call('POST', `/api/containers/${pallet!.id}/move`, usuario, { toLocationId: dest.id, reason: 'FICTICIO reorganización' });
     expect(res.statusCode, res.body).toBe(200);
-    expect(res.json()).toMatchObject({ descendantsMoved: 2, destination: 'FIC-DESTINO-1' });
+    expect(res.json()).toMatchObject({ descendantsMoved: 2, destination: 'ALM-A-DESTINO1' });
     expect(await lines()).toBe(before + 1); // una sola línea de movimiento
 
     for (const id of [pallet!.id, box!.id, tray!.id]) {
-      expect((await detail(id)).locationPath.at(-1).code).toBe('FIC-DESTINO-1');
+      expect((await detail(id)).locationPath.at(-1).code).toBe('ALM-A-DESTINO1');
     }
     // La bandeja sigue dentro de la caja, y la caja dentro del palet.
     expect((await detail(tray!.id)).containerPath.map((c: { code: string }) => c.code)).toEqual([pallet!.code, box!.code, tray!.code]);
 
     const history = (await detail(pallet!.id)).movements;
     expect(history[0]).toMatchObject({
-      movementType: 'CONTAINER_MOVE', fromLocation: 'ALM-A-P01-E01-N02-S02', toLocation: 'FIC-DESTINO-1',
+      movementType: 'CONTAINER_MOVE', fromLocation: 'ALM-A-P01-E01-N02-S02', toLocation: 'ALM-A-DESTINO1',
       performedBy: 'FICTICIO Usuario Estándar', reason: 'FICTICIO reorganización',
     });
     expect(history.at(-1)).toMatchObject({ fromLocation: null, toLocation: 'ALM-A-P01-E01-N02-S02', reason: 'Alta del contenedor' });
@@ -324,7 +324,7 @@ describe('movimientos', () => {
   });
 
   it('la capacidad superada avisa y deja continuar si se confirma', async () => {
-    const small = await newLocation('FIC-PEQUENA', 'POSICION', zona.id, { maxCapacity: 2 });
+    const small = await newLocation('ALM-A-PEQUENA', 'POSICION', zona.id, { maxCapacity: 2 });
     await newContainers('CAJA', { locationId: small.id }, 2);
     const [extra] = await newContainers('CAJA', { locationId: s02.id });
 
