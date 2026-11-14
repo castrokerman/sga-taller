@@ -307,3 +307,28 @@ describe('exportar a Excel', () => {
     expect(audit.rows[0].n).toBeGreaterThanOrEqual(3);
   });
 });
+
+describe('árbol del almacén', () => {
+  it('devuelve todas las ubicaciones y contenedores activos con sus padres', async () => {
+    const res = await call('GET', '/api/tree', consulta);
+    expect(res.statusCode).toBe(200);
+    const { locations, containers } = res.json() as {
+      locations: Array<{ id: string; parentId: string | null; code: string; childCount: number; containerCount: number }>;
+      containers: Array<{ id: string; code: string; locationId: string | null; parentContainerId: string | null }>;
+    };
+    const active = await pool.query(`SELECT count(*)::int AS n FROM storage_location WHERE active`);
+    expect(locations).toHaveLength(active.rows[0].n);
+    const e01row = locations.find((l) => l.code === 'ALM-A-P01-E01')!;
+    expect(e01row).toMatchObject({ parentId: pasillo.id, childCount: 2 });
+    // Cada contenedor está en una ubicación o dentro de otro contenedor de la lista.
+    const ids = new Set(containers.map((c) => c.id));
+    for (const c of containers) expect(Boolean(c.locationId) !== Boolean(c.parentContainerId && ids.has(c.parentContainerId))).toBe(true);
+    // Los retirados no aparecen.
+    const retired = await pool.query(`SELECT id FROM container WHERE status = 'RETIRED'`);
+    for (const r of retired.rows) expect(ids.has(r.id)).toBe(false);
+  });
+
+  it('sin sesión no se ve nada', async () => {
+    expect((await app.inject({ method: 'GET', url: '/api/tree' })).statusCode).toBe(401);
+  });
+});

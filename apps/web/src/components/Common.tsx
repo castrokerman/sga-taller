@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { api, errorMessage, type ContainerSummary, type LabelFormat, type LabelRef, type LocationSummary, type PathItem } from '../api';
 import { navigate } from '../router';
+import { Highlight, optionsFrom, type ListConfig } from './ListControls';
 
 /** Ruta de ubicaciones (y contenedores) hasta el elemento actual. */
 export function Breadcrumbs(props: { locations: PathItem[]; containers?: PathItem[]; current?: string }) {
@@ -24,18 +25,20 @@ export function Breadcrumbs(props: { locations: PathItem[]; containers?: PathIte
   );
 }
 
-export function LocationCard({ l }: { l: LocationSummary }) {
+export function LocationCard({ l, q = '' }: { l: LocationSummary; q?: string }) {
+  const over = l.maxCapacity !== null && l.containerCount > l.maxCapacity;
   return (
     <button className="item" onClick={() => navigate(`almacen/${l.id}`)}>
       <span className="item-main">
-        <strong>{l.code}</strong>
-        <span>{l.name}</span>
+        <strong><Highlight text={l.code} query={q} /></strong>
+        <span><Highlight text={l.name} query={q} /></span>
       </span>
       <span className="item-meta">
         <span className="tag">{l.typeName}</span>
-        <span>
+        <span className={over ? 'over' : undefined}>
           {l.childCount > 0 && `${l.childCount} ubic. `}
-          {l.containerCount > 0 && `${l.containerCount} cont.`}
+          {l.containerCount > 0 &&
+            (l.maxCapacity !== null ? `${l.containerCount} de ${l.maxCapacity} cont.` : `${l.containerCount} cont.`)}
           {l.childCount === 0 && l.containerCount === 0 && 'Vacía'}
         </span>
       </span>
@@ -43,12 +46,12 @@ export function LocationCard({ l }: { l: LocationSummary }) {
   );
 }
 
-export function ContainerCard({ c }: { c: ContainerSummary }) {
+export function ContainerCard({ c, q = '' }: { c: ContainerSummary; q?: string }) {
   return (
     <button className="item item-container" onClick={() => navigate(`contenedor/${c.id}`)}>
       <span className="item-main">
-        <strong>{c.code}</strong>
-        <span>{c.description ?? c.typeName}</span>
+        <strong><Highlight text={c.code} query={q} /></strong>
+        <span><Highlight text={c.description ?? c.typeName} query={q} /></span>
       </span>
       <span className="item-meta">
         <span className="tag">{c.typeName}</span>
@@ -135,6 +138,88 @@ export function LabelPanel(props: { groups: Array<{ label: string; items: LabelR
           Cerrar
         </button>
       </div>
+    </div>
+  );
+}
+
+// ---- Configuración de orden y filtros, común a todas las pantallas --------
+
+
+const time = (iso: string) => new Date(iso).getTime();
+
+export function locationListConfig(items: LocationSummary[], storageKey: string): ListConfig<LocationSummary> {
+  return {
+    storageKey,
+    noun: 'ubicaciones',
+    text: (l) => [l.code, l.name, l.description],
+    sorts: [
+      { key: 'codigo', label: 'Código', value: (l) => l.code },
+      { key: 'nombre', label: 'Nombre', value: (l) => l.name },
+      { key: 'tipo', label: 'Tipo', value: (l) => l.typeName },
+      { key: 'contenedores', label: 'Nº de contenedores', value: (l) => l.containerCount, defaultDir: 'desc' },
+      { key: 'alta', label: 'Fecha de alta', value: (l) => time(l.createdAt), defaultDir: 'desc' },
+    ],
+    filters: [
+      { key: 'tipo', label: 'Tipo', options: optionsFrom(items, (l) => l.typeName), test: (l, v) => l.typeName === v },
+      {
+        key: 'ocupacion', label: 'Ocupación',
+        options: [
+          { value: 'vacia', label: 'Vacías' },
+          { value: 'ocupada', label: 'Con contenido' },
+          { value: 'superada', label: 'Capacidad superada' },
+        ],
+        test: (l, v) =>
+          v === 'vacia' ? l.childCount === 0 && l.containerCount === 0
+          : v === 'ocupada' ? l.childCount > 0 || l.containerCount > 0
+          : l.maxCapacity !== null && l.containerCount > l.maxCapacity,
+      },
+    ],
+  };
+}
+
+export function containerListConfig(items: ContainerSummary[], storageKey: string): ListConfig<ContainerSummary> {
+  return {
+    storageKey,
+    noun: 'contenedores',
+    text: (c) => [c.code, c.description, c.typeName, c.responsibleName],
+    sorts: [
+      { key: 'codigo', label: 'Código', value: (c) => c.code },
+      { key: 'tipo', label: 'Tipo', value: (c) => c.typeName },
+      { key: 'descripcion', label: 'Descripción', value: (c) => c.description },
+      { key: 'responsable', label: 'Responsable', value: (c) => c.responsibleName },
+      { key: 'alta', label: 'Fecha de alta', value: (c) => time(c.createdAt), defaultDir: 'desc' },
+    ],
+    filters: [
+      { key: 'tipo', label: 'Tipo', options: optionsFrom(items, (c) => c.typeName), test: (c, v) => c.typeName === v },
+      {
+        key: 'responsable', label: 'Responsable',
+        options: [{ value: '__ninguno', label: 'Sin responsable' }, ...optionsFrom(items, (c) => c.responsibleName)],
+        test: (c, v) => (v === '__ninguno' ? !c.responsibleName : c.responsibleName === v),
+      },
+      {
+        key: 'politica', label: 'Política',
+        options: [{ value: 'REUSABLE', label: 'Reutilizable' }, { value: 'DISPOSABLE', label: 'Desechable' }],
+        test: (c, v) => c.reusePolicy === v,
+      },
+      {
+        key: 'contenido', label: 'Contenido',
+        options: [{ value: 'vacio', label: 'Sin nada dentro' }, { value: 'lleno', label: 'Con contenedores dentro' }],
+        test: (c, v) => (v === 'vacio' ? c.childCount === 0 : c.childCount > 0),
+      },
+    ],
+  };
+}
+
+/** Selector «Lista | Árbol» de la pantalla principal del almacén. */
+export function ViewSwitch(props: { view: 'lista' | 'arbol'; onChange: (v: 'lista' | 'arbol') => void }) {
+  return (
+    <div className="viewswitch push-right" role="group" aria-label="Vista">
+      <button className={props.view === 'lista' ? 'on' : ''} aria-pressed={props.view === 'lista'} onClick={() => props.onChange('lista')}>
+        Lista
+      </button>
+      <button className={props.view === 'arbol' ? 'on' : ''} aria-pressed={props.view === 'arbol'} onClick={() => props.onChange('arbol')}>
+        Árbol
+      </button>
     </div>
   );
 }

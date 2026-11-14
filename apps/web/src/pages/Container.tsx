@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { api, ApiError, errorMessage, formatDateTime, newOperationKey, type ContainerDetail, type ScanHit, type User } from '../api';
-import { Breadcrumbs, ContainerCard, LabelPanel } from '../components/Common';
+import { Breadcrumbs, ContainerCard, containerListConfig, LabelPanel } from '../components/Common';
+import { useListControls } from '../components/ListControls';
 import { Scanner } from '../components/Scanner';
 import { ContainerForm } from './Warehouse';
 
@@ -15,6 +16,8 @@ export function ContainerPage({ user, containerId }: { user: User; containerId: 
   const [panel, setPanel] = useState<Panel>('none');
 
   const can = (p: string) => user.permissions.includes(p);
+  const inside = detail?.children ?? [];
+  const insideList = useListControls(inside, containerListConfig(inside, 'contenedores-dentro'));
 
   const load = useCallback(async () => {
     setError(null);
@@ -152,11 +155,15 @@ export function ContainerPage({ user, containerId }: { user: User; containerId: 
       <section>
         <h3>Contenedores dentro</h3>
         {detail.children.length > 0 ? (
-          <div className="items">
-            {detail.children.map((k) => (
-              <ContainerCard key={k.id} c={k} />
-            ))}
-          </div>
+          <>
+            {detail.children.length > 1 && insideList.bar}
+            <div className="items">
+              {insideList.visible.map((k) => (
+                <ContainerCard key={k.id} c={k} q={insideList.query} />
+              ))}
+            </div>
+            {insideList.visible.length === 0 && <p className="muted">Ningún contenedor cumple los filtros.</p>}
+          </>
         ) : (
           <p className="muted">No lleva otros contenedores dentro.</p>
         )}
