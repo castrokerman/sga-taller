@@ -150,7 +150,12 @@ resto de la red del taller:
 
    ```
    SITE_ADDRESS=localhost, 192.168.1.50
+   DEFAULT_SNI=192.168.1.50
    ```
+
+   La segunda línea, con la IP sola, es necesaria para que el móvil pueda
+   abrir la versión segura (`https`). Sin ella, Safari dice «no ha podido
+   establecer una conexión segura con el servidor».
 
 3. **Aplica el cambio:**
 

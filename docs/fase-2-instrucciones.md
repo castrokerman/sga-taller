@@ -204,7 +204,12 @@ en la que confíe. Son tres pasos, y se hacen una sola vez.
 
    ```
    SITE_ADDRESS=localhost, 192.168.1.50
+   DEFAULT_SNI=192.168.1.50
    ```
+
+   La segunda línea, con la IP sola, es necesaria para que el móvil pueda
+   abrir la versión segura (`https`). Sin ella, Safari dice «no ha podido
+   establecer una conexión segura con el servidor».
 
 3. Aplica el cambio con `docker compose up -d`.
 4. Si Windows pregunta por el cortafuegos, permite el acceso en redes privadas.
@@ -304,7 +309,8 @@ Se abre a pantalla completa, como una aplicación más.
 | «La cámara no está disponible» | El móvil no confía en la conexión. Sigue el apartado 6.3. Mientras tanto, se puede teclear el código. |
 | «No hay permiso para usar la cámara» | Se denegó el permiso. En el navegador, toca el candado junto a la dirección y permite la cámara. |
 | La cámara se ve pero no lee | Acerca o aleja el móvil hasta que el QR ocupe buena parte del recuadro, y evita reflejos. Las etiquetas pequeñas se leen mejor de cerca. |
-| El móvil no llega a `https://192.168.1.50` | Comprueba que está en la misma wifi, que la IP es la actual (`ipconfig`), que está en `SITE_ADDRESS` y que el cortafuegos de Windows permite el acceso. |
+| El móvil no llega a `https://192.168.1.50` | Comprueba que está en la misma wifi, que la IP es la actual (`ipconfig`), que está en `SITE_ADDRESS` y en `DEFAULT_SNI`, y que el cortafuegos de Windows permite el acceso. |
+| «No ha podido establecer una conexión segura» | Falta la línea `DEFAULT_SNI` con la IP del PC en el `.env`. Añádela y ejecuta `docker compose up -d --force-recreate proxy`. |
 | Las pegatinas A4 salen descuadradas | Imprime a tamaño real, sin «Ajustar a la página». |
 | «Ese código no corresponde a nada registrado» | El QR no es del SGA, o el código tecleado no existe. |
 

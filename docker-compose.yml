@@ -70,6 +70,7 @@ services:
     environment:
       SITE_ADDRESS: ${SITE_ADDRESS:-localhost}
       TLS_MODE: ${TLS_MODE:-internal}
+      DEFAULT_SNI: ${DEFAULT_SNI:-localhost}
       # Solo si HTTPS_PORT no es 443: dos puntos y el puerto, por ejemplo ":8443".
       HTTPS_SUFFIX: ${HTTPS_SUFFIX:-}
     ports:
