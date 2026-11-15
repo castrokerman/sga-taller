@@ -37,6 +37,8 @@ export interface AuditEntry {
   entityId: string | null;
   username: string | null;
   fullName: string | null;
+  before: unknown;
+  after: unknown;
 }
 
 export class ApiError extends Error {
@@ -90,6 +92,9 @@ export interface LocationSummary {
   code: string;
   /** Parte propia del código; el resto lo pone la ubicación superior. */
   segment: string;
+  /** Número propio (EST03 → 3); null en las zonas y en las antiguas sin recodificar. */
+  seq: number | null;
+  typePrefix: string;
   parentCode: string | null;
   /** Foto principal, si tiene. */
   photoId: string | null;
@@ -363,10 +368,23 @@ export interface AppNotification {
   createdBy: string;
 }
 
+export interface SearchResult {
+  materials: Array<{
+    id: string; internalRef: string; description: string; unitCode: string; quantityTracking: Tracking; status: string;
+    familyName: string; photoId: string | null;
+    places: Array<{ containerId: string | null; locationId: string | null; placeCode: string; locationCode: string | null; quantity: number | null }>;
+  }>;
+  containers: Array<{
+    id: string; code: string; description: string | null; typeName: string; status: string; locationCode: string | null;
+    locationId: string | null; parentCode: string | null; parentContainerId: string | null; photoId: string | null;
+  }>;
+  locations: Array<{ id: string; code: string; name: string; typeName: string; active: boolean; parentCode: string | null; photoId: string | null }>;
+}
+
 export const photoUrl = (id: string, size: 'thumb' | 'image' = 'thumb') => `/api/photos/${id}/${size}`;
 
-export interface LocationType { code: string; name: string; active: boolean }
-export interface ContainerType { code: string; name: string; codePrefix: string; defaultReusePolicy: string; active: boolean }
+export interface LocationType { code: string; name: string; active: boolean; codePrefix: string; sortOrder: number; locationCount: number }
+export interface ContainerType { code: string; name: string; codePrefix: string; defaultReusePolicy: string; active: boolean; containerCount: number }
 export interface ScanHit { kind: 'container' | 'location' | 'equipment'; id: string; code: string; name: string | null }
 export type LabelFormat = '4x6' | 'a4-24';
 export interface LabelRef { kind: 'location' | 'container'; id: string }
@@ -387,20 +405,34 @@ export const api = {
     request<{ user: AdminUser }>('PATCH', `/api/admin/users/${id}`, data),
   resetPassword: (id: string, newPassword: string) =>
     request<{ ok: true }>('POST', `/api/admin/users/${id}/reset-password`, { newPassword }),
-  audit: () => request<{ entries: AuditEntry[] }>('GET', '/api/admin/audit?limit=100'),
+  audit: (f: { limit?: number; before?: number; action?: string; userId?: string; from?: string; to?: string; q?: string }) => {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(f)) if (v !== undefined && v !== '') qs.set(k, String(v));
+    return request<{ entries: AuditEntry[]; more: boolean }>('GET', `/api/admin/audit?${qs}`);
+  },
+  auditActions: () =>
+    request<{ actions: Array<{ action: string; n: number }>; users: Array<{ id: string; fullName: string }> }>('GET', '/api/admin/audit/actions'),
 
   locationTypes: () => request<{ types: LocationType[] }>('GET', '/api/location-types'),
-  createLocationType: (data: { code: string; name: string }) =>
+  createLocationType: (data: { name: string; codePrefix: string }) =>
     request<{ type: LocationType }>('POST', '/api/location-types', data),
+  updateLocationType: (code: string, data: { name?: string; codePrefix?: string; active?: boolean }) =>
+    request<{ recoded: number }>('PATCH', `/api/location-types/${code}`, data),
+  updateContainerType: (code: string, data: { name?: string; codePrefix?: string; defaultReusePolicy?: string; active?: boolean }) =>
+    request<{ recoded: number }>('PATCH', `/api/container-types/${code}`, data),
+  nextLocationCode: (parentId: string, typeCode: string, exceptId?: string) =>
+    request<{ parentCode: string | null; typePrefix: string; seq: number; code: string }>(
+      'GET', `/api/locations/next-code?parentId=${parentId}&typeCode=${typeCode}${exceptId ? `&exceptId=${exceptId}` : ''}`,
+    ),
   containerTypes: () => request<{ types: ContainerType[] }>('GET', '/api/container-types'),
-  createContainerType: (data: { code: string; name: string; codePrefix: string; defaultReusePolicy: string }) =>
+  createContainerType: (data: { code?: string; name: string; codePrefix: string; defaultReusePolicy: string }) =>
     request<{ type: ContainerType }>('POST', '/api/container-types', data),
 
   rootLocations: () => request<{ locations: LocationSummary[] }>('GET', '/api/locations'),
   location: (id: string) => request<LocationDetail>('GET', `/api/locations/${id}`),
-  createLocation: (data: { segment: string; name: string; typeCode: string; parentId?: string; maxCapacity?: number }) =>
+  createLocation: (data: { segment?: string; seq?: number; name: string; typeCode: string; parentId?: string; maxCapacity?: number }) =>
     request<{ location: LocationSummary }>('POST', '/api/locations', data),
-  updateLocation: (id: string, data: { segment?: string; name?: string; maxCapacity?: number | null; active?: boolean }) =>
+  updateLocation: (id: string, data: { segment?: string; seq?: number; typeCode?: string; name?: string; maxCapacity?: number | null; active?: boolean }) =>
     request<{ location: LocationSummary; descendantsRecoded: number }>('PATCH', `/api/locations/${id}`, data),
   bulkLocations: (items: Array<{ id: string } & Record<string, unknown>>) =>
     request<{ locations: LocationSummary[]; descendantsRecoded: number }>('PATCH', '/api/locations/bulk', { items }),
@@ -425,10 +457,10 @@ export const api = {
     request<ContainerDetail>('POST', `/api/containers/${id}/retire`, { reason }, key),
 
   locationDuplicateProposal: (id: string) =>
-    request<{ code: string; prefix: string | null; segment: string; name: string; descendantCount: number; childrenCopyable: boolean; blockingChildCode: string | null }>(
+    request<{ code: string; prefix: string | null; segment: string; typePrefix: string | null; seq: number | null; name: string; descendantCount: number; childrenCopyable: boolean; blockingChildCode: string | null }>(
       'GET', `/api/locations/${id}/duplicate-proposal`,
     ),
-  duplicateLocation: (id: string, data: { segment: string; name: string; includeChildren: boolean }, key: string) =>
+  duplicateLocation: (id: string, data: { segment?: string; seq?: number; name: string; includeChildren: boolean }, key: string) =>
     request<{ location: LocationSummary; created: number }>('POST', `/api/locations/${id}/duplicate`, data, key),
   duplicateContainer: (id: string, data: { quantity: number; includeChildren: boolean; force?: boolean }, key: string) =>
     request<{ containers: ContainerSummary[] }>('POST', `/api/containers/${id}/duplicate`, data, key),
@@ -489,6 +521,7 @@ export const api = {
   markRead: (id: string) => request<{ ok: true }>('POST', `/api/notifications/${id}/read`, {}),
   markAllRead: () => request<{ marked: number }>('POST', '/api/notifications/read-all', {}),
 
+  search: (q: string) => request<SearchResult>('GET', `/api/search?q=${encodeURIComponent(q)}`),
   tree: () => request<{ locations: TreeLocation[]; containers: TreeContainer[] }>('GET', '/api/tree'),
   scan: (code: string) => request<ScanHit>('GET', `/api/scan/${encodeURIComponent(code)}`),
   basicUsers: () => request<{ users: Array<{ id: string; fullName: string }> }>('GET', '/api/users/basic'),

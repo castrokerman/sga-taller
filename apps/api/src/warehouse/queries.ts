@@ -3,7 +3,7 @@ import type pg from 'pg';
 type Db = pg.Pool | pg.PoolClient;
 
 export const LOCATION_SELECT = `
-  SELECT l.id, l.code, l.segment, l.name, l.description, l.parent_id AS "parentId", l.qr_token AS "qrToken",
+  SELECT l.id, l.code, l.segment, l.seq, l.location_type_id AS "typeId", t.code_prefix AS "typePrefix", l.name, l.description, l.parent_id AS "parentId", l.qr_token AS "qrToken",
          (SELECT p.code FROM storage_location p WHERE p.id = l.parent_id) AS "parentCode",
          (SELECT ph.id FROM photo ph WHERE ph.entity_type = 'location' AND ph.entity_id = l.id ORDER BY ph.position LIMIT 1) AS "photoId",
          t.code AS "typeCode", t.name AS "typeName",

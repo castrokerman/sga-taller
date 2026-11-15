@@ -92,8 +92,33 @@ varias a la vez».
 
 ## 4. El día a día
 
-Todo empieza igual: **escanea la caja o la ubicación**. En su ficha, bajo
-«Material», están los botones.
+### Registrar entrada (desde el inicio)
+
+Es la forma más cómoda de meter material. En el inicio, **«Registrar
+entrada»** te lleva en tres pasos:
+
+1. **Material**: búscalo por nombre o referencia, o pulsa «+ Material nuevo»
+   para crearlo en ese momento.
+2. **Dónde**: escanea la caja, bandeja o ubicación, o escribe su código. Si
+   repites sitio, sale el botón «Al mismo sitio que la última vez».
+3. **Cantidad**: con lote, albarán, nota y, si quieres, **foto del
+   material**, que se añade a su ficha.
+
+Al terminar puedes seguir con **otra entrada en el mismo sitio**, con **más
+del mismo material en otro sitio**, o empezar de cero.
+
+### Buscador (desde el inicio)
+
+**«Buscador»** encuentra cualquier cosa escribiendo palabras, en cualquier
+orden y sin importar tildes ni mayúsculas: nombre, referencia, fabricante,
+lote, código de caja o de ubicación… De cada material dice **dónde está** (la
+caja y la ubicación de la caja) y cuánto hay en cada sitio. Pulsar un
+resultado abre su ficha.
+
+### Desde una caja o una ubicación
+
+**Escanea la caja o la ubicación**. En su ficha, bajo «Material», están los
+botones.
 
 ### Meter material: «+ Entrada»
 
@@ -180,6 +205,13 @@ anotó, dónde y quién. Pulsar uno lleva a la ficha y lo marca como leído.
 Los avisos por correo electrónico llegarán en la Fase 5.
 
 ## 6. La huella: nada se borra
+
+En **«Auditoría»** (inicio, para responsables y administradores) está todo lo
+que se ha hecho, sin límite: abajo, «Cargar 200 más antiguas». Se puede
+filtrar por **operación** (una concreta o un grupo, como «Movimientos de
+material»), por persona, por fechas y por texto (un código, una referencia…).
+Pulsar una línea enseña el detalle de lo registrado.
+
 
 - Cada operación queda como un **movimiento numerado**, con quién, cuándo,
   dónde, cuánto y para qué. No se puede modificar ni borrar.

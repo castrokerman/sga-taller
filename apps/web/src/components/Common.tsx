@@ -28,13 +28,14 @@ export function Breadcrumbs(props: { locations: PathItem[]; containers?: PathIte
 export function LocationCard({ l, q = '' }: { l: LocationSummary; q?: string }) {
   const over = l.maxCapacity !== null && l.containerCount > l.maxCapacity;
   return (
-    <button className="item" onClick={() => navigate(`almacen/${l.id}`)}>
+    <button className={`item ${l.active ? '' : 'item-off'}`} onClick={() => navigate(`almacen/${l.id}`)}>
       {l.photoId && <img className="item-photo" src={photoUrl(l.photoId)} alt="" loading="lazy" />}
       <span className="item-main">
         <strong><Highlight text={l.code} query={q} /></strong>
         <span><Highlight text={l.name} query={q} /></span>
       </span>
       <span className="item-meta">
+        {!l.active && <span className="badge badge-off">Desactivada</span>}
         <span className="tag">{l.typeName}</span>
         <span className={over ? 'over' : undefined}>
           {l.childCount > 0 && `${l.childCount} ubic. `}
@@ -164,6 +165,14 @@ export function locationListConfig(items: LocationSummary[], storageKey: string)
     ],
     filters: [
       { key: 'tipo', label: 'Tipo', options: optionsFrom(items, (l) => l.typeName), test: (l, v) => l.typeName === v },
+      {
+        key: 'estado', label: 'Estado',
+        options: [
+          { value: 'activa', label: 'Activas' },
+          { value: 'desactivada', label: 'Desactivadas' },
+        ],
+        test: (l, v) => (v === 'activa' ? l.active : !l.active),
+      },
       {
         key: 'ocupacion', label: 'Ocupación',
         options: [

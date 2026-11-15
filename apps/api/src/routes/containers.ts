@@ -80,8 +80,9 @@ export function containerRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
   // ---- Tipos de contenedor ------------------------------------------------
   app.get('/api/container-types', { preHandler: requirePermission('container.read') }, async () => {
     const r = await pool.query(
-      `SELECT code, name, code_prefix AS "codePrefix", default_reuse_policy AS "defaultReusePolicy", active
-         FROM container_type ORDER BY name`,
+      `SELECT t.code, t.name, t.code_prefix AS "codePrefix", t.default_reuse_policy AS "defaultReusePolicy", t.active,
+              (SELECT count(*)::int FROM container k WHERE k.container_type_id = t.id) AS "containerCount"
+         FROM container_type t ORDER BY t.name`,
     );
     return { types: r.rows };
   });
@@ -92,7 +93,7 @@ export function containerRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
       preHandler: requirePermission('admin.masterdata.manage'),
       schema: {
         body: {
-          type: 'object', required: ['code', 'name', 'codePrefix'], additionalProperties: false,
+          type: 'object', required: ['name', 'codePrefix'], additionalProperties: false,
           properties: {
             code: { type: 'string', pattern: TYPE_CODE_PATTERN },
             name: { type: 'string', minLength: 1, maxLength: 60 },
@@ -103,7 +104,12 @@ export function containerRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
       },
     },
     async (request, reply) => {
-      const body = request.body as { code: string; name: string; codePrefix: string; defaultReusePolicy?: string };
+      const raw = request.body as { code?: string; name: string; codePrefix: string; defaultReusePolicy?: string };
+      // Sin código interno, se saca del nombre: «Jaula grande» → JAULA_GRANDE.
+      const body = {
+        ...raw,
+        code: raw.code ?? (raw.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30) || 'TIPO'),
+      };
       const dup = await pool.query(`SELECT 1 FROM container_type WHERE code = $1 OR code_prefix = $2`, [
         body.code, body.codePrefix,
       ]);
@@ -123,6 +129,68 @@ export function containerRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
           defaultReusePolicy: body.defaultReusePolicy ?? 'REUSABLE', active: true,
         },
       };
+    },
+  );
+
+  // Cambiar el prefijo recodifica los contenedores de ese tipo: CAJ-000001 → CJA-000001.
+  app.patch(
+    '/api/container-types/:code',
+    {
+      preHandler: requirePermission('admin.masterdata.manage'),
+      schema: {
+        params: { type: 'object', required: ['code'], properties: { code: { type: 'string', maxLength: 30 } } },
+        body: {
+          type: 'object', additionalProperties: false, minProperties: 1,
+          properties: {
+            name: { type: 'string', minLength: 1, maxLength: 60 },
+            codePrefix: { type: 'string', pattern: '^[A-Z]{2,5}$' },
+            defaultReusePolicy: { type: 'string', enum: ['REUSABLE', 'DISPOSABLE'] },
+            active: { type: 'boolean' },
+          },
+        },
+      },
+    },
+    async (request) => {
+      const { code } = request.params as { code: string };
+      const body = request.body as { name?: string; codePrefix?: string; defaultReusePolicy?: string; active?: boolean };
+      return withTransaction(pool, async (c) => {
+        const before = (await c.query(
+          `SELECT id, name, code_prefix, default_reuse_policy, active FROM container_type WHERE code = $1 FOR UPDATE`, [code],
+        )).rows[0];
+        if (!before) throw notFound('El tipo de contenedor no existe');
+        let recoded = 0;
+        if (body.codePrefix && body.codePrefix !== before.code_prefix) {
+          const dup = await c.query(`SELECT name FROM container_type WHERE code_prefix = $1`, [body.codePrefix]);
+          if (dup.rowCount) throw conflict(`El prefijo ${body.codePrefix} ya lo usa «${dup.rows[0].name}»`, 'TIPO_DUPLICADO');
+          const clash = await c.query(
+            `SELECT k.code FROM container k
+              WHERE k.container_type_id = $1 AND left(k.code, length($2) + 1) = $2 || '-'
+                AND EXISTS (SELECT 1 FROM container o WHERE o.code = $3 || substr(k.code, length($2) + 1))
+              LIMIT 1`,
+            [before.id, before.code_prefix, body.codePrefix],
+          );
+          if (clash.rowCount) throw conflict(`No se puede: ${clash.rows[0].code} chocaría con un contenedor que ya existe`, 'CODIGO_DUPLICADO');
+          const r = await c.query(
+            `UPDATE container SET code = $3 || substr(code, length($2) + 1), updated_at = now()
+              WHERE container_type_id = $1 AND left(code, length($2) + 1) = $2 || '-'`,
+            [before.id, before.code_prefix, body.codePrefix],
+          );
+          recoded = r.rowCount ?? 0;
+        }
+        await c.query(
+          `UPDATE container_type
+              SET name = coalesce($2, name), code_prefix = coalesce($3, code_prefix),
+                  default_reuse_policy = coalesce($4, default_reuse_policy), active = coalesce($5, active)
+            WHERE id = $1`,
+          [before.id, body.name?.trim() ?? null, body.codePrefix ?? null, body.defaultReusePolicy ?? null, body.active ?? null],
+        );
+        await writeAudit(c, {
+          userId: request.user!.id, action: 'tipo_contenedor.modificacion', entityType: 'container_type', entityId: code,
+          before: { name: before.name, codePrefix: before.code_prefix, defaultReusePolicy: before.default_reuse_policy, active: before.active },
+          after: { ...body, contenedoresRecodificados: recoded }, ip: request.ip, requestId: request.id,
+        });
+        return { recoded };
+      });
     },
   );
 

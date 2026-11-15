@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { api, errorMessage, type ContainerType, type LocationType } from '../api';
 
-/** Administración de los tipos de ubicación y de contenedor. */
+const letters = (v: string, max: number) => v.toUpperCase().replace(/[^A-Z]/g, '').slice(0, max);
+
+/**
+ * Tipos de ubicación y de contenedor: se crean y se editan. Cada tipo tiene un
+ * prefijo con el que se codifica lo de ese tipo (EST03, CAJ-000014).
+ */
 export function TypesPage() {
   const [locationTypes, setLocationTypes] = useState<LocationType[]>([]);
   const [containerTypes, setContainerTypes] = useState<ContainerType[]>([]);
+  const [editing, setEditing] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -22,121 +28,288 @@ export function TypesPage() {
     void load();
   }, [load]);
 
-  const [lCode, setLCode] = useState('');
-  const [lName, setLName] = useState('');
-  const [cCode, setCCode] = useState('');
-  const [cName, setCName] = useState('');
-  const [cPrefix, setCPrefix] = useState('');
-  const [cPolicy, setCPolicy] = useState('REUSABLE');
-
-  const run = async (action: () => Promise<unknown>, text: string) => {
+  const run = async (action: () => Promise<string>) => {
     setError(null);
     setNotice(null);
     try {
-      await action();
-      setNotice(text);
+      setNotice(await action());
+      setEditing(null);
       await load();
+      return true;
     } catch (e) {
       setError(errorMessage(e));
+      return false;
     }
   };
 
-  const addLocationType = (e: FormEvent) => {
-    e.preventDefault();
-    void run(async () => {
-      await api.createLocationType({ code: lCode, name: lName });
-      setLCode('');
-      setLName('');
-    }, `Tipo de ubicación creado: ${lName}`);
-  };
-
-  const addContainerType = (e: FormEvent) => {
-    e.preventDefault();
-    void run(async () => {
-      await api.createContainerType({ code: cCode, name: cName, codePrefix: cPrefix, defaultReusePolicy: cPolicy });
-      setCCode('');
-      setCName('');
-      setCPrefix('');
-    }, `Tipo de contenedor creado: ${cName}`);
-  };
-
-  const upper = (v: string) => v.toUpperCase().replace(/[^A-Z0-9_]/g, '');
-
   return (
     <>
+      <nav className="crumbs">
+        <a href="#/inicio">Inicio</a>
+        <span>
+          <i>›</i>
+          <strong>Tipos</strong>
+        </span>
+      </nav>
       <div className="page-head">
-        <a className="btn" href="#/inicio">
-          ← Inicio
-        </a>
-        <h2>Tipos</h2>
+        <div>
+          <h2>Tipos</h2>
+          <p className="muted nomargin">Cada tipo tiene un prefijo con el que se codifica todo lo de ese tipo.</p>
+        </div>
       </div>
       {notice && <p className="alert alert-ok">{notice}</p>}
       {error && <p className="alert alert-error">{error}</p>}
 
       <section>
         <h3>Tipos de ubicación</h3>
-        <p className="tags">
-          {locationTypes.map((t) => (
-            <span key={t.code} className="tag">
-              {t.name}
-            </span>
-          ))}
+        <p className="muted">
+          Dentro de otra ubicación, el código es el de la superior, el prefijo del tipo y un número:{' '}
+          <span className="mono">ALM-A-PAS01-EST03-NIV02</span>. Las zonas de primer nivel tienen código libre.
         </p>
-        <form className="card form" onSubmit={addLocationType}>
-          <div className="grid-2">
-            <label className="field">
-              <span>Código</span>
-              <input value={lCode} onChange={(e) => setLCode(upper(e.target.value))} required pattern="[A-Z][A-Z0-9_]{1,29}" />
-              <small className="muted">Mayúsculas, sin espacios. Ejemplo: MURO.</small>
-            </label>
-            <label className="field">
-              <span>Nombre</span>
-              <input value={lName} onChange={(e) => setLName(e.target.value)} required maxLength={60} />
-            </label>
-          </div>
-          <div className="actions">
-            <button className="btn btn-primary">Añadir tipo de ubicación</button>
-          </div>
-        </form>
+        <div className="table-wrap card">
+          <table className="types-table">
+            <thead>
+              <tr>
+                <th>Nombre</th>
+                <th>Prefijo</th>
+                <th className="num">Ubicaciones</th>
+                <th>Estado</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {locationTypes.map((t) =>
+                editing === `l:${t.code}` ? (
+                  <TypeEditRow
+                    key={t.code}
+                    kind="location"
+                    name={t.name}
+                    prefix={t.codePrefix}
+                    active={t.active}
+                    count={t.locationCount}
+                    onCancel={() => setEditing(null)}
+                    onSave={(v) =>
+                      run(async () => {
+                        const r = await api.updateLocationType(t.code, v);
+                        return r.recoded
+                          ? `Tipo guardado. Se han recodificado ${r.recoded} ubicaciones: sus etiquetas siguen funcionando, pero conviene reimprimirlas.`
+                          : 'Tipo guardado';
+                      })
+                    }
+                  />
+                ) : (
+                  <tr key={t.code} className={t.active ? undefined : 'row-off'}>
+                    <td>{t.name}</td>
+                    <td className="mono">{t.codePrefix}01</td>
+                    <td className="num">{t.locationCount}</td>
+                    <td>{t.active ? <span className="badge badge-ok">Activo</span> : <span className="badge badge-off">Desactivado</span>}</td>
+                    <td className="row-actions">
+                      <button className="btn btn-small" onClick={() => { setNotice(null); setEditing(`l:${t.code}`); }}>
+                        Editar
+                      </button>
+                    </td>
+                  </tr>
+                ),
+              )}
+            </tbody>
+          </table>
+        </div>
+        <NewType
+          kind="location"
+          onCreate={(v) => run(async () => {
+            await api.createLocationType({ name: v.name, codePrefix: v.prefix });
+            return `Tipo de ubicación creado: ${v.name} (${v.prefix}01, ${v.prefix}02…)`;
+          })}
+        />
       </section>
 
       <section>
         <h3>Tipos de contenedor</h3>
-        <p className="tags">
-          {containerTypes.map((t) => (
-            <span key={t.code} className="tag">
-              {t.name} · {t.codePrefix}
-            </span>
-          ))}
+        <p className="muted">
+          Cada contenedor recibe el prefijo de su tipo y un número correlativo: <span className="mono">CAJ-000014</span>.
         </p>
-        <form className="card form" onSubmit={addContainerType}>
-          <div className="grid-2">
-            <label className="field">
-              <span>Código</span>
-              <input value={cCode} onChange={(e) => setCCode(upper(e.target.value))} required pattern="[A-Z][A-Z0-9_]{1,29}" />
-            </label>
-            <label className="field">
-              <span>Nombre</span>
-              <input value={cName} onChange={(e) => setCName(e.target.value)} required maxLength={60} />
-            </label>
-            <label className="field">
-              <span>Prefijo de los códigos</span>
-              <input value={cPrefix} onChange={(e) => setCPrefix(e.target.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 5))} required pattern="[A-Z]{2,5}" />
-              <small className="muted">De 2 a 5 letras. Con JAU, los códigos serán JAU-000001, JAU-000002…</small>
-            </label>
-            <label className="field">
-              <span>Política por defecto</span>
-              <select value={cPolicy} onChange={(e) => setCPolicy(e.target.value)}>
-                <option value="REUSABLE">Reutilizable</option>
-                <option value="DISPOSABLE">Desechable</option>
-              </select>
-            </label>
-          </div>
-          <div className="actions">
-            <button className="btn btn-primary">Añadir tipo de contenedor</button>
-          </div>
-        </form>
+        <div className="table-wrap card">
+          <table className="types-table">
+            <thead>
+              <tr>
+                <th>Nombre</th>
+                <th>Prefijo</th>
+                <th>Política por defecto</th>
+                <th className="num">Contenedores</th>
+                <th>Estado</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {containerTypes.map((t) =>
+                editing === `c:${t.code}` ? (
+                  <TypeEditRow
+                    key={t.code}
+                    kind="container"
+                    name={t.name}
+                    prefix={t.codePrefix}
+                    policy={t.defaultReusePolicy}
+                    active={t.active}
+                    count={t.containerCount}
+                    onCancel={() => setEditing(null)}
+                    onSave={(v) =>
+                      run(async () => {
+                        const r = await api.updateContainerType(t.code, v);
+                        return r.recoded
+                          ? `Tipo guardado. Se han recodificado ${r.recoded} contenedores: sus etiquetas siguen funcionando, pero conviene reimprimirlas.`
+                          : 'Tipo guardado';
+                      })
+                    }
+                  />
+                ) : (
+                  <tr key={t.code} className={t.active ? undefined : 'row-off'}>
+                    <td>{t.name}</td>
+                    <td className="mono">{t.codePrefix}-000001</td>
+                    <td>{t.defaultReusePolicy === 'DISPOSABLE' ? 'Desechable' : 'Reutilizable'}</td>
+                    <td className="num">{t.containerCount}</td>
+                    <td>{t.active ? <span className="badge badge-ok">Activo</span> : <span className="badge badge-off">Desactivado</span>}</td>
+                    <td className="row-actions">
+                      <button className="btn btn-small" onClick={() => { setNotice(null); setEditing(`c:${t.code}`); }}>
+                        Editar
+                      </button>
+                    </td>
+                  </tr>
+                ),
+              )}
+            </tbody>
+          </table>
+        </div>
+        <NewType
+          kind="container"
+          onCreate={(v) => run(async () => {
+            await api.createContainerType({ name: v.name, codePrefix: v.prefix, defaultReusePolicy: v.policy ?? 'REUSABLE' });
+            return `Tipo de contenedor creado: ${v.name} (${v.prefix}-000001…)`;
+          })}
+        />
       </section>
     </>
+  );
+}
+
+type TypeValues = { name: string; codePrefix: string; active: boolean; defaultReusePolicy?: string };
+
+function TypeEditRow(props: {
+  kind: 'location' | 'container';
+  name: string;
+  prefix: string;
+  policy?: string;
+  active: boolean;
+  count: number;
+  onCancel: () => void;
+  onSave: (v: TypeValues) => Promise<boolean>;
+}) {
+  const [name, setName] = useState(props.name);
+  const [prefix, setPrefix] = useState(props.prefix);
+  const [policy, setPolicy] = useState(props.policy ?? 'REUSABLE');
+  const [active, setActive] = useState(props.active);
+  const [busy, setBusy] = useState(false);
+  const max = props.kind === 'location' ? 6 : 5;
+  const min = props.kind === 'location' ? 1 : 2;
+  const changedPrefix = prefix !== props.prefix;
+  const noun = props.kind === 'location' ? 'ubicaciones' : 'contenedores';
+
+  const save = async () => {
+    if (changedPrefix && props.count > 0 &&
+      !window.confirm(`Al cambiar el prefijo de ${props.prefix} a ${prefix} se recodificarán las ${props.count} ${noun} de este tipo${props.kind === 'location' ? ' y las que llevan dentro' : ''}. Sus etiquetas seguirán funcionando, pero mostrarán el código anterior. ¿Seguir?`)) {
+      return;
+    }
+    setBusy(true);
+    await props.onSave({ name: name.trim(), codePrefix: prefix, active, ...(props.kind === 'container' ? { defaultReusePolicy: policy } : {}) });
+    setBusy(false);
+  };
+
+  return (
+    <tr className="row-editing">
+      <td>
+        <input value={name} onChange={(e) => setName(e.target.value)} maxLength={60} aria-label="Nombre" />
+      </td>
+      <td>
+        <input className="mono prefix-input" value={prefix} onChange={(e) => setPrefix(letters(e.target.value, max))} aria-label="Prefijo" />
+        {changedPrefix && props.count > 0 && <div className="small low">Recodificará {props.count} {noun}</div>}
+      </td>
+      {props.kind === 'container' && (
+        <td>
+          <select value={policy} onChange={(e) => setPolicy(e.target.value)} aria-label="Política por defecto">
+            <option value="REUSABLE">Reutilizable</option>
+            <option value="DISPOSABLE">Desechable</option>
+          </select>
+        </td>
+      )}
+      <td className="num">{props.count}</td>
+      <td>
+        <label className="check nomargin">
+          <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
+          <span>Activo</span>
+        </label>
+      </td>
+      <td className="row-actions">
+        <button className="btn btn-small" onClick={props.onCancel} disabled={busy}>
+          Cancelar
+        </button>
+        <button className="btn btn-small btn-primary" onClick={save} disabled={busy || !name.trim() || prefix.length < min}>
+          Guardar
+        </button>
+      </td>
+    </tr>
+  );
+}
+
+function NewType(props: { kind: 'location' | 'container'; onCreate: (v: { name: string; prefix: string; policy?: string }) => Promise<boolean> }) {
+  const [name, setName] = useState('');
+  const [prefix, setPrefix] = useState('');
+  const [policy, setPolicy] = useState('REUSABLE');
+  const max = props.kind === 'location' ? 6 : 5;
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (await props.onCreate({ name: name.trim(), prefix, policy })) {
+      setName('');
+      setPrefix('');
+    }
+  };
+
+  return (
+    <form className="card form" onSubmit={submit}>
+      <h4 className="nomargin">Nuevo tipo de {props.kind === 'location' ? 'ubicación' : 'contenedor'}</h4>
+      <div className="grid-2">
+        <label className="field">
+          <span>Nombre</span>
+          <input value={name} onChange={(e) => setName(e.target.value)} required maxLength={60} placeholder={props.kind === 'location' ? 'Balda' : 'Jaula'} />
+        </label>
+        <label className="field">
+          <span>Prefijo</span>
+          <input
+            className="mono"
+            value={prefix}
+            onChange={(e) => setPrefix(letters(e.target.value, max))}
+            required
+            minLength={props.kind === 'location' ? 1 : 2}
+            placeholder={props.kind === 'location' ? 'BAL' : 'JAU'}
+          />
+          <small className="muted">
+            {props.kind === 'location'
+              ? `Letras, hasta 6. Con BAL, las ubicaciones de este tipo serán BAL01, BAL02…`
+              : `De 2 a 5 letras. Con JAU, los contenedores serán JAU-000001, JAU-000002…`}
+          </small>
+        </label>
+        {props.kind === 'container' && (
+          <label className="field">
+            <span>Política por defecto</span>
+            <select value={policy} onChange={(e) => setPolicy(e.target.value)}>
+              <option value="REUSABLE">Reutilizable</option>
+              <option value="DISPOSABLE">Desechable</option>
+            </select>
+          </label>
+        )}
+      </div>
+      <div className="actions">
+        <button className="btn btn-primary">Añadir tipo</button>
+      </div>
+    </form>
   );
 }

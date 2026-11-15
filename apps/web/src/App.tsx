@@ -9,6 +9,8 @@ import { MaterialPage } from './pages/Material';
 import { MaterialsPage } from './pages/Materials';
 import { MovementsPage } from './pages/Movements';
 import { NotificationsPage } from './pages/Notifications';
+import { ReceivePage } from './pages/Receive';
+import { SearchPage } from './pages/Search';
 import { HomePage } from './pages/Home';
 import { LoginPage } from './pages/Login';
 import { ScannerPage } from './pages/ScannerPage';
@@ -82,6 +84,8 @@ export function App() {
   else if (route.name === 'usuarios' && can('admin.users.manage')) page = <UsersPage me={user} back={home} />;
   else if (route.name === 'auditoria' && can('audit.read')) page = <AuditPage back={home} />;
   else if (route.name === 'tipos' && can('admin.masterdata.manage')) page = <TypesPage />;
+  else if (route.name === 'buscar') page = <SearchPage />;
+  else if (route.name === 'entrada' && can('stock.receive')) page = <ReceivePage user={user} />;
   else if (route.name === 'avisos') page = <NotificationsPage onChanged={refreshUnread} />;
   else if (route.name === 'contrasena') page = <ChangePasswordPage onDone={home} onCancel={home} />;
   else page = <HomePage user={user} />;

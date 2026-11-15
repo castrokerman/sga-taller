@@ -58,6 +58,10 @@ beforeAll(async () => {
   app = await buildApp({ pool, config });
   await ensureFirstAdmin(pool, config);
   await seedDemoUsers(pool);
+  // Las pruebas usan códigos con prefijos de una letra: P01, E01, N01, S01.
+  await pool.query(
+    `UPDATE location_type SET code_prefix = x.p FROM (VALUES ('PASILLO', 'P'), ('ESTANTERIA', 'E'), ('NIVEL', 'N'), ('POSICION', 'S')) AS x (c, p) WHERE code = x.c`,
+  );
   await pool.query(`UPDATE app_user SET must_change_password = false`);
   [almacen, usuario] = await Promise.all([sessionOf('demo.almacen'), sessionOf('demo.usuario')]);
 });
@@ -71,12 +75,17 @@ describe('código heredado', () => {
   it('dentro de otra solo se elige la parte final; el resto lo pone la superior', async () => {
     const zona = await loc('ALM-H', 'ZONA');
     const pasillo = await loc('p01', 'PASILLO', zona.id);
-    expect(pasillo).toMatchObject({ code: 'ALM-H-P01', segment: 'P01', parentCode: 'ALM-H' });
-    // Con el código completo también vale, si empieza por el de la superior.
-    const res = await call('POST', '/api/locations', almacen, { code: 'OTRA-P02', name: 'x', typeCode: 'PASILLO', parentId: zona.id });
-    expect(res.json().error.code).toBe('CODIGO_NO_VALIDO');
-    expect((await call('POST', '/api/locations', almacen, { segment: 'P 01', name: 'x', typeCode: 'PASILLO', parentId: zona.id })).statusCode).toBe(400);
-    expect((await call('POST', '/api/locations', almacen, { segment: 'P01', name: 'x', typeCode: 'PASILLO', parentId: zona.id })).json().error.code).toBe('CODIGO_DUPLICADO');
+    expect(pasillo).toMatchObject({ code: 'ALM-H-P01', segment: 'P01', seq: 1, parentCode: 'ALM-H' });
+    // El prefijo lo pone el tipo; solo se elige el número. Sin número, el siguiente libre.
+    const p05 = await call('POST', '/api/locations', almacen, { seq: 5, name: 'x', typeCode: 'PASILLO', parentId: zona.id });
+    expect(p05.json().location.code).toBe('ALM-H-P05');
+    const next = await call('POST', '/api/locations', almacen, { name: 'x', typeCode: 'PASILLO', parentId: zona.id });
+    expect(next.json().location.code).toBe('ALM-H-P06');
+    const proposal = (await call('GET', `/api/locations/next-code?parentId=${zona.id}&typeCode=ESTANTERIA`, almacen)).json();
+    expect(proposal).toMatchObject({ parentCode: 'ALM-H', typePrefix: 'E', seq: 1, code: 'ALM-H-E01' });
+    // Un texto sin número no vale, y un número repetido tampoco.
+    expect((await call('POST', '/api/locations', almacen, { segment: 'PASILLO', name: 'x', typeCode: 'PASILLO', parentId: zona.id })).json().error.code).toBe('CODIGO_NO_VALIDO');
+    expect((await call('POST', '/api/locations', almacen, { seq: 1, name: 'x', typeCode: 'PASILLO', parentId: zona.id })).json().error.code).toBe('CODIGO_DUPLICADO');
   });
 
   it('al cambiar el código de una ubicación cambian los de todas las de dentro', async () => {
@@ -89,10 +98,10 @@ describe('código heredado', () => {
     expect(res.json().descendantsRecoded).toBe(3);
     expect(await codeOf(p.id)).toBe('ALM-B-P01');
     expect(await codeOf(e.id)).toBe('ALM-B-P01-E01');
-    expect(await codeOf(n.id)).toBe('ALM-B-P01-E01-N1');
+    expect(await codeOf(n.id)).toBe('ALM-B-P01-E01-N01');
     // El QR no cambia: las etiquetas impresas siguen funcionando.
     const scan = await call('GET', `/api/scan/${(await pool.query(`SELECT qr_token FROM storage_location WHERE id = $1`, [n.id])).rows[0].qr_token}`, usuario);
-    expect(scan.json().code).toBe('ALM-B-P01-E01-N1');
+    expect(scan.json().code).toBe('ALM-B-P01-E01-N01');
   });
 
   it('al mover una ubicación dentro de otra, ella y las suyas toman el código nuevo', async () => {
@@ -102,16 +111,16 @@ describe('código heredado', () => {
     const n = await loc('N1', 'NIVEL', e.id);
     expect((await call('PATCH', `/api/locations/${e.id}`, almacen, { parentId: b.id })).statusCode).toBe(200);
     expect(await codeOf(e.id)).toBe('ZB-E07');
-    expect(await codeOf(n.id)).toBe('ZB-E07-N1');
+    expect(await codeOf(n.id)).toBe('ZB-E07-N01');
   });
 
   it('si el cambio choca con un código existente no se guarda nada', async () => {
     const z1 = await loc('CHOQUE-1', 'ZONA');
     await loc('CHOQUE-2', 'ZONA');
-    const hija = await loc('X', 'NIVEL', z1.id);
+    const hija = await loc('N1', 'NIVEL', z1.id);
     const res = await call('PATCH', `/api/locations/${z1.id}`, almacen, { segment: 'CHOQUE-2' });
     expect(res.json().error.code).toBe('CODIGO_DUPLICADO');
-    expect(await codeOf(hija.id)).toBe('CHOQUE-1-X');
+    expect(await codeOf(hija.id)).toBe('CHOQUE-1-N01');
   });
 });
 
@@ -122,20 +131,20 @@ describe('recodificar las ubicaciones antiguas', () => {
     const niv = await loc('N1', 'NIVEL', est.id);
     // Simula una ubicación creada antes de la regla, con un código que no la sigue.
     await pool.query(`UPDATE storage_location SET code = 'ESTANTE-SUELTO' WHERE id = $1`, [est.id]);
-    expect(await codeOf(niv.id)).toBe('ESTANTE-SUELTO-N1');
+    expect(await codeOf(niv.id)).toBe('ESTANTE-SUELTO-N01');
     const preview = (await call('GET', '/api/locations/recode-preview', usuario)).json();
-    expect(preview.changes.map((c: { code: string; newCode: string }) => `${c.code} → ${c.newCode}`)).toEqual(['ESTANTE-SUELTO → VIEJA-E01', 'ESTANTE-SUELTO-N1 → VIEJA-E01-N1']);
+    expect(preview.changes.map((c: { code: string; newCode: string }) => `${c.code} → ${c.newCode}`)).toEqual(['ESTANTE-SUELTO → VIEJA-E01', 'ESTANTE-SUELTO-N01 → VIEJA-E01-N01']);
     expect((await call('POST', '/api/locations/recode', usuario)).statusCode).toBe(403);
     const r = await call('POST', '/api/locations/recode', almacen);
     expect(r.statusCode, r.body).toBe(200);
     expect(await codeOf(est.id)).toBe('VIEJA-E01');
-    expect(await codeOf(niv.id)).toBe('VIEJA-E01-N1');
+    expect(await codeOf(niv.id)).toBe('VIEJA-E01-N01');
     expect((await call('GET', '/api/locations/recode-preview', usuario)).json().changes).toEqual([]);
   });
 
   it('las existentes se descomponen al migrar: su parte final se conserva', async () => {
-    const r = await pool.query(`SELECT code, segment FROM storage_location WHERE code = 'VIEJA-E01-N1'`);
-    expect(r.rows[0].segment).toBe('N1');
+    const r = await pool.query(`SELECT code, segment FROM storage_location WHERE code = 'VIEJA-E01-N01'`);
+    expect(r.rows[0].segment).toBe('N01');
   });
 });
 
@@ -153,21 +162,21 @@ describe('editar varias ubicaciones a la vez', () => {
     });
     expect(res.statusCode, res.body).toBe(200);
     expect(res.json().descendantsRecoded).toBe(1);
-    expect(await codeOf(n.id)).toBe('MULTI-E10-N1');
+    expect(await codeOf(n.id)).toBe('MULTI-E10-N01');
     const e2now = (await call('GET', `/api/locations/${e2.id}`, usuario)).json().location;
     expect(e2now).toMatchObject({ typeCode: 'ARMARIO', description: 'FICTICIO cambiado en bloque' });
   });
 
   it('si una fila falla no se guarda ninguna, y dice cuál', async () => {
     const z = await loc('TODO-NADA', 'ZONA');
-    const a = await loc('A1', 'NIVEL', z.id);
-    const b = await loc('B1', 'NIVEL', z.id);
+    const a = await loc('N1', 'NIVEL', z.id);
+    const b = await loc('N2', 'NIVEL', z.id);
     const res = await call('PATCH', '/api/locations/bulk', almacen, {
-      items: [{ id: a.id, name: 'FICTICIO cambiado' }, { id: b.id, segment: 'A1' }],
+      items: [{ id: a.id, name: 'FICTICIO cambiado' }, { id: b.id, seq: 1 }],
     });
     expect(res.statusCode).toBe(409);
-    expect(res.json().error.message).toContain('TODO-NADA-B1');
-    expect((await pool.query(`SELECT name FROM storage_location WHERE id = $1`, [a.id])).rows[0].name).toBe('FICTICIO A1');
+    expect(res.json().error.message).toContain('TODO-NADA-N02');
+    expect((await pool.query(`SELECT name FROM storage_location WHERE id = $1`, [a.id])).rows[0].name).toBe('FICTICIO N1');
   });
 
   it('un usuario estándar no puede', async () => {
@@ -229,5 +238,110 @@ describe('dejar un campo vacío lo deja vacío', () => {
     const resp = (await pool.query(`SELECT id FROM app_user WHERE username = 'demo.usuario'`)).rows[0].id;
     expect((await call('PATCH', `/api/containers/${k}`, almacen, { responsibleUserId: resp })).json().container.responsibleUserId).toBe(resp);
     expect((await call('PATCH', `/api/containers/${k}`, almacen, { responsibleUserId: null })).json().container.responsibleUserId).toBeNull();
+  });
+});
+
+describe('prefijo por tipo de ubicación', () => {
+  let admin: Cookie;
+  beforeAll(async () => {
+    const res = await app.inject({
+      method: 'POST', url: '/api/auth/login', headers: { 'x-sga-client': 'web' },
+      payload: { username: 'admin', password: config.adminPassword },
+    });
+    admin = { sga_session: res.cookies.find((c) => c.name === 'sga_session')!.value };
+  });
+
+  it('cambiar el prefijo de un tipo recodifica sus ubicaciones y las de dentro', async () => {
+    const z = await loc('PREF', 'ZONA');
+    const e = await loc('E1', 'ESTANTERIA', z.id);
+    const n = await loc('N1', 'NIVEL', e.id);
+    const types = (await call('GET', '/api/location-types', usuario)).json().types as Array<{ code: string; codePrefix: string }>;
+    expect(types.find((t) => t.code === 'ESTANTERIA')!.codePrefix).toBe('E');
+    expect((await call('PATCH', '/api/location-types/ESTANTERIA', almacen, { codePrefix: 'EST' })).statusCode).toBe(403);
+    const r = await call('PATCH', '/api/location-types/ESTANTERIA', admin, { codePrefix: 'EST', name: 'Estantería metálica' });
+    expect(r.statusCode, r.body).toBe(200);
+    expect(r.json().recoded).toBeGreaterThanOrEqual(2);
+    expect(await codeOf(e.id)).toBe('PREF-EST01');
+    expect(await codeOf(n.id)).toBe('PREF-EST01-N01');
+    // Un prefijo ya usado por otro tipo no se admite.
+    expect((await call('PATCH', '/api/location-types/ESTANTERIA', admin, { codePrefix: 'N' })).json().error.code).toBe('TIPO_DUPLICADO');
+    await call('PATCH', '/api/location-types/ESTANTERIA', admin, { codePrefix: 'E' });
+  });
+
+  it('cambiar el tipo de una ubicación cambia su prefijo y conserva su número', async () => {
+    const z = await loc('CAMBIO-TIPO', 'ZONA');
+    const e = await loc('E3', 'ESTANTERIA', z.id);
+    const r = await call('PATCH', `/api/locations/${e.id}`, almacen, { typeCode: 'ARMARIO' });
+    expect(r.statusCode, r.body).toBe(200);
+    expect(r.json().location.code).toBe('CAMBIO-TIPO-ARM03');
+  });
+
+  it('cambiar el prefijo de un tipo de contenedor recodifica sus contenedores', async () => {
+    const z = await loc('CONT-PREF', 'ZONA');
+    const k = (await call('POST', '/api/containers', almacen, { typeCode: 'BANDEJA', locationId: z.id })).json().containers[0];
+    expect(k.code).toMatch(/^BAN-\d{6}$/);
+    const r = await call('PATCH', '/api/container-types/BANDEJA', admin, { codePrefix: 'BDJ' });
+    expect(r.statusCode, r.body).toBe(200);
+    expect(r.json().recoded).toBeGreaterThanOrEqual(1);
+    const after = (await call('GET', `/api/containers/${k.id}`, usuario)).json().container;
+    expect(after.code).toBe(k.code.replace('BAN-', 'BDJ-'));
+    // El QR sigue llevando al mismo contenedor.
+    expect((await call('GET', `/api/scan/${after.qrToken}`, usuario)).json().id).toBe(k.id);
+    // Los nuevos ya salen con el prefijo nuevo.
+    const k2 = (await call('POST', '/api/containers', almacen, { typeCode: 'BANDEJA', locationId: z.id })).json().containers[0];
+    expect(k2.code).toMatch(/^BDJ-/);
+  });
+
+  it('solo un administrador desactiva, y la desactivada sigue viéndose', async () => {
+    const z = await loc('DESACT', 'ZONA');
+    const e = await loc('E1', 'ESTANTERIA', z.id);
+    expect((await call('PATCH', `/api/locations/${e.id}`, almacen, { active: false })).statusCode).toBe(403);
+    expect((await call('PATCH', '/api/locations/bulk', almacen, { items: [{ id: e.id, active: false }] })).statusCode).toBe(403);
+    expect((await call('PATCH', `/api/locations/${e.id}`, admin, { active: false })).statusCode).toBe(200);
+    const kids = (await call('GET', `/api/locations?parentId=${z.id}`, usuario)).json().locations;
+    expect(kids).toMatchObject([{ id: e.id, active: false }]);
+    const tree = (await call('GET', '/api/tree', usuario)).json().locations as Array<{ id: string; active: boolean }>;
+    expect(tree.find((l) => l.id === e.id)?.active).toBe(false);
+    expect((await call('PATCH', `/api/locations/${e.id}`, admin, { active: true })).statusCode).toBe(200);
+  });
+
+  it('las antiguas reciben prefijo de su tipo conservando su número', async () => {
+    await pool.query(`UPDATE location_type SET code_prefix = 'PAS' WHERE code = 'PASILLO'`);
+    const z = await loc('ANTIGUA', 'ZONA');
+    // Una antigua sin número (como las creadas antes de esta versión).
+    await pool.query(
+      `INSERT INTO storage_location (qr_token, segment, name, parent_id, location_type_id)
+       SELECT 'fic-antigua-p', 'P07', 'FICTICIO', $1, id FROM location_type WHERE code = 'PASILLO'`,
+      [z.id],
+    );
+    const plan = (await call('GET', '/api/locations/recode-preview', usuario)).json().changes as Array<{ code: string; newCode: string }>;
+    expect(plan.map((p) => `${p.code} → ${p.newCode}`)).toContain('ANTIGUA-P07 → ANTIGUA-PAS07');
+    expect((await call('POST', '/api/locations/recode', almacen)).statusCode).toBe(200);
+    expect((await pool.query(`SELECT code, seq FROM storage_location WHERE qr_token = 'fic-antigua-p'`)).rows[0]).toEqual({ code: 'ANTIGUA-PAS07', seq: 7 });
+    expect((await call('GET', '/api/locations/recode-preview', usuario)).json().changes).toEqual([]);
+  });
+});
+
+describe('auditoría', () => {
+  it('filtra por operación o por grupo, y pagina sin límite de 100', async () => {
+    const all = (await call('GET', '/api/admin/audit?limit=1000', almacen)).json();
+    expect(all.entries.length).toBeGreaterThan(20);
+    const types = (await call('GET', '/api/admin/audit/actions', almacen)).json();
+    expect(types.actions.map((a: { action: string }) => a.action)).toContain('ubicacion.alta');
+    const altas = (await call('GET', '/api/admin/audit?action=ubicacion.alta', almacen)).json().entries as Array<{ action: string }>;
+    expect(altas.length).toBeGreaterThan(5);
+    expect(new Set(altas.map((e) => e.action))).toEqual(new Set(['ubicacion.alta']));
+    const grupo = (await call('GET', '/api/admin/audit?action=ubicacion.', almacen)).json().entries as Array<{ action: string }>;
+    expect(grupo.every((e) => e.action.startsWith('ubicacion.'))).toBe(true);
+    expect(grupo.length).toBeGreaterThan(altas.length);
+    // Páginas: 5 y luego las 5 siguientes, sin repetir.
+    const p1 = (await call('GET', '/api/admin/audit?limit=5', almacen)).json();
+    expect(p1.more).toBe(true);
+    const p2 = (await call('GET', `/api/admin/audit?limit=5&before=${p1.entries[4].id}`, almacen)).json();
+    expect(p2.entries[0].id).toBeLessThan(p1.entries[4].id);
+    // Búsqueda dentro de lo registrado.
+    const busq = (await call('GET', '/api/admin/audit?q=MULTI-E10', almacen)).json().entries;
+    expect(busq.length).toBeGreaterThan(0);
+    expect((await call('GET', '/api/admin/audit', usuario)).statusCode).toBe(403);
   });
 });

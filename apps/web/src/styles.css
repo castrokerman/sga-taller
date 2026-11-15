@@ -355,7 +355,9 @@ mark { background: #fff1a8; color: inherit; padding: 0 1px; border-radius: 2px; 
 .section-head { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; margin-bottom: 0.6rem; }
 .section-head h3 { margin: 0; }
 .section-head .row-actions { margin-left: auto; }
-.row-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+div.row-actions, span.row-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+td.row-actions { white-space: nowrap; }
+td.row-actions .btn { display: inline-flex; }
 .cats { display: inline-flex; gap: 0.3rem; flex-wrap: wrap; }
 .cat { display: inline-block; padding: 0.12rem 0.55rem; border-radius: 99px; font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
 .cat-gen { background: var(--ok-bg); color: var(--ok); }
@@ -517,3 +519,31 @@ tr.clickable:hover td { background: #f7f9fb; }
 .field textarea { display: block; width: 100%; font: inherit; padding: 0.6rem 0.75rem; border: 1px solid var(--line); border-radius: 8px; min-height: 6rem; resize: vertical; background: #fff; color: var(--ink); }
 .field textarea:focus { outline: 3px solid var(--accent-soft); border-color: var(--accent); }
 .bulk-table td .code-input input { min-width: 5.5rem; }
+
+/* Ubicaciones desactivadas: se ven, en gris */
+.item-off { opacity: 0.55; }
+.item-off strong { text-decoration: line-through; text-decoration-thickness: 1px; }
+.node.off { opacity: 0.5; }
+.types-table input:not([type=checkbox]), .types-table select { width: 100%; min-width: 6rem; padding: 0.35rem 0.5rem; }
+.prefix-input { max-width: 7rem; }
+.row-editing td { background: var(--accent-soft); }
+.seq-input { max-width: 6rem; text-align: center; font-weight: 700; }
+.audit-filters { display: grid; grid-template-columns: 2fr 1.5fr 1fr 1fr 2fr auto; gap: 0.6rem; align-items: end; margin-bottom: 0.8rem; }
+.audit-filters .field { margin: 0; }
+.audit-filters .linkbtn { margin-bottom: 0.6rem; }
+.audit-detail pre { margin: 0; font-size: 0.78rem; white-space: pre-wrap; max-width: 520px; max-height: 300px; overflow: auto; background: #f7f9fb; padding: 0.5rem; border-radius: 6px; }
+@media (max-width: 900px) { .audit-filters { grid-template-columns: 1fr 1fr; } }
+.steps { display: flex; gap: 0.4rem; list-style: none; padding: 0; margin: 0 0 1rem; flex-wrap: wrap; }
+.steps li > * { all: unset; display: block; padding: 0.45rem 0.8rem; border-radius: 99px; background: #e9edf2; color: var(--ink-soft); font-weight: 600; font-size: 0.9rem; cursor: default; max-width: 22rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.steps li.done > button { cursor: pointer; background: var(--ok-bg); color: var(--ok); }
+.steps li.on > * { background: var(--accent); color: #fff; }
+.last-place { display: block; width: 100%; margin-bottom: 0.8rem; text-align: left; }
+.actions-wrap { flex-wrap: wrap; }
+.done-card { border-left-color: var(--ok); }
+.search-big input { font-size: 1.15rem; padding: 0.8rem 1rem 0.8rem 2.4rem; min-height: 54px; }
+.results { list-style: none; padding: 0; margin: 0 0 1rem; display: flex; flex-direction: column; gap: 0.4rem; }
+.result { all: unset; box-sizing: border-box; cursor: pointer; display: flex; gap: 0.8rem; align-items: center; width: 100%; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 0.6rem 0.8rem; }
+.result:hover { border-color: var(--accent); }
+.result-main { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.where { display: flex; flex-wrap: wrap; gap: 0.2rem 0.9rem; font-size: 0.9rem; margin-top: 0.15rem; }
+.item-photo.empty { display: inline-block; width: 52px; height: 52px; border-radius: 6px; background: #f1f3f6; border: 1px dashed var(--line); flex: none; margin-right: 0.6rem; }

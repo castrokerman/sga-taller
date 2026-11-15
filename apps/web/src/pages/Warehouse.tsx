@@ -7,7 +7,7 @@ import { Breadcrumbs, ContainerCard, containerListConfig, LabelPanel, LocationCa
 import { useListControls } from '../components/ListControls';
 import { StockSection } from '../components/Stock';
 import { ItemExtras } from '../components/ItemExtras';
-import { BulkEditor, CodeInput, type BulkChanges } from '../components/BulkEditor';
+import { BulkEditor, CodeInput, padSeq, SeqInput, type BulkChanges } from '../components/BulkEditor';
 import { WarehouseTree } from './Tree';
 import { navigate } from '../router';
 
@@ -81,6 +81,9 @@ export function WarehousePage({ user, locationId }: { user: User; locationId?: s
       /* sin almacenamiento local */
     }
   };
+  // Dentro de una ubicación, el árbol muestra solo lo que cuelga de ella.
+  const hasInside = Boolean(loc && (loc.childCount > 0 || loc.containerCount > 0));
+  const localTree = Boolean(loc && hasInside && view === 'arbol');
   if (!locationId && view === 'arbol') {
     return <WarehouseTree user={user} onList={() => chooseView('lista')} />;
   }
@@ -99,7 +102,7 @@ export function WarehousePage({ user, locationId }: { user: User; locationId?: s
             </p>
           )}
         </div>
-        {!loc && <ViewSwitch view="lista" onChange={chooseView} />}
+        {(!loc || hasInside) && <ViewSwitch view={loc ? view : 'lista'} onChange={chooseView} />}
         <button className={`btn btn-primary ${loc ? 'push-right' : ''}`} onClick={() => navigate('escaner')}>
           Escanear
         </button>
@@ -146,7 +149,7 @@ export function WarehousePage({ user, locationId }: { user: User; locationId?: s
       </div>
 
       {panel === 'location' && (
-        <LocationForm parent={loc} onCancel={() => setPanel('none')} onDone={(l) => done(`Ubicación creada: ${l.code}`)} />
+        <LocationForm parent={loc} siblings={children} onCancel={() => setPanel('none')} onDone={(l) => done(`Ubicación creada: ${l.code}`)} />
       )}
       {panel === 'container' && loc && (
         <ContainerForm
@@ -156,7 +159,7 @@ export function WarehousePage({ user, locationId }: { user: User; locationId?: s
         />
       )}
       {panel === 'edit' && loc && (
-        <EditLocationForm location={loc} onCancel={() => setPanel('none')} onDone={(text) => done(text)} onGone={() => navigate(loc.parentId ? `almacen/${loc.parentId}` : 'almacen')} />
+        <EditLocationForm location={loc} canDeactivate={can('location.deactivate')} onCancel={() => setPanel('none')} onDone={(text) => done(text)} onGone={() => navigate(loc.parentId ? `almacen/${loc.parentId}` : 'almacen')} />
       )}
       {panel === 'duplicate' && loc && (
         <DuplicateLocationForm location={loc} onCancel={() => setPanel('none')} onDone={(text) => done(text)} />
@@ -175,7 +178,9 @@ export function WarehousePage({ user, locationId }: { user: User; locationId?: s
 
       {!detail && !roots && !error && <p className="muted">Cargando…</p>}
 
-      {children.length > 0 && (
+      {localTree && loc && <WarehouseTree key={loc.id} user={user} rootId={loc.id} onList={() => chooseView('lista')} />}
+
+      {!localTree && children.length > 0 && (
         <section>
           <div className="section-head">
             <h3>Ubicaciones</h3>
@@ -186,7 +191,7 @@ export function WarehousePage({ user, locationId }: { user: User; locationId?: s
             )}
           </div>
           {panel === 'bulk-loc' && (
-            <BulkLocations rows={locList.visible} onClose={(m) => (m ? done(m) : setPanel('none'))} />
+            <BulkLocations rows={locList.visible} canDeactivate={can('location.deactivate')} onClose={(m) => (m ? done(m) : setPanel('none'))} />
           )}
           {children.length > 1 && locList.bar}
           <div className="items">
@@ -198,7 +203,7 @@ export function WarehousePage({ user, locationId }: { user: User; locationId?: s
         </section>
       )}
 
-      {loc && (
+      {loc && !localTree && (
         <section>
           <div className="section-head">
             <h3>Contenedores</h3>
@@ -240,22 +245,44 @@ export function WarehousePage({ user, locationId }: { user: User; locationId?: s
   );
 }
 
-function LocationForm(props: { parent?: LocationSummary; onCancel: () => void; onDone: (l: LocationSummary) => void }) {
+/** Lo que suele ir dentro de cada tipo, si aún no hay nada dentro. */
+const USUAL_CHILD: Record<string, string> = {
+  ZONA: 'PASILLO', AREA: 'ESTANTERIA', PASILLO: 'ESTANTERIA', ESTANTERIA: 'NIVEL', ARMARIO: 'NIVEL', NIVEL: 'POSICION', CAJONERA: 'CAJON',
+};
+
+function LocationForm(props: { parent?: LocationSummary; siblings?: LocationSummary[]; onCancel: () => void; onDone: (l: LocationSummary) => void }) {
   const [types, setTypes] = useState<LocationType[]>([]);
   const [code, setCode] = useState('');
+  const [seq, setSeq] = useState('');
   const [name, setName] = useState('');
   const [typeCode, setTypeCode] = useState('');
   const [capacity, setCapacity] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const parent = props.parent;
 
   useEffect(() => {
     api.locationTypes().then((r) => {
       const active = r.types.filter((t) => t.active);
       setTypes(active);
-      setTypeCode((current) => current || active[0]?.code || '');
+      // En primer nivel, una zona. Dentro de otra: el tipo que más tienen ya sus hermanas o, si no hay, el que suele ir debajo.
+      const has = (code?: string) => (code && active.some((t) => t.code === code) ? code : undefined);
+      const counts = new Map<string, number>();
+      for (const s of props.siblings ?? []) counts.set(s.typeCode, (counts.get(s.typeCode) ?? 0) + 1);
+      const common = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+      const suggested = !parent
+        ? has('ZONA')
+        : has(common) ?? has(USUAL_CHILD[parent.typeCode]) ?? active.find((t) => t.code !== 'ZONA')?.code;
+      setTypeCode((current) => current || suggested || active[0]?.code || '');
     }).catch((e) => setError(errorMessage(e)));
-  }, []);
+  }, [parent]);
+
+  // Dentro de otra: el siguiente número libre para ese tipo.
+  useEffect(() => {
+    if (!parent || !typeCode) return;
+    api.nextLocationCode(parent.id, typeCode).then((r) => setSeq(String(r.seq))).catch(() => undefined);
+  }, [parent, typeCode]);
+  const typePrefix = types.find((t) => t.code === typeCode)?.codePrefix ?? '';
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -263,7 +290,7 @@ function LocationForm(props: { parent?: LocationSummary; onCancel: () => void; o
     setError(null);
     try {
       const r = await api.createLocation({
-        segment: code.trim(), name, typeCode, parentId: props.parent?.id,
+        ...(parent ? { seq: Number(seq) } : { segment: code.trim() }), name, typeCode, parentId: parent?.id,
         maxCapacity: capacity ? Number(capacity) : undefined,
       });
       props.onDone(r.location);
@@ -279,27 +306,31 @@ function LocationForm(props: { parent?: LocationSummary; onCancel: () => void; o
       <h3>{props.parent ? `Nueva ubicación dentro de ${props.parent.code}` : 'Nueva ubicación'}</h3>
       <div className="grid-2">
         <label className="field">
+          <span>Tipo</span>
+          <select value={typeCode} onChange={(e) => setTypeCode(e.target.value)} required autoFocus>
+            {types.map((t) => (
+              <option key={t.code} value={t.code}>
+                {t.name} ({t.codePrefix})
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
           <span>Código</span>
-          <CodeInput prefix={props.parent?.code ?? null} value={code} onChange={setCode} autoFocus />
+          {parent ? (
+            <SeqInput fixed={`${parent.code}-${typePrefix}`} value={seq} onChange={setSeq} />
+          ) : (
+            <CodeInput prefix={null} value={code} onChange={setCode} />
+          )}
           <small className="muted">
-            {props.parent
-              ? `Escribe solo la parte final, por ejemplo E01. El principio lo pone ${props.parent.code}.`
-              : 'Mayúsculas, números y guiones. Ejemplo: ALM-A.'}
+            {parent
+              ? `Quedará ${parent.code}-${typePrefix}${padSeq(seq)}. El principio lo ponen la ubicación superior y el tipo; se propone el siguiente número libre.`
+              : 'Zona de primer nivel: código libre, con mayúsculas, números y guiones. Ejemplo: ALM-A.'}
           </small>
         </label>
         <label className="field">
           <span>Nombre</span>
           <input value={name} onChange={(e) => setName(e.target.value)} required maxLength={120} />
-        </label>
-        <label className="field">
-          <span>Tipo</span>
-          <select value={typeCode} onChange={(e) => setTypeCode(e.target.value)} required>
-            {types.map((t) => (
-              <option key={t.code} value={t.code}>
-                {t.name}
-              </option>
-            ))}
-          </select>
         </label>
         <label className="field">
           <span>Capacidad (opcional)</span>
@@ -312,7 +343,7 @@ function LocationForm(props: { parent?: LocationSummary; onCancel: () => void; o
         <button type="button" className="btn" onClick={props.onCancel}>
           Cancelar
         </button>
-        <button className="btn btn-primary" disabled={busy || !typeCode}>
+        <button className="btn btn-primary" disabled={busy || !typeCode || (parent ? !seq : !code)}>
           Crear ubicación
         </button>
       </div>
@@ -320,9 +351,17 @@ function LocationForm(props: { parent?: LocationSummary; onCancel: () => void; o
   );
 }
 
-function EditLocationForm(props: { location: LocationSummary; onCancel: () => void; onDone: (text: string) => void; onGone: () => void }) {
+function EditLocationForm(props: { location: LocationSummary; canDeactivate: boolean; onCancel: () => void; onDone: (text: string) => void; onGone: () => void }) {
   const { location } = props;
+  const nested = Boolean(location.parentId);
   const [code, setCode] = useState(location.segment);
+  const [seq, setSeq] = useState(String(location.seq ?? Number(/(\d+)$/.exec(location.segment)?.[1] ?? '') ?? ''));
+  const [types, setTypes] = useState<LocationType[]>([]);
+  const [typeCode, setTypeCode] = useState(location.typeCode);
+  useEffect(() => {
+    api.locationTypes().then((r) => setTypes(r.types.filter((t) => t.active || t.code === location.typeCode))).catch(() => undefined);
+  }, [location.typeCode]);
+  const typePrefix = types.find((t) => t.code === typeCode)?.codePrefix ?? location.typePrefix;
   const [name, setName] = useState(location.name);
   const [capacity, setCapacity] = useState(location.maxCapacity?.toString() ?? '');
   const [error, setError] = useState<string | null>(null);
@@ -333,7 +372,10 @@ function EditLocationForm(props: { location: LocationSummary; onCancel: () => vo
     setBusy(true);
     setError(null);
     try {
-      const r = await api.updateLocation(location.id, { segment: code.trim(), name, maxCapacity: capacity ? Number(capacity) : null });
+      const r = await api.updateLocation(location.id, {
+        ...(nested ? { seq: Number(seq), typeCode } : { segment: code.trim() }),
+        name, maxCapacity: capacity ? Number(capacity) : null,
+      });
       props.onDone(
         r.descendantsRecoded > 0
           ? `Código cambiado a ${r.location.code}, y también el de las ${r.descendantsRecoded} ubicaciones de dentro. Las etiquetas pegadas siguen funcionando, pero muestran el código anterior: conviene reimprimirlas.`
@@ -349,12 +391,15 @@ function EditLocationForm(props: { location: LocationSummary; onCancel: () => vo
   };
 
   const deactivate = async () => {
-    if (!window.confirm(`¿Desactivar la ubicación ${location.code}? Dejará de aparecer en el almacén.`)) return;
+    const on = !location.active;
+    if (!window.confirm(on
+      ? `¿Volver a activar ${location.code}?`
+      : `¿Desactivar la ubicación ${location.code}? Seguirá viéndose, en gris, pero no admitirá contenedores ni material nuevos.`)) return;
     setBusy(true);
     setError(null);
     try {
-      await api.updateLocation(location.id, { active: false });
-      props.onGone();
+      await api.updateLocation(location.id, { active: on });
+      props.onDone(on ? `${location.code} vuelve a estar activa` : `${location.code} desactivada. Se sigue viendo en gris.`);
     } catch (err) {
       setError(errorMessage(err));
       setBusy(false);
@@ -367,7 +412,11 @@ function EditLocationForm(props: { location: LocationSummary; onCancel: () => vo
       <div className="grid-2">
         <label className="field">
           <span>Código</span>
-          <CodeInput prefix={location.parentCode} value={code} onChange={setCode} />
+          {nested ? (
+            <SeqInput fixed={`${location.parentCode}-${typePrefix}`} value={seq} onChange={setSeq} />
+          ) : (
+            <CodeInput prefix={null} value={code} onChange={setCode} />
+          )}
           <small className="muted">
             {location.childCount > 0 ? 'Si lo cambias, cambia también el de todas las ubicaciones de dentro. ' : ''}
             El QR no cambia: las etiquetas pegadas siguen valiendo.
@@ -377,6 +426,19 @@ function EditLocationForm(props: { location: LocationSummary; onCancel: () => vo
           <span>Nombre</span>
           <input value={name} onChange={(e) => setName(e.target.value)} required maxLength={120} />
         </label>
+        {nested && (
+          <label className="field">
+            <span>Tipo</span>
+            <select value={typeCode} onChange={(e) => setTypeCode(e.target.value)}>
+              {types.map((t) => (
+                <option key={t.code} value={t.code}>
+                  {t.name} ({t.codePrefix})
+                </option>
+              ))}
+            </select>
+            <small className="muted">Cambiar el tipo cambia el prefijo del código.</small>
+          </label>
+        )}
         <label className="field">
           <span>Capacidad (opcional)</span>
           <input value={capacity} onChange={(e) => setCapacity(e.target.value.replace(/\D/g, ''))} inputMode="numeric" onFocus={(e) => e.target.select()} />
@@ -384,9 +446,11 @@ function EditLocationForm(props: { location: LocationSummary; onCancel: () => vo
       </div>
       {error && <p className="alert alert-error">{error}</p>}
       <div className="actions">
-        <button type="button" className="btn btn-danger" onClick={deactivate} disabled={busy}>
-          Desactivar
-        </button>
+        {props.canDeactivate && (
+          <button type="button" className={`btn ${location.active ? 'btn-danger' : ''}`} onClick={deactivate} disabled={busy}>
+            {location.active ? 'Desactivar' : 'Volver a activar'}
+          </button>
+        )}
         <button type="button" className="btn" onClick={props.onCancel}>
           Cancelar
         </button>
@@ -502,7 +566,7 @@ function DuplicateLocationForm(props: { location: LocationSummary; onCancel: () 
   useEffect(() => {
     api.locationDuplicateProposal(location.id).then((p) => {
       setProposal(p);
-      setCode(p.segment);
+      setCode(p.seq ? String(p.seq) : p.segment);
       setName(p.name);
       setIncludeChildren(p.childrenCopyable && p.descendantCount > 0);
     }).catch((e) => setError(errorMessage(e)));
@@ -513,7 +577,9 @@ function DuplicateLocationForm(props: { location: LocationSummary; onCancel: () 
     setBusy(true);
     setError(null);
     try {
-      const r = await api.duplicateLocation(location.id, { segment: code.trim(), name, includeChildren }, key);
+      const r = await api.duplicateLocation(
+        location.id, { ...(proposal?.seq ? { seq: Number(code) } : { segment: code.trim() }), name, includeChildren }, key,
+      );
       const extra = r.created > 1 ? `, con ${r.created - 1} ubicaciones dentro` : '';
       props.onDone(`Creada ${r.location.code}${extra}. Puedes volver a duplicar para crear la siguiente.`);
     } catch (err) {
@@ -535,7 +601,11 @@ function DuplicateLocationForm(props: { location: LocationSummary; onCancel: () 
       <div className="grid-2">
         <label className="field">
           <span>Código de la copia</span>
-          <CodeInput prefix={location.parentCode} value={code} onChange={setCode} autoFocus />
+          {proposal?.seq ? (
+            <SeqInput fixed={`${location.parentCode}-${proposal.typePrefix}`} value={code} onChange={setCode} autoFocus />
+          ) : (
+            <CodeInput prefix={location.parentCode} value={code} onChange={setCode} autoFocus />
+          )}
         </label>
         <label className="field">
           <span>Nombre</span>
@@ -610,7 +680,13 @@ function ExportPanel(props: { onClose: () => void }) {
 
 
 /** Edición en tabla de las ubicaciones de la lista (las que se ven con los filtros puestos). */
-export function BulkLocations(props: { rows: LocationSummary[]; depth?: (l: LocationSummary) => number; hint?: string; onClose: (message?: string) => void }) {
+export function BulkLocations(props: {
+  rows: LocationSummary[];
+  canDeactivate: boolean;
+  depth?: (l: LocationSummary) => number;
+  hint?: string;
+  onClose: (message?: string) => void;
+}) {
   const [types, setTypes] = useState<LocationType[]>([]);
   useEffect(() => {
     api.locationTypes().then((r) => setTypes(r.types)).catch(() => undefined);
@@ -620,8 +696,14 @@ export function BulkLocations(props: { rows: LocationSummary[]; depth?: (l: Loca
   const save = async (changes: BulkChanges) => {
     const items = changes.map(({ id, values }) => {
       const item: Record<string, unknown> & { id: string } = { id };
+      const row = props.rows.find((l) => l.id === id)!;
       for (const [k, v] of Object.entries(values)) {
-        if (k === 'capacity') item.maxCapacity = v === '' ? null : Number(v);
+        if (k === 'segment') {
+          if (row.parentId) {
+            if (!/^\d{1,4}$/.test(String(v)) || Number(v) < 1) throw new Error(`${row.code}: escribe solo el número`);
+            item.seq = Number(v);
+          } else item.segment = String(v);
+        } else if (k === 'capacity') item.maxCapacity = v === '' ? null : Number(v);
         else if (k === 'description') item.description = String(v);
         else item[k] = v;
       }
@@ -640,13 +722,16 @@ export function BulkLocations(props: { rows: LocationSummary[]; depth?: (l: Loca
       onSave={save}
       onClose={props.onClose}
       columns={[
-        { key: 'segment', label: 'Código', type: 'segment', get: (l) => l.segment, prefix: (l) => l.parentCode, indent: props.depth, width: '190px' },
+        { key: 'segment', label: 'Código', type: 'segment', indent: props.depth, width: '190px',
+          // Dentro de otra: fijos el código de la superior y el prefijo del tipo; se edita el número.
+          get: (l) => (l.parentId ? String((l.seq ?? Number(/(\d+)$/.exec(l.segment)?.[1] ?? 0)) || '') : l.segment),
+          prefix: (l) => (l.parentId ? `${l.parentCode}-${l.typePrefix}` : null) },
         { key: 'name', label: 'Nombre', type: 'text', get: (l) => l.name, width: '200px' },
         { key: 'typeCode', label: 'Tipo', type: 'select', required: true, fillAll: true, get: (l) => l.typeCode,
           options: types.filter((t) => t.active).map((t) => ({ value: t.code, label: t.name })), width: '140px' },
         { key: 'capacity', label: 'Capacidad', type: 'number', fillAll: true, get: (l) => (l.maxCapacity === null ? '' : String(l.maxCapacity)), width: '90px', placeholder: 'Sin límite' },
         { key: 'description', label: 'Descripción', type: 'text', fillAll: true, get: (l) => l.description ?? '', width: '200px' },
-        { key: 'active', label: 'Activa', type: 'check', get: (l) => l.active },
+        ...(props.canDeactivate ? [{ key: 'active', label: 'Activa', type: 'check' as const, get: (l: LocationSummary) => l.active }] : []),
       ]}
     />
   );
@@ -721,8 +806,9 @@ function RecodeNotice(props: { onDone: (text: string) => void }) {
   return (
     <div className="alert alert-warn">
       <p>
-        Hay {changes.length} ubicaci{changes.length > 1 ? 'ones' : 'ón'} cuyo código no empieza por el de la ubicación que
-        la contiene. Al recodificarlas se les pone delante ese código y se conserva el suyo actual.
+        Hay {changes.length} ubicaci{changes.length > 1 ? 'ones' : 'ón'} cuyo código no sigue la codificación: el código de
+        la ubicación que la contiene, el prefijo de su tipo y un número. Al recodificarlas se conserva su número (E01 →
+        EST01). No se cambia nada hasta que pulses «Recodificar».
       </p>
       {!open ? (
         <button type="button" className="btn btn-small" onClick={() => setOpen(true)}>

@@ -109,7 +109,10 @@ function writePref(key: string, value: boolean) {
   }
 }
 
-export function WarehouseTree({ user, onList }: { user: User; onList: () => void }) {
+/**
+ * Árbol del almacén. Con rootId, solo lo que cuelga de esa ubicación, dentro de su ficha.
+ */
+export function WarehouseTree({ user, onList, rootId }: { user: User; onList: () => void; rootId?: string }) {
   const [data, setData] = useState<{ locations: TreeLocation[]; containers: TreeContainer[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -124,15 +127,32 @@ export function WarehouseTree({ user, onList }: { user: User; onList: () => void
   const load = (first: boolean) =>
     api.tree().then((d) => {
       setData(d);
-      // Al abrir, se ven desplegadas las zonas: el primer nivel bajo cada raíz.
-      if (first) setExpanded(new Set(d.locations.filter((l) => !l.parentId).map((l) => `l:${l.id}`)));
+      // Al abrir, se ve desplegado el primer nivel: las zonas, o lo de dentro de la ubicación.
+      if (first) {
+        setExpanded(new Set(rootId
+          ? d.locations.filter((l) => l.parentId === rootId).map((l) => `l:${l.id}`)
+          : d.locations.filter((l) => !l.parentId).map((l) => `l:${l.id}`)));
+      }
     }).catch((e) => setError(errorMessage(e)));
 
   useEffect(() => {
     void load(true);
   }, []);
 
-  const tree = useMemo(() => (data ? buildTree(data.locations, data.containers, withContainers) : []), [data, withContainers]);
+  const tree = useMemo(() => {
+    if (!data) return [];
+    const all = buildTree(data.locations, data.containers, withContainers);
+    if (!rootId) return all;
+    const find = (list: Node[]): Node | undefined => {
+      for (const n of list) {
+        if (n.key === `l:${rootId}`) return n;
+        const f = find(n.children);
+        if (f) return f;
+      }
+      return undefined;
+    };
+    return find(all)?.children ?? [];
+  }, [data, withContainers, rootId]);
   const q = query.trim();
   const searching = q.length > 0;
   const view = useMemo(() => (searching ? prune(tree, q) : null), [tree, q, searching]);
@@ -174,7 +194,7 @@ export function WarehouseTree({ user, onList }: { user: User; onList: () => void
         return (
           <li key={n.key}>
             <div
-              className={`node ${n.kind === 'container' ? 'cont' : ''} ${hit ? 'hit' : ''}`}
+              className={`node ${n.kind === 'container' ? 'cont' : ''} ${hit ? 'hit' : ''} ${n.kind === 'location' && locById.get(n.id)?.active === false ? 'off' : ''}`}
               role="link"
               tabIndex={0}
               onClick={() => navigate(n.kind === 'location' ? `almacen/${n.id}` : `contenedor/${n.id}`)}
@@ -211,10 +231,12 @@ export function WarehouseTree({ user, onList }: { user: User; onList: () => void
 
   return (
     <>
-      <div className="page-head">
-        <h2>Almacén</h2>
-        <ViewSwitch view="arbol" onChange={(v) => v === 'lista' && onList()} />
-      </div>
+      {!rootId && (
+        <div className="page-head">
+          <h2>Almacén</h2>
+          <ViewSwitch view="arbol" onChange={(v) => v === 'lista' && onList()} />
+        </div>
+      )}
 
       <div className="treebar">
         <div className="listbar">
@@ -256,6 +278,7 @@ export function WarehouseTree({ user, onList }: { user: User; onList: () => void
             <BulkLocations
               key={`l${editLocations.map((l) => l.id).join()}`}
               rows={editLocations}
+              canDeactivate={user.permissions.includes('location.deactivate')}
               depth={(l) => depthOf.get(`l:${l.id}`) ?? 0}
               hint="Están las ubicaciones que se ven en el árbol: despliega, pliega o busca para elegir cuáles. Lo cambiado se marca en amarillo y se guarda todo junto. Si cambias el código de una, cambian los de las de dentro."
               onClose={(m) => (m ? closeEditor(m) : setEditing(false))}
