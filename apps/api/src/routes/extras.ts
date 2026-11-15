@@ -46,7 +46,8 @@ export async function canSeeInbound(db: pg.Pool | pg.PoolClient, request: Fastif
   if (request.user!.permissions.includes('inbound.manage')) return true;
   const r = await db.query(
     `SELECT 1 FROM inbound_item i
-      WHERE i.id = $1 AND ($2 IN (i.received_by, i.responsible_user_id) OR EXISTS (
+      WHERE i.id = $1 AND ($2 IN (i.received_by, i.responsible_user_id)
+        OR EXISTS (SELECT 1 FROM pre_receipt pr WHERE pr.id = i.pre_receipt_id AND pr.created_by = $2) OR EXISTS (
             SELECT 1 FROM project_member pm WHERE pm.project_id = i.project_id AND pm.user_id = $2 AND pm.role = 'RESPONSIBLE'))`,
     [id, request.user!.id],
   );

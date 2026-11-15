@@ -198,3 +198,41 @@ describe('recepción pendiente de identificar', () => {
     expect(audit).toEqual(['recepcion.alta', 'recepcion.anulada']);
   });
 });
+
+describe('pre-recepciones', () => {
+  it('quien espera un paquete lo anuncia y el almacén lo ve propuesto al recibirlo', async () => {
+    const a = await call('POST', '/api/pre-receipts', usuario, {
+      description: 'FICTICIO Sensores inductivos M12', supplier: 'FICTICIO RS', orderRef: '4500123', expectedDate: '2026-11-20',
+    });
+    expect(a.statusCode, a.body).toBe(201);
+    expect(a.json().code).toMatch(/^PRE-\d{6}$/);
+    await call('POST', '/api/pre-receipts', proyecto, { description: 'FICTICIO Tornillería variada', supplier: 'FICTICIO Würth' });
+    // Al escribir «rs 4500123», la de RS sale la primera.
+    const s = (await call('GET', '/api/pre-receipts/suggest?q=rs%204500123', almacen)).json().items;
+    expect(s[0]).toMatchObject({ id: a.json().id, createdBy: 'FICTICIO Usuario Estándar', supplier: 'FICTICIO RS' });
+    expect((await call('GET', '/api/pre-receipts/suggest', usuario)).statusCode).toBe(200);
+    // Se recibe enlazándola: va a quien la anunció y le avisa.
+    const r = await call('POST', '/api/inbound', almacen, { preReceiptId: a.json().id, containerId: container, photos: [photo()] });
+    expect(r.statusCode, r.body).toBe(201);
+    expect(r.json().responsible).toBe('FICTICIO Usuario Estándar');
+    const n = (await call('GET', '/api/notifications', usuario)).json().notifications.find((x: { entityId: string }) => x.entityId === r.json().id);
+    expect(n.body).toContain('Ha llegado lo que esperabas');
+    expect(n.body).toContain('pedido 4500123');
+    expect(n.actionNeeded).toBe(true);
+    const d = (await call('GET', `/api/inbound/${r.json().id}`, usuario)).json().item;
+    expect(d.preReceipt).toContain('FICTICIO Sensores inductivos M12');
+    expect(d.description).toBe('FICTICIO Sensores inductivos M12');
+    // Ya no se propone ni se puede volver a usar.
+    expect((await call('GET', '/api/pre-receipts/suggest', almacen)).json().items.map((x: { id: string }) => x.id)).not.toContain(a.json().id);
+    expect((await call('POST', '/api/inbound', almacen, { preReceiptId: a.json().id, containerId: container, photos: [photo()] })).statusCode).toBe(409);
+    const mine = (await call('GET', '/api/pre-receipts', usuario)).json().items;
+    expect(mine[0]).toMatchObject({ status: 'RECEIVED', inboundCode: r.json().code });
+  });
+
+  it('las cancela quien las creó o un responsable de almacén', async () => {
+    const p = (await call('POST', '/api/pre-receipts', usuario, { description: 'FICTICIO Pedido que no vendrá' })).json();
+    expect((await call('POST', `/api/pre-receipts/${p.id}/cancel`, proyecto)).statusCode).toBe(403);
+    expect((await call('POST', `/api/pre-receipts/${p.id}/cancel`, usuario)).statusCode).toBe(200);
+    expect((await call('POST', `/api/pre-receipts/${p.id}/cancel`, usuario)).statusCode).toBe(409);
+  });
+});

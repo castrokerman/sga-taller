@@ -38,6 +38,7 @@ documentación técnica y calibración de equipos.
 - Herramientas y equipos por unidad: cada una con su código, su QR y su número
   de serie; si entran varias iguales, cada una se registra aparte.
 - Borrar usuarios conservando su historial.
+- Pre-recepciones: avisar de un pedido para que el almacén lo reconozca al recibirlo.
 - Inicio agrupado por bloques (Día a día, Inventario, Control, Administración);
   cada persona ve los suyos según sus permisos.
 - Contenidos (antes «Materiales») con tipos editables: Material, Herramienta,
@@ -88,6 +89,7 @@ sistema obliga a cambiar su contraseña al entrar.
 | Tipos de contenido y listas desplegables | Sí, 3 pruebas y recorrido con navegador real sobre datos antiguos |
 | Proyectos, responsables y reserva | Sí, 7 pruebas y recorrido con navegador real con tres usuarios |
 | Herramientas y equipos por unidad | Sí, 3 pruebas y recorrido con navegador real con datos antiguos |
+| Comentarios con respuestas, borrar usuarios y pre-recepciones | Sí, 4 pruebas y recorrido con navegador real |
 | Ordenar, filtrar y vista de árbol | Sí, recorrido con un navegador real |
 | Etiquetas QR legibles en los dos formatos | Sí, 4 pruebas que leen el QR del PDF |
 | Web, API y proxy HTTPS funcionando juntos | Sí, recorrido completo con un navegador real |

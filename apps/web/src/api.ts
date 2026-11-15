@@ -466,6 +466,9 @@ export interface Inbound {
   lotCode: string | null;
   projectRef: string | null;
   projectId: string | null;
+  preReceiptId: string | null;
+  /** Lo anunciado en la pre-recepción enlazada: código, descripción, proveedor y pedido. */
+  preReceipt: string | null;
   usagePlace: string | null;
   disposition: Disposition | null;
   finalContainerId: string | null;
@@ -477,6 +480,32 @@ export interface Inbound {
   cancelReason: string | null;
   cancelledAt: string | null;
   cancelledBy: string | null;
+}
+
+export type PreReceiptStatus = 'OPEN' | 'RECEIVED' | 'CANCELLED';
+/** Lo que alguien espera que llegue. */
+export interface PreReceipt {
+  id: string;
+  number: number;
+  code: string;
+  status: PreReceiptStatus;
+  description: string;
+  supplier: string | null;
+  orderRef: string | null;
+  projectId: string | null;
+  projectLabel: string | null;
+  expectedDate: string | null;
+  note: string | null;
+  createdById: string;
+  createdBy: string;
+  createdAt: string;
+  inboundId: string | null;
+  inboundCode: string | null;
+  receivedAt: string | null;
+  cancelledAt: string | null;
+  late: boolean;
+  /** En las sugerencias: cuántas palabras de lo escrito coinciden. */
+  score?: number;
 }
 
 export interface InboundCompletion {
@@ -660,7 +689,7 @@ export const api = {
   inboundItem: (id: string) => request<{ item: Inbound; canComplete: boolean; canCancel: boolean }>('GET', `/api/inbound/${id}`),
   inboundProjects: () => request<{ projects: string[] }>('GET', '/api/inbound/projects'),
   createInbound: (
-    data: { responsibleUserId?: string; projectId?: string; containerId?: string; locationId?: string; description?: string; packages?: number; externalReference?: string; photos: PhotoData[] },
+    data: { responsibleUserId?: string; projectId?: string; preReceiptId?: string; containerId?: string; locationId?: string; description?: string; packages?: number; externalReference?: string; photos: PhotoData[] },
     key: string,
   ) => request<{ id: string; code: string; responsible: string; notified: boolean; placeCode: string }>('POST', '/api/inbound', data, key),
   completeInbound: (id: string, data: InboundCompletion, key: string) =>
@@ -679,6 +708,13 @@ export const api = {
   updateProject: (id: string, data: ProjectInput) => request<{ project: Project }>('PATCH', `/api/projects/${id}`, data),
   setContainerProject: (containerId: string, projectId: string | null) =>
     request<{ ok: true }>('PUT', `/api/containers/${containerId}/project`, { projectId }),
+
+  preReceipts: (scope: 'mine' | 'open' = 'mine') =>
+    request<{ items: PreReceipt[]; canSeeAll: boolean }>('GET', `/api/pre-receipts?scope=${scope}`),
+  suggestPreReceipts: (q: string) => request<{ items: PreReceipt[] }>('GET', `/api/pre-receipts/suggest?q=${encodeURIComponent(q)}`),
+  createPreReceipt: (data: { description: string; supplier?: string; orderRef?: string; note?: string; projectId?: string | null; expectedDate?: string | null }) =>
+    request<{ id: string; code: string }>('POST', '/api/pre-receipts', data),
+  cancelPreReceipt: (id: string) => request<{ ok: true }>('POST', `/api/pre-receipts/${id}/cancel`),
 
   search: (q: string) => request<SearchResult>('GET', `/api/search?q=${encodeURIComponent(q)}`),
   tree: () => request<{ locations: TreeLocation[]; containers: TreeContainer[] }>('GET', '/api/tree'),

@@ -40,7 +40,7 @@ permisos:
 
 | Bloque | Qué tiene | Quién lo ve |
 | --- | --- | --- |
-| **Día a día** | Escáner QR, Registrar entrada, Recepciones, Buscador | Todos |
+| **Día a día** | Escáner QR, Registrar entrada, Recepciones, Pre-recepciones, Buscador | Todos |
 | **Inventario** | Almacén, Contenidos, Préstamos, Proyectos | Todos |
 | **Control** | Movimientos (solo responsables de almacén), Auditoría | Responsables de almacén y administradores |
 | **Administración** | Usuarios, Tipos, Familias | Administradores |
@@ -205,6 +205,24 @@ veces).
 **«Recepciones»**, en el inicio, muestra las pendientes con su foto, para
 quién son y desde cuándo, y también las identificadas y las anuladas. Los
 responsables de almacén ven todas; cada persona ve las suyas.
+
+### Pre-recepciones: avisar de lo que esperas
+
+Si has hecho un pedido (por ejemplo, a RS) y sabes que va a llegar, en el
+inicio pulsa **«Pre-recepciones»** → **«+ Avisar de un pedido»**: qué es y,
+si quieres, proveedor, nº de pedido, cuándo se espera, proyecto y una nota.
+
+Cuando el almacén registra una recepción con «Lo identifica el responsable»,
+arriba aparece **«¿Es alguno de estos?»** con lo que se está esperando:
+primero lo que coincide con lo que escribe (proveedor, pedido, descripción)
+y después lo de fecha más cercana. Si elige uno, ya no hace falta decir de
+quién es: la recepción va a quien lo esperaba (y a los responsables del
+proyecto, si tenía) y le llega el aviso **«Ha llegado lo que esperabas»**.
+
+En «Pre-recepciones» cada uno ve las suyas: esperando, ha llegado (con
+enlace a la recepción) o cancelada. Las que pasan de la fecha prevista salen
+marcadas como atrasadas. Los responsables de almacén pueden ver todas las que
+se esperan.
 
 ### Buscador (desde el inicio)
 

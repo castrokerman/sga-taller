@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   api, errorMessage, formatDateTime, formatQty, newOperationKey, photoUrl,
-  type ContentType, type UnitRef, type Disposition, type Family, type Inbound, type ProjectOption, type InboundStatus, type Material, type PhotoData, type PlaceRef, type Unit, type User,
+  type ContentType, type UnitRef, type Disposition, type Family, type Inbound, type PreReceipt, type ProjectOption, type InboundStatus, type Material, type PhotoData, type PlaceRef, type Unit, type User,
 } from '../api';
 import { shrink } from '../components/ItemExtras';
 import { PhotoField, uploadMaterialPhoto } from '../components/PhotoField';
@@ -107,6 +107,9 @@ export function PendingReceive(props: { user: User; onBack: () => void }) {
   useEffect(() => {
     api.projectOptions().then((r) => setProjectOptions(r.projects)).catch(() => undefined);
   }, []);
+  // Lo que alguien ha anunciado que espera: se propone según lo que se escribe.
+  const [suggestions, setSuggestions] = useState<PreReceipt[]>([]);
+  const [pre, setPre] = useState<PreReceipt | null>(null);
   const [place, setPlace] = useState<Place | null>(null);
   const [picking, setPicking] = useState(false);
   const [last] = useState<Place | null>(() => readStore(LAST_PLACE, null));
@@ -118,6 +121,13 @@ export function PendingReceive(props: { user: User; onBack: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<{ id: string; code: string; responsible: string; notified: boolean; placeCode: string } | null>(null);
   const camera = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      api.suggestPreReceipts(`${description} ${albaran}`.trim()).then((r) => setSuggestions(r.items)).catch(() => setSuggestions([]));
+    }, 350);
+    return () => window.clearTimeout(t);
+  }, [description, albaran, done]);
 
   useEffect(() => {
     api.basicUsers().then((r) => setPeople(r.users)).catch((e) => setError(errorMessage(e)));
@@ -147,7 +157,7 @@ export function PendingReceive(props: { user: User; onBack: () => void }) {
     e.preventDefault();
     setError(null);
     if (!photos.length) return setError('Haz al menos una foto');
-    if (toProject ? !projectId : !responsible) return setError(toProject ? 'Elige el proyecto' : 'Indica quién es el responsable');
+    if (!pre && (toProject ? !projectId : !responsible)) return setError(toProject ? 'Elige el proyecto' : 'Indica quién es el responsable');
     if (!place) return setError('Indica dónde lo dejas');
     try {
       setBusy('Preparando fotos…');
@@ -157,12 +167,13 @@ export function PendingReceive(props: { user: User; onBack: () => void }) {
       const n = parseInt(packages, 10);
       const r = await api.createInbound(
         {
-          ...place.ref, ...(toProject ? { projectId } : { responsibleUserId: responsible }), photos: data, description: description.trim() || undefined,
+          ...place.ref, ...(pre ? { preReceiptId: pre.id } : toProject ? { projectId } : { responsibleUserId: responsible }), photos: data, description: description.trim() || undefined,
           packages: n > 0 ? n : undefined, externalReference: albaran.trim() || undefined,
         },
         key,
       );
-      if (!toProject) {
+      setPre(null);
+      if (!toProject && !pre) {
         const next = [responsible, ...recent.filter((x) => x !== responsible)].slice(0, 4);
         setRecent(next);
         writeStore(RECENT_PEOPLE, next);
@@ -244,6 +255,44 @@ export function PendingReceive(props: { user: User; onBack: () => void }) {
         <small className="muted">Que se vea bien la etiqueta o el albarán si lo tiene. Hasta {MAX_PHOTOS} fotos.</small>
       </div>
 
+      {pre ? (
+        <div className="alert alert-info pre-chosen">
+          <span>
+            Es <strong className="mono">{pre.code}</strong>: {pre.description}
+            {pre.supplier && ` · ${pre.supplier}`}
+            {pre.orderRef && ` · pedido ${pre.orderRef}`}. Lo esperaba <strong>{pre.createdBy}</strong>
+            {pre.projectLabel && <> (proyecto {pre.projectLabel})</>}, y le llegará el aviso.
+          </span>
+          <button type="button" className="linkbtn" onClick={() => setPre(null)}>
+            No es esto
+          </button>
+        </div>
+      ) : (
+        suggestions.length > 0 && (
+          <div className="field">
+            <span className="field-l">
+              ¿Es alguno de estos? <span className="muted">— lo que alguien ha avisado que espera</span>
+            </span>
+            <div className="pre-suggest">
+              {suggestions.slice(0, 4).map((p) => (
+                <button type="button" key={p.id} className={`pre-card ${p.score ? 'match' : ''}`} onClick={() => setPre(p)}>
+                  <b>{p.description}</b>
+                  <span>
+                    {[p.supplier, p.orderRef && `pedido ${p.orderRef}`, p.projectLabel].filter(Boolean).join(' · ') || 'Sin proveedor ni pedido'}
+                  </span>
+                  <small>
+                    De {p.createdBy}
+                    {p.expectedDate && ` · se espera el ${new Date(p.expectedDate).toLocaleDateString('es-ES')}`}
+                  </small>
+                </button>
+              ))}
+            </div>
+            <small className="muted">Si es uno de estos, elígelo: irá a quien lo esperaba. Escribe abajo qué parece o el albarán para afinar.</small>
+          </div>
+        )
+      )}
+
+      {!pre && (
       <div className="field">
         <span className="field-l">2. ¿De quién es?</span>
         {projectOptions.length > 0 && (
@@ -268,6 +317,7 @@ export function PendingReceive(props: { user: User; onBack: () => void }) {
           <PersonPicker people={people} value={responsible} onChange={setResponsible} recent={recent} />
         )}
       </div>
+      )}
 
       <div className="field">
         <span className="field-l">3. ¿Dónde lo dejas de momento?</span>
@@ -487,6 +537,7 @@ export function InboundPage({ user, inboundId, onChanged }: { user: User; inboun
         </div>
         <dl className="facts">
           {i.description && (<><dt>Al recibirlo</dt><dd>{i.description}</dd></>)}
+          {i.preReceipt && (<><dt>Pre-recepción</dt><dd>{i.preReceipt}</dd></>)}
           <dt>Dónde está</dt>
           <dd>
             <a className="mono" href={i.containerId ? `#/contenedor/${i.containerId}` : `#/almacen/${i.locationId}`}>{i.placeCode}</a>

@@ -48,6 +48,9 @@ const INBOUND_SELECT = `
          i.material_id AS "materialId", m.internal_ref AS "materialRef", m.description AS "materialDescription",
          m.unit_code AS "unitCode", i.quantity::float AS quantity, i.lot_code AS "lotCode",
          coalesce(pj.code || ' · ' || pj.name, i.project_ref) AS "projectRef", i.project_id AS "projectId",
+         i.pre_receipt_id AS "preReceiptId",
+         (SELECT 'PRE-' || lpad(pr.number::text, 6, '0') || ' · ' || pr.description || coalesce(' · ' || pr.supplier, '') || coalesce(' · pedido ' || pr.order_ref, '')
+            FROM pre_receipt pr WHERE pr.id = i.pre_receipt_id) AS "preReceipt",
          i.usage_place AS "usagePlace", i.disposition,
          i.final_container_id AS "finalContainerId", i.final_location_id AS "finalLocationId",
          ${PLACE_CODE('i.final_container_id', 'i.final_location_id')} AS "finalPlaceCode",
@@ -244,7 +247,7 @@ export function inboundRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
         body: {
           type: 'object', required: ['photos'], additionalProperties: false,
           properties: {
-            responsibleUserId: uuid, projectId: uuid, containerId: uuid, locationId: uuid,
+            responsibleUserId: uuid, projectId: uuid, preReceiptId: uuid, containerId: uuid, locationId: uuid,
             description: text(500), packages: { type: 'integer', minimum: 1, maximum: 9999 },
             externalReference: text(80),
             photos: { type: 'array', minItems: 1, maxItems: 4, items: photoBody },
@@ -255,11 +258,27 @@ export function inboundRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
     (request, reply) =>
       idempotent(pool, request, reply, async () => {
         const b = request.body as {
-          responsibleUserId?: string; projectId?: string; containerId?: string; locationId?: string; description?: string; packages?: number;
+          responsibleUserId?: string; projectId?: string; preReceiptId?: string; containerId?: string; locationId?: string; description?: string; packages?: number;
           externalReference?: string; photos: Array<{ image: string; thumbnail: string; width: number; height: number }>;
         };
-        if (!b.responsibleUserId && !b.projectId) throw badRequest('Indica de quién es: una persona o un proyecto', 'FALTA_RESPONSABLE');
+        if (!b.responsibleUserId && !b.projectId && !b.preReceiptId) throw badRequest('Indica de quién es: una persona o un proyecto', 'FALTA_RESPONSABLE');
         const out = await withTransaction(pool, async (c) => {
+          // Si es lo anunciado en una pre-recepción, va a quien la creó (o a su proyecto).
+          let pre: { id: string; code: string; description: string; supplier: string | null; order_ref: string | null; project_id: string | null; created_by: string } | null = null;
+          if (b.preReceiptId) {
+            pre = (await c.query(
+              `SELECT id, 'PRE-' || lpad(number::text, 6, '0') AS code, description, supplier, order_ref, project_id, created_by, status
+                 FROM pre_receipt WHERE id = $1 FOR UPDATE`,
+              [b.preReceiptId],
+            )).rows[0] ?? null;
+            if (!pre) throw badRequest('La pre-recepción no existe', 'PRERECEPCION_NO_EXISTE');
+            if ((pre as unknown as { status: string }).status !== 'OPEN') throw conflict('Esa pre-recepción ya está cerrada', 'PRERECEPCION_CERRADA');
+            if (!b.responsibleUserId && !b.projectId) {
+              if (pre.project_id) b.projectId = pre.project_id;
+              else b.responsibleUserId = pre.created_by;
+            }
+            if (!b.description?.trim()) b.description = pre.description;
+          }
           // Si va a un proyecto, avisa a todos sus responsables; el primero queda como responsable de la recepción.
           let project: { id: string; label: string; responsibles: string[] } | null = null;
           if (b.projectId) {
@@ -285,19 +304,28 @@ export function inboundRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
           );
           const { id, code } = r.rows[0] as { id: string; code: string };
           await insertPhotos(c, id, request.user!.id, b.photos);
-          const toNotify = [...new Set([responsibleId, ...(project?.responsibles ?? [])])].filter((u) => u !== request.user!.id);
+          const toNotify = [...new Set([responsibleId, ...(project?.responsibles ?? []), ...(pre ? [pre.created_by] : [])])].filter((u) => u !== request.user!.id);
+          const preText = pre
+            ? `Ha llegado lo que esperabas (${pre.code}: ${pre.description}${pre.supplier ? ` · ${pre.supplier}` : ''}${pre.order_ref ? ` · pedido ${pre.order_ref}` : ''}) y está en ${place.code}.`
+            : null;
           for (const u of toNotify) {
             await notify(
               c, u, id,
-              project
-                ? `Ha llegado algo para el proyecto ${project.label} y está en ${place.code}. Indica qué es y qué se hace con ello.`
-                : `Ha llegado algo a tu nombre y está en ${place.code}. Indica qué es y qué se hace con ello.`,
+              preText && u === pre!.created_by
+                ? `${preText} Indica qué es y qué se hace con ello.`
+                : project
+                  ? `Ha llegado algo para el proyecto ${project.label} y está en ${place.code}. Indica qué es y qué se hace con ello.`
+                  : `Ha llegado algo a tu nombre y está en ${place.code}. Indica qué es y qué se hace con ello.`,
               request.user!.id,
             );
           }
+          if (pre) {
+            await c.query(`UPDATE inbound_item SET pre_receipt_id = $2 WHERE id = $1`, [id, pre.id]);
+            await c.query(`UPDATE pre_receipt SET status = 'RECEIVED', inbound_id = $2, received_at = now() WHERE id = $1`, [pre.id, id]);
+          }
           const notified = toNotify.length > 0;
           await audit(c, request, 'recepcion.alta', id, {
-            recepcion: code, responsable: responsible, proyecto: project?.label ?? null, sitio: place.code, descripcion: b.description ?? null,
+            recepcion: code, responsable: responsible, proyecto: project?.label ?? null, prerecepcion: pre?.code ?? null, sitio: place.code, descripcion: b.description ?? null,
             bultos: b.packages ?? null, albaran: b.externalReference ?? null, fotos: b.photos.length,
           });
           return { id, code, responsible: project ? `los responsables de ${project.label}` : responsible, notified, placeCode: place.code };

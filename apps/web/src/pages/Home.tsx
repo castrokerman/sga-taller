@@ -30,6 +30,7 @@ const GROUPS: Group[] = [
       { icon: '📷', title: 'Escáner QR', text: 'Escanear cajas y ubicaciones', path: 'escaner', permission: 'container.read' },
       { icon: '📥', title: 'Registrar entrada', text: 'Lo que llega al taller', path: 'entrada', permission: 'stock.receive' },
       { icon: '📬', title: 'Recepciones', text: 'Lo que falta por identificar', path: 'recepciones' },
+      { icon: '🚚', title: 'Pre-recepciones', text: 'Avisar de lo que esperas que llegue', path: 'prerecepciones' },
       { icon: '🔎', title: 'Buscador', text: 'Dónde está cada cosa', path: 'buscar', permission: 'location.read' },
     ],
   },
