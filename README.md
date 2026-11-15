@@ -25,7 +25,7 @@ documentación técnica y calibración de equipos.
 - Ordenar y filtrar las listas de ubicaciones, contenedores y usuarios.
 - Editar varias ubicaciones, contenedores o materiales a la vez en una tabla.
 - Códigos de ubicación heredados: al cambiar uno, cambian los de dentro.
-- Fotos y anotaciones en ubicaciones, contenedores y materiales, con avisos a
+- Fotos y comentarios (con respuestas) en ubicaciones, contenedores y contenidos, con avisos a
   responsables en una campana dentro de la app.
 - Códigos de ubicación con prefijo por tipo (PAS01, EST03…), tipos editables y
   desactivar ubicaciones solo administradores, sin que desaparezcan.
@@ -37,6 +37,7 @@ documentación técnica y calibración de equipos.
   queda reservado para sus responsables.
 - Herramientas y equipos por unidad: cada una con su código, su QR y su número
   de serie; si entran varias iguales, cada una se registra aparte.
+- Borrar usuarios conservando su historial.
 - Inicio agrupado por bloques (Día a día, Inventario, Control, Administración);
   cada persona ve los suyos según sus permisos.
 - Contenidos (antes «Materiales») con tipos editables: Material, Herramienta,
@@ -81,7 +82,7 @@ sistema obliga a cambiar su contraseña al entrar.
 | Duplicar, exportar a Excel y árbol | Sí, 17 pruebas |
 | Inventario (Fase 3) | Sí, 27 pruebas |
 | Código heredado y edición en tabla | Sí, 12 pruebas y recorrido con navegador real |
-| Fotos, anotaciones y avisos | Sí, 9 pruebas y recorrido con navegador real, también en móvil |
+| Fotos, comentarios y avisos | Sí, 9 pruebas y recorrido con navegador real, también en móvil |
 | Prefijos por tipo, buscador, auditoría y registrar entrada | Sí, 7 pruebas y recorrido con navegador real |
 | Recepciones por identificar y eliminar ubicaciones | Sí, 8 pruebas y recorrido con navegador real con tres usuarios |
 | Tipos de contenido y listas desplegables | Sí, 3 pruebas y recorrido con navegador real sobre datos antiguos |

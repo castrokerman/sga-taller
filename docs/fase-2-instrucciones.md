@@ -116,7 +116,7 @@ listas y en el árbol llevan la etiqueta amarilla **«Inactiva»**.
 **Eliminar una ubicación.** También solo un administrador, desde «Editar» →
 «🗑 Eliminar». Pide confirmación y no se puede deshacer: la ubicación
 desaparece y su QR deja de funcionar. Solo se puede si está vacía (sin
-ubicaciones dentro, contenedores, material ni anotaciones) y sin historial de
+ubicaciones dentro, contenedores, material ni comentarios) y sin historial de
 movimientos. Si no, el sistema lo dice y hay que desactivarla.
 
 ### Editar varias a la vez

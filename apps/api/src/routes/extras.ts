@@ -108,6 +108,7 @@ const PHOTO_SELECT = `
 
 const NOTE_SELECT = `
   SELECT n.id, n.body, n.notify, n.created_at AS "createdAt", n.created_by AS "createdById", u.full_name AS "createdBy",
+         n.parent_id AS "parentId",
          coalesce((SELECT json_agg(r.full_name ORDER BY r.full_name)
                      FROM notification nf JOIN app_user r ON r.id = nf.user_id WHERE nf.note_id = n.id), '[]') AS recipients
     FROM note n JOIN app_user u ON u.id = n.created_by`;
@@ -287,35 +288,52 @@ export function extrasRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
             body: { type: 'string', minLength: 1, maxLength: 4000 },
             notify: { type: 'boolean', default: false },
             recipientIds: { type: 'array', maxItems: 200, items: uuid },
+            parentId: uuid,
           },
         },
       },
     },
     (request, reply) =>
       idempotent(pool, request, reply, async () => {
-        const b = request.body as { entityType: EntityType; entityId: string; body: string; notify: boolean; recipientIds?: string[] };
+        const b = request.body as {
+          entityType: EntityType; entityId: string; body: string; notify: boolean; recipientIds?: string[]; parentId?: string;
+        };
         const text = b.body.trim();
-        if (!text) throw badRequest('Escribe la anotación');
+        if (!text) throw badRequest('Escribe el comentario');
         const out = await withTransaction(pool, async (c) => {
           const e = await getEntity(c, request, b.entityType, b.entityId);
+          // Una respuesta cuelga del comentario original (si se responde a una respuesta, también).
+          let rootId: string | null = null;
+          if (b.parentId) {
+            const p = (await c.query(`SELECT id, parent_id, entity_type, entity_id FROM note WHERE id = $1`, [b.parentId])).rows[0];
+            if (!p || p.entity_type !== b.entityType || p.entity_id !== b.entityId) throw badRequest('El comentario al que respondes no existe', 'COMENTARIO_NO_EXISTE');
+            rootId = (p.parent_id as string | null) ?? (p.id as string);
+          }
           const n = await c.query(
-            `INSERT INTO note (entity_type, entity_id, body, notify, created_by) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-            [b.entityType, b.entityId, text, b.notify, request.user!.id],
+            `INSERT INTO note (entity_type, entity_id, body, notify, created_by, parent_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+            [b.entityType, b.entityId, text, b.notify || Boolean(rootId), request.user!.id, rootId],
           );
           const noteId = n.rows[0].id as string;
-          let notified = 0;
+          const recipients = new Set<string>();
+          if (rootId) {
+            // Al responder se avisa a quien escribió el comentario y a quienes ya respondieron.
+            const thread = await c.query(`SELECT DISTINCT created_by FROM note WHERE id = $1 OR parent_id = $1`, [rootId]);
+            for (const r of thread.rows) recipients.add(r.created_by);
+          }
           if (b.notify) {
             const wanted = b.recipientIds ?? (await suggestedRecipients(c, e));
-            const valid = await c.query(`SELECT id FROM app_user WHERE id = ANY($1) AND active AND id <> $2`, [wanted, request.user!.id]);
-            if (!valid.rowCount) throw badRequest('Elige al menos a una persona a la que avisar', 'SIN_DESTINATARIOS');
-            for (const u of valid.rows) {
-              await c.query(`INSERT INTO notification (user_id, note_id) VALUES ($1, $2)`, [u.id, noteId]);
-            }
-            notified = valid.rowCount ?? 0;
+            for (const id of wanted) recipients.add(id);
           }
+          recipients.delete(request.user!.id);
+          const valid = await c.query(`SELECT id FROM app_user WHERE id = ANY($1) AND active`, [[...recipients]]);
+          if (b.notify && !rootId && !valid.rowCount) throw badRequest('Elige al menos a una persona a la que avisar', 'SIN_DESTINATARIOS');
+          for (const u of valid.rows) {
+            await c.query(`INSERT INTO notification (user_id, note_id) VALUES ($1, $2)`, [u.id, noteId]);
+          }
+          const notified = valid.rowCount ?? 0;
           await writeAudit(c, {
-            userId: request.user!.id, action: 'anotacion.alta', entityType: b.entityType, entityId: b.entityId,
-            after: { anotacion: noteId, de: e.code, avisados: notified }, ip: request.ip, requestId: request.id,
+            userId: request.user!.id, action: rootId ? 'comentario.respuesta' : 'comentario.alta', entityType: b.entityType, entityId: b.entityId,
+            after: { comentario: noteId, responde_a: rootId, de: e.code, avisados: notified }, ip: request.ip, requestId: request.id,
           });
           return { noteId, notified };
         });
@@ -336,7 +354,7 @@ export function extrasRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
       const r = await pool.query(
         `SELECT nf.id, nf.created_at AS "createdAt", nf.read_at AS "readAt",
                 CASE WHEN nf.inbound_id IS NULL THEN 'note' ELSE 'inbound' END AS kind,
-                n.id AS "noteId", coalesce(n.body, nf.message) AS body,
+                n.id AS "noteId", coalesce(n.body, nf.message) AS body, (n.parent_id IS NOT NULL) AS "isReply",
                 coalesce(n.entity_type, 'inbound') AS "entityType", coalesce(n.entity_id, nf.inbound_id) AS "entityId",
                 u.full_name AS "createdBy",
                 CASE WHEN nf.inbound_id IS NULL THEN ${ENTITY_LABEL} ELSE 'REC-' || lpad(i.number::text, 6, '0') END AS "entityCode",

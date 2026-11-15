@@ -478,7 +478,7 @@ describe('herramientas y equipos por unidad', () => {
     expect(e.statusCode, e.body).toBe(201);
     const units = e.json().units as Array<{ id: string; internalRef: string }>;
     expect(units).toHaveLength(3);
-    expect(units[0].id).toBe(llave.id);
+    expect(units[0]!.id).toBe(llave.id);
     expect(new Set(units.map((u) => u.internalRef)).size).toBe(3);
     expect(units.every((u) => /^HER-\d{6}$/.test(u.internalRef))).toBe(true);
     expect(e.json().message).toContain('3 unidades');

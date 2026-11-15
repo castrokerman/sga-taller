@@ -71,7 +71,7 @@ export function adminRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
   });
 
   app.get('/api/admin/users', { preHandler: requirePermission('admin.users.manage') }, async () => {
-    const r = await pool.query(`${USER_SELECT} GROUP BY u.id ORDER BY u.full_name`);
+    const r = await pool.query(`${USER_SELECT} WHERE u.deleted_at IS NULL GROUP BY u.id ORDER BY u.full_name`);
     return { users: r.rows };
   });
 
@@ -188,6 +188,65 @@ export function adminRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
       return { user };
     },
   );
+
+  // ---- Borrar -------------------------------------------------------------
+  // El usuario desaparece de las listas y no puede entrar, pero su registro se
+  // conserva: el historial sigue diciendo quién hizo cada cosa.
+  app.delete('/api/admin/users/:id', { preHandler: requirePermission('admin.users.manage'), schema: { params: idParams } }, async (request) => {
+    const { id } = request.params as { id: string };
+    const me = request.user!;
+    if (id === me.id) throw conflict('No puedes borrar tu propio usuario', 'AUTOBORRADO');
+    return withTransaction(pool, async (c) => {
+      const before = await getUser(c, id);
+      if (!before || (await c.query(`SELECT 1 FROM app_user WHERE id = $1 AND deleted_at IS NOT NULL`, [id])).rowCount) {
+        throw notFound('El usuario no existe');
+      }
+      // Lo que tiene pendiente se resuelve antes: si no, se quedaría sin dueño.
+      const pending = (await c.query(
+        `SELECT (SELECT count(*)::int FROM tool_loan WHERE borrower_id = $1 AND status = 'OPEN') AS loans,
+                (SELECT count(*)::int FROM inbound_item WHERE responsible_user_id = $1 AND status = 'PENDING') AS inbound,
+                (SELECT string_agg(p.code, ', ' ORDER BY p.code) FROM project p
+                  WHERE p.status <> 'CLOSED'
+                    AND EXISTS (SELECT 1 FROM project_member pm WHERE pm.project_id = p.id AND pm.user_id = $1 AND pm.role = 'RESPONSIBLE')
+                    AND NOT EXISTS (SELECT 1 FROM project_member pm JOIN app_user u ON u.id = pm.user_id
+                                     WHERE pm.project_id = p.id AND pm.user_id <> $1 AND pm.role = 'RESPONSIBLE' AND u.active)) AS projects`,
+        [id],
+      )).rows[0];
+      const why = [
+        pending.loans && `tiene ${pending.loans} préstamo${pending.loans === 1 ? '' : 's'} sin devolver`,
+        pending.inbound && `tiene ${pending.inbound} recepci${pending.inbound === 1 ? 'ón' : 'ones'} por identificar (pásaselas a otra persona)`,
+        pending.projects && `es el único responsable de ${pending.projects} (añade otro responsable antes)`,
+      ].filter(Boolean);
+      if (why.length) throw conflict(`No se puede borrar a ${before.fullName}: ${why.join('; ')}.`, 'USUARIO_CON_PENDIENTES');
+
+      await c.query(`DELETE FROM user_role WHERE user_id = $1`, [id]);
+      await assertAdminRemains(c);
+      await c.query(`DELETE FROM project_member WHERE user_id = $1`, [id]);
+      // Si era el responsable principal de algún proyecto, pasa a serlo el siguiente.
+      await c.query(
+        `UPDATE project p SET responsible_user_id = (
+            SELECT pm.user_id FROM project_member pm WHERE pm.project_id = p.id AND pm.role = 'RESPONSIBLE' ORDER BY pm.position, pm.created_at LIMIT 1)
+          WHERE p.responsible_user_id = $1
+            AND EXISTS (SELECT 1 FROM project_member pm WHERE pm.project_id = p.id AND pm.role = 'RESPONSIBLE')`,
+        [id],
+      );
+      await c.query(`UPDATE container SET responsible_user_id = NULL WHERE responsible_user_id = $1`, [id]);
+      await c.query(
+        `UPDATE app_user
+            SET active = false, deleted_at = now(), deleted_by = $2, email = NULL, password_hash = '!borrado',
+                username = 'borrado-' || substr(replace(id::text, '-', ''), 1, 12), updated_at = now()
+          WHERE id = $1`,
+        [id, me.id],
+      );
+      await revokeUserSessions(c, id);
+      await writeAudit(c, {
+        userId: me.id, action: 'usuario.baja', entityType: 'app_user', entityId: id,
+        before: { username: before.username, fullName: before.fullName, email: before.email, roles: before.roles },
+        ip: request.ip, requestId: request.id,
+      });
+      return { ok: true, fullName: before.fullName };
+    });
+  });
 
   app.post(
     '/api/admin/users/:id/reset-password',

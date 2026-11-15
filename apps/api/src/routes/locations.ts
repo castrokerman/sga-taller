@@ -604,7 +604,7 @@ export function locationRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
         counts.children && `tiene ${counts.children} ${counts.children === 1 ? 'ubicación' : 'ubicaciones'} dentro`,
         counts.containers && `tiene ${counts.containers} contenedor${counts.containers === 1 ? '' : 'es'} (también los retirados cuentan)`,
         counts.stock && 'tiene contenido',
-        counts.notes && 'tiene anotaciones',
+        counts.notes && 'tiene comentarios',
       ].filter(Boolean);
       if (why.length) {
         throw conflict(`No se puede eliminar ${loc.code}: ${why.join(', ')}. Vacíala antes o desactívala`, 'UBICACION_EN_USO');

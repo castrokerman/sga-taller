@@ -198,3 +198,31 @@ describe('pantalla de movimientos', () => {
     expect((await call('GET', `/api/materials/${material}`, usuario)).json().movements.length).toBeGreaterThan(0);
   });
 });
+
+describe('borrar usuarios', () => {
+  it('desaparece de las listas y no entra, pero el historial conserva su nombre', async () => {
+    const res = await app.inject({ method: 'POST', url: '/api/auth/login', headers: { 'x-sga-client': 'web' }, payload: { username: 'admin', password: 'ficticio-admin-0001' } });
+    const admin = { sga_session: res.cookies.find((c) => c.name === 'sga_session')!.value };
+    // Con pendientes no se puede: demo.usuario es el único responsable de PRJ-FICT-A y de PRJ-FICT-B.
+    const blocked = await call('DELETE', `/api/admin/users/${ids['demo.usuario']}`, admin);
+    expect(blocked.statusCode).toBe(409);
+    expect(blocked.json().error.message).toContain('es el único responsable de PRJ-FICT-B');
+    expect((await call('DELETE', `/api/admin/users/${ids['demo.proyecto']}`, almacen)).statusCode).toBe(403);
+    const moves = (await pool.query(`SELECT count(*)::int AS n FROM stock_movement WHERE performed_by = $1`, [ids['demo.consulta']])).rows[0].n;
+    const ok = await call('DELETE', `/api/admin/users/${ids['demo.consulta']}`, admin);
+    expect(ok.statusCode, ok.body).toBe(200);
+    const users = (await call('GET', '/api/admin/users', admin)).json().users.map((u: { fullName: string }) => u.fullName);
+    expect(users).not.toContain('FICTICIO Usuario de Consulta');
+    const login = await app.inject({ method: 'POST', url: '/api/auth/login', headers: { 'x-sga-client': 'web' }, payload: { username: 'demo.consulta', password: DEMO_PASSWORD } });
+    expect(login.statusCode).toBe(401);
+    // Su historial sigue ahí, con su nombre.
+    const row = (await pool.query(`SELECT full_name, username, active FROM app_user WHERE id = $1`, [ids['demo.consulta']])).rows[0];
+    expect(row).toMatchObject({ full_name: 'FICTICIO Usuario de Consulta', active: false });
+    expect(row.username).toMatch(/^borrado-/);
+    expect((await pool.query(`SELECT count(*)::int AS n FROM stock_movement WHERE performed_by = $1`, [ids['demo.consulta']])).rows[0].n).toBe(moves);
+    // El nombre de usuario queda libre.
+    const again = await call('POST', '/api/admin/users', admin, { username: 'demo.consulta', fullName: 'FICTICIO Otra persona', password: 'ficticio-clave-larga-1', roles: ['CONSULTA'] });
+    expect(again.statusCode, again.body).toBe(201);
+    expect((await call('DELETE', `/api/admin/users/${ids['demo.consulta']}`, admin)).statusCode).toBe(404);
+  });
+});

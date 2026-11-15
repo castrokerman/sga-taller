@@ -411,15 +411,19 @@ export interface Note {
   createdById: string;
   createdBy: string;
   recipients: string[];
+  /** Si es una respuesta, el comentario al que responde. */
+  parentId: string | null;
 }
 
 export interface AppNotification {
   id: string;
   createdAt: string;
   readAt: string | null;
-  /** De una anotación o de una recepción pendiente de identificar. */
+  /** De un comentario o de una recepción pendiente de identificar. */
   kind: 'note' | 'inbound';
   noteId: string | null;
+  /** El comentario es una respuesta a otro. */
+  isReply?: boolean;
   body: string;
   entityType: EntityType | 'inbound';
   inboundStatus: InboundStatus | null;
@@ -523,6 +527,7 @@ export const api = {
   users: () => request<{ users: AdminUser[] }>('GET', '/api/admin/users'),
   createUser: (data: { username: string; fullName: string; password: string; roles: string[] }) =>
     request<{ user: AdminUser }>('POST', '/api/admin/users', data),
+  deleteUser: (id: string) => request<{ ok: true; fullName: string }>('DELETE', `/api/admin/users/${id}`),
   updateUser: (id: string, data: { fullName?: string; active?: boolean; roles?: string[] }) =>
     request<{ user: AdminUser }>('PATCH', `/api/admin/users/${id}`, data),
   resetPassword: (id: string, newPassword: string) =>
@@ -642,7 +647,7 @@ export const api = {
     request<{ suggested: string[]; users: Array<{ id: string; fullName: string; roles: string[] }> }>(
       'GET', `/api/notes/recipients?entityType=${entityType}&entityId=${entityId}`,
     ),
-  addNote: (data: { entityType: EntityType; entityId: string; body: string; notify: boolean; recipientIds?: string[] }, key: string) =>
+  addNote: (data: { entityType: EntityType; entityId: string; body: string; notify: boolean; recipientIds?: string[]; parentId?: string }, key: string) =>
     request<{ note: Note; notified: number }>('POST', '/api/notes', data, key),
   notifications: (all = false) => request<{ notifications: AppNotification[] }>('GET', `/api/notifications?all=${all}`),
   unreadCount: () => request<{ unread: number }>('GET', '/api/notifications/count'),

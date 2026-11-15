@@ -47,6 +47,23 @@ export function UsersPage({ me, back }: { me: User; back: () => void }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<AdminUser | null>(null);
+  const [deleting, setDeleting] = useState<AdminUser | null>(null);
+  const [busyDelete, setBusyDelete] = useState(false);
+
+  const remove = async (u: AdminUser) => {
+    setBusyDelete(true);
+    try {
+      await api.deleteUser(u.id);
+      setDeleting(null);
+      await done(`Usuario borrado: ${u.fullName}. Su historial se conserva.`);
+    } catch (e) {
+      setDeleting(null);
+      setNotice(null);
+      setError(message(e));
+    } finally {
+      setBusyDelete(false);
+    }
+  };
   const list = useListControls(users ?? [], usersConfig(roles));
 
   const load = useCallback(async () => {
@@ -97,6 +114,24 @@ export function UsersPage({ me, back }: { me: User; back: () => void }) {
 
       {notice && <p className="alert alert-ok">{notice}</p>}
       {error && <p className="alert alert-error">{error}</p>}
+      {deleting && (
+        <div className="danger-confirm" role="alertdialog" aria-labelledby="del-user">
+          <strong id="del-user">¿Seguro que quieres borrar a {deleting.fullName}?</strong>
+          <p>
+            Desaparece de la lista y no podrá volver a entrar; su nombre de usuario ({deleting.username}) queda libre. Lo que hizo (movimientos,
+            comentarios, recepciones, auditoría) se conserva con su nombre. No se puede deshacer. Si solo quieres que no entre durante un tiempo,
+            usa «Desactivar».
+          </p>
+          <div className="actions nomargin">
+            <button type="button" className="btn" onClick={() => setDeleting(null)} disabled={busyDelete} autoFocus>
+              No, volver
+            </button>
+            <button type="button" className="btn btn-delete" onClick={() => remove(deleting)} disabled={busyDelete}>
+              {busyDelete ? 'Borrando…' : 'Sí, borrar'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {creating && <CreateForm roles={roles} onCancel={() => setCreating(false)} onDone={done} />}
       {editing && <EditForm user={editing} roles={roles} onCancel={() => setEditing(null)} onDone={done} />}
@@ -154,6 +189,11 @@ export function UsersPage({ me, back }: { me: User; back: () => void }) {
                     {u.id !== me.id && (
                       <button className="btn btn-small" onClick={() => toggleActive(u)}>
                         {u.active ? 'Desactivar' : 'Activar'}
+                      </button>
+                    )}
+                    {u.id !== me.id && (
+                      <button className="btn btn-small btn-delete-ghost" onClick={() => { setNotice(null); setError(null); setDeleting(u); window.scrollTo(0, 0); }}>
+                        Borrar
                       </button>
                     )}
                   </td>

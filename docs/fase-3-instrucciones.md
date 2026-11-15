@@ -296,7 +296,7 @@ lista.
 
 En «Usuarios», una columna enseña los proyectos de cada persona.
 
-## 5. Fotos y anotaciones
+## 5. Fotos y comentarios
 
 En la ficha de cada **ubicación**, **contenedor** y **material** hay dos
 secciones más.
@@ -313,19 +313,22 @@ secciones más.
 - Las fotos se guardan en la base de datos, así que entran en las copias de
   seguridad y se mudan con ella al servidor.
 
-### Anotaciones
+### Comentarios
 
-- **«+ Anotación»**: cualquier usuario, salvo el de consulta, puede escribir
-  una nota sobre esa cosa. Por ejemplo, «el palet tiene una tabla rota».
-- Cada anotación queda con **fecha, hora y quién la escribió**, y no se puede
+- **«+ Comentario»**: cualquier usuario, salvo el de consulta, puede escribir
+  un comentario sobre esa cosa. Por ejemplo, «el palet tiene una tabla rota».
+- Cada comentario queda con **fecha, hora y quién lo escribió**, y no se puede
   modificar ni borrar.
+- **«↩ Responder»**: debajo de cada comentario. La respuesta queda colgada del
+  comentario y le llega un aviso a quien lo escribió y a quienes ya han
+  respondido en esa conversación.
 - **«Notificar a responsables»**: al marcarlo salen ya elegidas las personas
   a las que avisar:
   - en una ubicación o un material, los responsables de almacén;
   - en un contenedor, además su responsable, si lo tiene.
 
-  Puedes quitar a alguien o pulsar «+ Avisar a otra persona». En la
-  anotación queda escrito a quién se avisó.
+  Puedes quitar a alguien o pulsar «+ Avisar a otra persona». En el
+  comentario queda escrito a quién se avisó.
 
 ### Avisos: la campana
 
@@ -387,7 +390,7 @@ Es una copia para consultar: lo que cambies en el Excel no vuelve al sistema.
 - [ ] Entrar como usuario estándar: puede retirar, pero no recontar ni revertir.
 - [ ] Exportar materiales y stock a Excel y abrir los ficheros.
 - [ ] Hacer una foto con el móvil a una caja y ver que sale en la lista.
-- [ ] Escribir una anotación marcando «Notificar a responsables» y comprobar,
+- [ ] Escribir un comentario marcando «Notificar a responsables» y comprobar,
       entrando con un responsable, que le aparece en la campana.
 
 ## 10. Si algo falla

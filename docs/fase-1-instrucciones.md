@@ -128,6 +128,11 @@ Lista de comprobación:
 - [ ] Con ese usuario, comprobar que en el inicio no aparece «Usuarios».
 - [ ] Entrar como `demo.almacen`: aparece «Auditoría» pero no «Usuarios».
 - [ ] Como `admin`, desactivar un usuario y comprobar que ya no puede entrar.
+- [ ] Como `admin`, **borrar** un usuario con «Borrar»: pide confirmación,
+  desaparece de la lista y no puede entrar, pero lo que hizo sigue en el
+  historial con su nombre. Su nombre de usuario queda libre. No se puede
+  borrar a quien tiene préstamos sin devolver, recepciones por identificar o
+  es el único responsable de un proyecto: el sistema lo dice.
 - [ ] Como `admin`, restablecer la contraseña de un usuario.
 - [ ] En «Auditoría», ver registradas todas las operaciones anteriores.
 - [ ] Fallar la contraseña cinco veces con un usuario: queda bloqueado 15
