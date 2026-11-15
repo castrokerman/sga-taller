@@ -307,6 +307,10 @@ export interface Allocation { availability: 'FREE' | 'RESTRICTED'; quantity: num
 export interface StockLine {
   id: string;
   materialId: string;
+  /** Primera foto del contenido, si tiene. */
+  photoId: string | null;
+  /** Unidad con su propio código (herramienta, equipo): no se recuenta. */
+  unitTracked: boolean;
   internalRef: string;
   description: string;
   unitCode: string;

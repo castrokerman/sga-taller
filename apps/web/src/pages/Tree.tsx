@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { api, errorMessage, type TreeContainer, type TreeLocation, type User } from '../api';
+import { api, errorMessage, photoUrl, type TreeContainer, type TreeLocation, type User } from '../api';
 import { ViewSwitch } from '../components/Common';
 import { Highlight, normalize } from '../components/ListControls';
 import { navigate } from '../router';
@@ -17,6 +17,7 @@ interface Node {
   over: boolean;
   /** Nubes extra del contenedor: proyecto y responsables. */
   chips?: Array<{ text: string; cls: string; title: string }>;
+  photoId?: string | null;
   children: Node[];
 }
 
@@ -51,7 +52,7 @@ function buildTree(locations: TreeLocation[], containers: TreeContainer[], withC
     for (const c of containers) {
       nodes.set(`c:${c.id}`, {
         key: `c:${c.id}`, kind: 'container', id: c.id, code: c.code, label: c.description ?? '', typeName: c.typeName,
-        meta: '', over: false, children: [], chips: containerChips(c),
+        meta: '', over: false, children: [], chips: containerChips(c), photoId: c.photoId,
       });
     }
   }
@@ -229,6 +230,7 @@ export function WarehouseTree({ user, onList, rootId }: { user: User; onList: ()
                 {open ? '▾' : '▸'}
               </button>
               <span className="icon" aria-hidden="true">{n.kind === 'location' ? '▦' : '▣'}</span>
+              {n.photoId && <img className="tree-thumb" src={photoUrl(n.photoId)} alt="" loading="lazy" />}
               <span className="ncode"><Highlight text={n.code} query={q} /></span>
               <span className="nname"><Highlight text={n.label} query={q} /></span>
               <span className="nmeta">

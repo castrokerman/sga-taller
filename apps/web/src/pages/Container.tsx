@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { api, ApiError, errorMessage, formatDateTime, newOperationKey, type ContainerDetail, type Project, type ScanHit, type User } from '../api';
+import { api, ApiError, errorMessage, formatDateTime, newOperationKey, photoUrl, type ContainerDetail, type Project, type ScanHit, type User } from '../api';
 import { Breadcrumbs, ContainerCard, containerListConfig, LabelPanel } from '../components/Common';
 import { useListControls } from '../components/ListControls';
 import { Scanner } from '../components/Scanner';
@@ -83,6 +83,11 @@ export function ContainerPage({ user, containerId }: { user: User; containerId: 
       <Breadcrumbs locations={detail.locationPath} containers={detail.containerPath} current={c.id} />
 
       <div className="page-head">
+        {c.photoId && (
+          <a className="head-thumb" href={photoUrl(c.photoId, 'image')} target="_blank" rel="noreferrer" title="Ver la foto">
+            <img src={photoUrl(c.photoId)} alt="" />
+          </a>
+        )}
         <div>
           <h2>{c.code}</h2>
           <p className="muted nomargin">

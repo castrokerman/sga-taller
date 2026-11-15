@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import {
-  api, ApiError, errorMessage, formatDateTime, formatQty, newOperationKey,
+  api, ApiError, errorMessage, formatDateTime, formatQty, newOperationKey, photoUrl,
   type Material, type OpResult, type PlaceRef, type ScanHit, type StockLine, type UnitRef, type User,
 } from '../api';
 import { MaterialForm } from '../pages/Materials';
@@ -180,12 +180,19 @@ export function StockSection(props: {
               {lines.map((l) => (
                 <tr key={l.id}>
                   <td>
-                    <a href={`#/material/${l.materialId}`}>
-                      <strong>{l.description}</strong>
-                    </a>
-                    <div className="muted small">
-                      {l.internalRef}
-                      {l.lotCode && ` · lote ${l.lotCode}`}
+                    <div className="stock-name">
+                      <a href={`#/material/${l.materialId}`} className="stock-thumb" aria-hidden="true" tabIndex={-1}>
+                        {l.photoId ? <img src={photoUrl(l.photoId)} alt="" loading="lazy" /> : <span>📦</span>}
+                      </a>
+                      <div>
+                        <a href={`#/material/${l.materialId}`}>
+                          <strong>{l.description}</strong>
+                        </a>
+                        <div className="muted small">
+                          {l.internalRef}
+                          {l.lotCode && ` · lote ${l.lotCode}`}
+                        </div>
+                      </div>
                     </div>
                   </td>
                   <td>
@@ -224,7 +231,7 @@ export function LineActions(props: { user: User; line: StockLine; onOp: (op: Op)
           Trasladar
         </button>
       )}
-      {can(user, 'stock.count') && (
+      {can(user, 'stock.count') && !line.unitTracked && (
         <button className="btn btn-small" onClick={() => props.onOp({ kind: 'count', line })}>
           Recuento
         </button>

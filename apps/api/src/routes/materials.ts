@@ -596,7 +596,9 @@ async function refCheck(c: pg.PoolClient, ref: string, exceptId: string | null) 
 /** Saldo de stock con el sitio, el lote y cuánto está restringido o asignado. */
 export const BALANCE_SELECT = `
   SELECT b.id, b.material_id AS "materialId", m.internal_ref AS "internalRef", m.description, m.unit_code AS "unitCode",
+         (SELECT ph.id FROM photo ph WHERE ph.entity_type = 'material' AND ph.entity_id = m.id ORDER BY ph.position LIMIT 1) AS "photoId",
          m.quantity_tracking AS "quantityTracking", m.is_loanable AS "isLoanable", u.decimals,
+         (SELECT ct.unit_tracked FROM content_type ct WHERE ct.code = m.content_type_code) AS "unitTracked",
          b.lot_id AS "lotId", l.lot_code AS "lotCode",
          b.container_id AS "containerId", b.location_id AS "locationId",
          coalesce(k.code, sl.code) AS "placeCode", coalesce(k.code, sl.code) AS place_code,
