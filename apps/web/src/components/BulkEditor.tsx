@@ -36,6 +36,8 @@ export function BulkEditor<T extends { id: string }>(props: {
   columns: Array<BulkColumn<T>>;
   onSave: (changes: BulkChanges) => Promise<string>;
   onClose: (message?: string) => void;
+  /** Botón por fila (por ejemplo, eliminar). Devuelve el mensaje a mostrar. */
+  rowAction?: { label: string; confirm: (row: T) => string; run: (row: T) => Promise<string> };
 }) {
   const { rows, columns } = props;
   const [edits, setEdits] = useState<Record<string, Record<string, CellValue>>>({});
@@ -44,7 +46,29 @@ export function BulkEditor<T extends { id: string }>(props: {
   const [fillKey, setFillKey] = useState(columns.find((c) => c.fillAll)?.key ?? '');
   const [fillValue, setFillValue] = useState<CellValue>(() => startValue(columns.find((c) => c.fillAll)));
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [rowBusy, setRowBusy] = useState<string | null>(null);
+
+  const runRow = async (row: T) => {
+    const a = props.rowAction!;
+    if (!window.confirm(a.confirm(row))) return;
+    setRowBusy(row.id);
+    setError(null);
+    setNotice(null);
+    try {
+      setNotice(await a.run(row));
+      setEdits((all) => {
+        const next = { ...all };
+        delete next[row.id];
+        return next;
+      });
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setRowBusy(null);
+    }
+  };
 
   const value = (row: T, col: BulkColumn<T>) => edits[row.id]?.[col.key] ?? col.get(row);
   const changed = (row: T, col: BulkColumn<T>) => col.key in (edits[row.id] ?? {}) && edits[row.id]![col.key] !== col.get(row);
@@ -126,6 +150,7 @@ export function BulkEditor<T extends { id: string }>(props: {
                   {c.label}
                 </th>
               ))}
+              {props.rowAction && <th />}
             </tr>
           </thead>
           <tbody>
@@ -144,12 +169,20 @@ export function BulkEditor<T extends { id: string }>(props: {
                     )}
                   </td>
                 ))}
+                {props.rowAction && (
+                  <td>
+                    <button type="button" className="btn btn-small btn-danger" disabled={busy || rowBusy !== null} onClick={() => void runRow(row)}>
+                      {rowBusy === row.id ? '…' : props.rowAction.label}
+                    </button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
+      {notice && <p className="alert alert-ok">{notice}</p>}
       {error && <p className="alert alert-error">{error}</p>}
       <div className="actions">
         {cells > 0 && (

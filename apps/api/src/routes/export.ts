@@ -144,6 +144,7 @@ export function exportRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
          FROM material m
          JOIN tree ON tree.id = m.family_id
          JOIN material_stock s ON s.material_id = m.id
+        WHERE m.deleted_at IS NULL
         ORDER BY tree.ruta, m.description`,
     );
     const data = await workbook('Contenidos', [

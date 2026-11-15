@@ -5,6 +5,7 @@ import { useListControls } from '../components/ListControls';
 import { Scanner } from '../components/Scanner';
 import { MoveContainersPanel } from '../components/MoveContainers';
 import { Thumb } from '../components/Thumb';
+import { CONTENTS_PHOTO_EVENT } from '../components/ContentsPhoto';
 import { StockSection } from '../components/Stock';
 import { ItemExtras } from '../components/ItemExtras';
 import { BulkContainers, ContainerForm } from './Warehouse';
@@ -45,6 +46,15 @@ export function ContainerPage({ user, containerId }: { user: User; containerId: 
     setNotice(null);
     void load();
   }, [load]);
+
+  // Una foto nueva del contenido (desde el aviso o la galería) se ve enseguida arriba.
+  useEffect(() => {
+    const onNew = (e: Event) => {
+      if ((e as CustomEvent<string>).detail === containerId) void load();
+    };
+    window.addEventListener(CONTENTS_PHOTO_EVENT, onNew);
+    return () => window.removeEventListener(CONTENTS_PHOTO_EVENT, onNew);
+  }, [load, containerId]);
 
   // Primero se recargan los datos y después se muestra el aviso, para que
   // lo que se ve en pantalla ya corresponda a lo que dice el mensaje.
@@ -102,7 +112,21 @@ export function ContainerPage({ user, containerId }: { user: User; containerId: 
             </p>
           )}
         </div>
-        <span className={`badge push-right ${active ? 'badge-ok' : 'badge-off'}`}>{active ? 'Activo' : 'Retirado'}</span>
+        {c.contentsPhotoIds.length > 0 && (
+          <div className="head-contents" aria-label="Fotos del contenido">
+            <span className="muted small">
+              Contenido{c.contentsPhotoAt && ` · ${formatDateTime(c.contentsPhotoAt)}`}
+            </span>
+            <div className="head-contents-row">
+              {c.contentsPhotoIds.map((id, i) => (
+                <span key={id} className={`head-contents-thumb ${i === 0 ? 'current' : ''}`} title={i === 0 ? 'Foto actual del contenido' : 'Foto anterior del contenido'}>
+                  <Thumb photoId={id} />
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+        <span className={`badge ${c.contentsPhotoIds.length > 0 ? 'head-badge' : 'push-right'} ${active ? 'badge-ok' : 'badge-off'}`}>{active ? 'Activo' : 'Retirado'}</span>
       </div>
       {c.projectId && (
         <p className="alert alert-project">
@@ -224,7 +248,7 @@ export function ContainerPage({ user, containerId }: { user: User; containerId: 
 
       <StockSection user={user} place={{ containerId: c.id }} placeCode={c.code} active={active} />
 
-      <ItemExtras user={user} entityType="container" entityId={c.id} />
+      <ItemExtras user={user} entityType="container" entityId={c.id} onPhotosChanged={() => void load()} />
 
       <section>
         <h3>Historial del contenedor</h3>

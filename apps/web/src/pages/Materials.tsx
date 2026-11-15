@@ -110,6 +110,8 @@ export function MaterialsPage({ user }: { user: User }) {
         <BulkMaterials
           rows={list.visible}
           families={families}
+          canDelete={can('material.delete')}
+          onDeleted={() => load()}
           onClose={async (m) => {
             setBulk(false);
             if (m) {
@@ -552,7 +554,7 @@ export function MaterialForm(props: {
 }
 
 /** Edición en tabla de los materiales que se ven en la lista. */
-function BulkMaterials(props: { rows: Material[]; families: Family[]; onClose: (message?: string) => void }) {
+function BulkMaterials(props: { rows: Material[]; families: Family[]; onClose: (message?: string) => void; canDelete?: boolean; onDeleted?: () => Promise<void> }) {
   const [types, setTypes] = useState<ContentType[]>([]);
   useEffect(() => {
     api.contentTypes().then((r) => setTypes(r.types)).catch(() => undefined);
@@ -589,6 +591,17 @@ function BulkMaterials(props: { rows: Material[]; families: Family[]; onClose: (
       rows={props.rows}
       onSave={save}
       onClose={props.onClose}
+      rowAction={props.canDelete ? {
+        label: 'Eliminar',
+        confirm: (m) => `¿Seguro que quieres eliminar ${m.internalRef} · ${m.description}?\n\nSi tiene historial (movimientos, préstamos, recepciones) se conserva, pero desaparece de listas, buscador y escáner. No se puede deshacer.`,
+        run: async (m) => {
+          const r = await api.deleteMaterial(m.id);
+          await props.onDeleted?.();
+          return r.keptHistory
+            ? `${r.ref} eliminado. Su historial se conserva.`
+            : `${r.ref} eliminado del todo: no tenía historial.`;
+        },
+      } : undefined}
       columns={[
         { key: 'ref', label: 'Referencia', type: 'static', get: (m) => m.internalRef },
         { key: 'contentTypeCode', label: 'Tipo', type: 'select', required: true, fillAll: true, get: (m) => m.contentTypeCode,

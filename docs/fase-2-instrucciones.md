@@ -210,6 +210,11 @@ cada una es una sola pieza con su código.
   las anteriores quedan como historial. En el móvil, «📷 Actualizar foto» abre
   directamente la cámara.
 
+Las últimas fotos del contenido salen también arriba en la ficha, entre los
+datos del contenedor y su estado: la actual más grande y, al lado, las
+anteriores. Las ubicaciones con foto la muestran en miniatura junto a su
+código, en su ficha y en el árbol.
+
 Cada vez que entra o sale contenido de un contenedor (entrada, retirada,
 traslado, préstamo, devolución o revertir), el aviso verde del resultado
 pregunta «¿Quieres actualizar la foto de los contenidos en el interior?» con

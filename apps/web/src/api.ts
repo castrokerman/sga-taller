@@ -176,6 +176,8 @@ export interface ContainerSummary {
   /** La foto más reciente de lo que lleva dentro, y cuándo se hizo. */
   contentsPhotoId: string | null;
   contentsPhotoAt: string | null;
+  /** Las últimas fotos del contenido, la más reciente primero. */
+  contentsPhotoIds: string[];
   /** Qué lleva dentro, en texto libre. */
   contentDescription: string | null;
 }
@@ -273,6 +275,8 @@ export interface Material {
   minStock: number | null;
   notes: string | null;
   status: 'ACTIVE' | 'OBSOLETE';
+  /** Si se eliminó con historial: ya no sale en listas. */
+  deletedAt?: string | null;
   createdAt: string;
   quantity: number | null;
   quantityFree: number;
@@ -615,6 +619,7 @@ export const api = {
     request<{ type: ContainerType }>('POST', '/api/container-types', data),
 
   boxLoose: (id: string, typeCode = 'CAJA') => request<{ containerId: string; code: string; lines: number }>('POST', `/api/locations/${id}/box-loose`, { typeCode }),
+  deleteMaterial: (id: string) => request<{ ok: true; ref: string; keptHistory: boolean }>('DELETE', `/api/materials/${id}`),
   deleteLocation: (id: string) => request<{ ok: true; code: string }>('DELETE', `/api/locations/${id}`),
   rootLocations: () => request<{ locations: LocationSummary[] }>('GET', '/api/locations'),
   location: (id: string) => request<LocationDetail>('GET', `/api/locations/${id}`),

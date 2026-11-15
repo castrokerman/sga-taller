@@ -428,6 +428,35 @@ describe('el contenido va siempre en un contenedor', () => {
     expect((await call('GET', `/api/containers/${id}`, almacen)).json().container.contentDescription).toBeNull();
   });
 
+  it('el administrador técnico elimina contenidos: sin historial del todo, con historial conservándolo', async () => {
+    const fam = (await call('GET', '/api/material-families', almacen)).json().families[0].id;
+    const nuevo = (await call('POST', '/api/materials', almacen, { description: 'FICTICIO Borrable', familyId: fam, unitCode: 'ud' })).json().material.id;
+    // El responsable de almacén no puede.
+    expect((await call('DELETE', `/api/materials/${nuevo}`, almacen)).statusCode).toBe(403);
+    const r1 = await call('DELETE', `/api/materials/${nuevo}`, admin);
+    expect(r1.statusCode, r1.body).toBe(200);
+    expect(r1.json().keptHistory).toBe(false);
+    expect((await call('GET', `/api/materials/${nuevo}`, almacen)).statusCode).toBe(404);
+
+    // Con contenido guardado no se puede; tras retirarlo sí, y el historial queda.
+    const z = await loc('BORR', 'ZONA');
+    const usado = (await call('POST', '/api/materials', almacen, { description: 'FICTICIO Con historial', familyId: fam, unitCode: 'ud' })).json().material.id;
+    expect((await call('POST', '/api/stock/receipt', almacen, { materialId: usado, locationId: z.id, quantity: 4 })).statusCode).toBe(201);
+    const no = await call('DELETE', `/api/materials/${usado}`, admin);
+    expect(no.statusCode).toBe(409);
+    expect(no.json().error.message).toContain('aún hay en 1 sitio');
+    const bal = (await pool.query(`SELECT id FROM stock_balance WHERE material_id = $1`, [usado])).rows[0].id;
+    expect((await call('POST', '/api/stock/withdraw', almacen, { balanceId: bal, quantity: 4, reason: 'FICTICIO consumo' })).statusCode).toBe(200);
+    const r2 = await call('DELETE', `/api/materials/${usado}`, admin);
+    expect(r2.statusCode, r2.body).toBe(200);
+    expect(r2.json().keptHistory).toBe(true);
+    const ficha = (await call('GET', `/api/materials/${usado}`, almacen)).json().material;
+    expect(ficha.deletedAt).toBeTruthy();
+    const lista = (await call('GET', '/api/materials?includeObsolete=true', almacen)).json().materials;
+    expect(lista.some((m: { id: string }) => m.id === usado)).toBe(false);
+    expect((await pool.query(`SELECT count(*)::int AS n FROM stock_movement_line WHERE material_id = $1`, [usado])).rows[0].n).toBe(2);
+  });
+
   it('cada tipo de ubicación puede limitar qué contenedores admite', async () => {
     const z = await loc('PALETS', 'ZONA');
     const ok = await call('PATCH', '/api/location-types/AREA', admin, { allowedContainerTypes: ['PALET'] });

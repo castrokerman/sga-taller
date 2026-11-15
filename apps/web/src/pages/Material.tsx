@@ -76,6 +76,11 @@ export function MaterialPage({ user, materialId }: { user: User; materialId: str
         </span>
       </nav>
 
+      {m.deletedAt && (
+        <p className="alert alert-warn">
+          Este contenido está eliminado ({formatDateTime(m.deletedAt)}). Ya no sale en listas, buscador ni escáner; se conserva para su historial.
+        </p>
+      )}
       <div className="page-head">
         {m.photoId && (
           <span className="head-thumb">
