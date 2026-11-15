@@ -140,7 +140,46 @@ En **«Préstamos»** se ven las abiertas; las que están fuera de plazo salen
 en rojo. Para devolver: **«Devolver a…»** la deja en el sitio del que salió,
 y **«A otro sitio»** permite escanear un sitio distinto.
 
-## 5. La huella: nada se borra
+## 5. Fotos y anotaciones
+
+En la ficha de cada **ubicación**, **contenedor** y **material** hay dos
+secciones más.
+
+### Fotos
+
+- **«+ Añadir foto»**: en el móvil abre la cámara o la galería. Se pueden
+  elegir varias de una vez.
+- El propio móvil reduce la foto antes de enviarla, así que sube rápido y
+  ocupa poco.
+- La primera es la **principal**: sale en pequeño en las listas y en el
+  catálogo. Para cambiarla, abre otra foto y pulsa «Hacer principal».
+- Una foto la quita quien la subió o un responsable de almacén.
+- Las fotos se guardan en la base de datos, así que entran en las copias de
+  seguridad y se mudan con ella al servidor.
+
+### Anotaciones
+
+- **«+ Anotación»**: cualquier usuario, salvo el de consulta, puede escribir
+  una nota sobre esa cosa. Por ejemplo, «el palet tiene una tabla rota».
+- Cada anotación queda con **fecha, hora y quién la escribió**, y no se puede
+  modificar ni borrar.
+- **«Notificar a responsables»**: al marcarlo salen ya elegidas las personas
+  a las que avisar:
+  - en una ubicación o un material, los responsables de almacén;
+  - en un contenedor, además su responsable, si lo tiene.
+
+  Puedes quitar a alguien o pulsar «+ Avisar a otra persona». En la
+  anotación queda escrito a quién se avisó.
+
+### Avisos: la campana
+
+Arriba, junto a tu nombre, hay una **campana** con el número de avisos sin
+leer. Se actualiza sola cada minuto. Al pulsarla se ven los avisos: qué se
+anotó, dónde y quién. Pulsar uno lleva a la ficha y lo marca como leído.
+
+Los avisos por correo electrónico llegarán en la Fase 5.
+
+## 6. La huella: nada se borra
 
 - Cada operación queda como un **movimiento numerado**, con quién, cuándo,
   dónde, cuánto y para qué. No se puede modificar ni borrar.
@@ -154,7 +193,7 @@ y **«A otro sitio»** permite escanear un sitio distinto.
 - Si dos personas sacan lo mismo a la vez, el sistema atiende a una y
   después a la otra: nunca deja el stock en negativo.
 
-## 6. Material restringido (lo que viene en la Fase 4)
+## 7. Material restringido (lo que viene en la Fase 4)
 
 En las tablas de stock aparece el **tipo de stock**: «Genérico de taller»,
 «Libre · proyecto», «Restringido · proyecto» o «Restringido sin proyecto».
@@ -162,7 +201,7 @@ Por ahora todo lo que entra es genérico de taller. Asignar material a
 proyectos y autorizar su retirada llega en la Fase 4. El sistema ya impide
 retirar lo restringido sin autorización.
 
-## 7. Excel
+## 8. Excel
 
 - **Materiales** → «Exportar a Excel»: el catálogo con el total de cada uno
   y si está en stock bajo.
@@ -171,7 +210,7 @@ retirar lo restringido sin autorización.
 
 Es una copia para consultar: lo que cambies en el Excel no vuelve al sistema.
 
-## 8. Qué probar
+## 9. Qué probar
 
 - [ ] Añadirte el rol «Responsable de almacén» si usas el administrador.
 - [ ] Crear una subfamilia y un material en ella, con aviso de stock bajo.
@@ -184,8 +223,11 @@ Es una copia para consultar: lo que cambies en el Excel no vuelve al sistema.
 - [ ] Revertir un movimiento desde «Movimientos».
 - [ ] Entrar como usuario estándar: puede retirar, pero no recontar ni revertir.
 - [ ] Exportar materiales y stock a Excel y abrir los ficheros.
+- [ ] Hacer una foto con el móvil a una caja y ver que sale en la lista.
+- [ ] Escribir una anotación marcando «Notificar a responsables» y comprobar,
+      entrando con un responsable, que le aparece en la campana.
 
-## 9. Si algo falla
+## 10. Si algo falla
 
 | Lo que ves | Qué hacer |
 | --- | --- |
@@ -196,7 +238,7 @@ Es una copia para consultar: lo que cambies en el Excel no vuelve al sistema.
 | «No se puede revertir: ese material ya se ha movido…» | Después de ese movimiento hubo otros. Corrige con una entrada o retirada nueva, o con un recuento. |
 | «No se puede cambiar la unidad de un material que tiene stock» | Es a propósito, para no cambiar el sentido de lo guardado. Crea un material nuevo con la unidad correcta. |
 
-## 10. Qué está comprobado y qué no
+## 11. Qué está comprobado y qué no
 
 | Elemento | Estado |
 | --- | --- |

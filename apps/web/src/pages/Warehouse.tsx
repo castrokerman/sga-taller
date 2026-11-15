@@ -6,6 +6,7 @@ import {
 import { Breadcrumbs, ContainerCard, containerListConfig, LabelPanel, LocationCard, locationListConfig, ViewSwitch } from '../components/Common';
 import { useListControls } from '../components/ListControls';
 import { StockSection } from '../components/Stock';
+import { ItemExtras } from '../components/ItemExtras';
 import { BulkEditor, CodeInput, type BulkChanges } from '../components/BulkEditor';
 import { WarehouseTree } from './Tree';
 import { navigate } from '../router';
@@ -227,6 +228,7 @@ export function WarehousePage({ user, locationId }: { user: User; locationId?: s
       )}
 
       {loc && <StockSection user={user} place={{ locationId: loc.id }} placeCode={loc.code} active={loc.active} />}
+      {loc && <ItemExtras user={user} entityType="location" entityId={loc.id} />}
 
       {roots && roots.length === 0 && (
         <p className="alert alert-info">
@@ -608,7 +610,7 @@ function ExportPanel(props: { onClose: () => void }) {
 
 
 /** Edición en tabla de las ubicaciones de la lista (las que se ven con los filtros puestos). */
-function BulkLocations(props: { rows: LocationSummary[]; onClose: (message?: string) => void }) {
+export function BulkLocations(props: { rows: LocationSummary[]; depth?: (l: LocationSummary) => number; hint?: string; onClose: (message?: string) => void }) {
   const [types, setTypes] = useState<LocationType[]>([]);
   useEffect(() => {
     api.locationTypes().then((r) => setTypes(r.types)).catch(() => undefined);
@@ -633,12 +635,12 @@ function BulkLocations(props: { rows: LocationSummary[]; onClose: (message?: str
   return (
     <BulkEditor
       title={`Editar ${props.rows.length} ubicaciones`}
-      hint="Se editan las que se ven en la lista: usa los filtros para elegir cuáles. Lo cambiado se marca en amarillo y se guarda todo junto; si algo falla, no se guarda nada."
+      hint={props.hint ?? 'Se editan las que se ven en la lista: usa los filtros para elegir cuáles. Lo cambiado se marca en amarillo y se guarda todo junto; si algo falla, no se guarda nada.'}
       rows={props.rows}
       onSave={save}
       onClose={props.onClose}
       columns={[
-        { key: 'segment', label: 'Código', type: 'segment', get: (l) => l.segment, prefix: (l) => l.parentCode, width: '190px' },
+        { key: 'segment', label: 'Código', type: 'segment', get: (l) => l.segment, prefix: (l) => l.parentCode, indent: props.depth, width: '190px' },
         { key: 'name', label: 'Nombre', type: 'text', get: (l) => l.name, width: '200px' },
         { key: 'typeCode', label: 'Tipo', type: 'select', required: true, fillAll: true, get: (l) => l.typeCode,
           options: types.filter((t) => t.active).map((t) => ({ value: t.code, label: t.name })), width: '140px' },
@@ -651,7 +653,7 @@ function BulkLocations(props: { rows: LocationSummary[]; onClose: (message?: str
 }
 
 /** Edición en tabla de los contenedores de la lista. */
-export function BulkContainers(props: { rows: ContainerSummary[]; onClose: (message?: string) => void }) {
+export function BulkContainers(props: { rows: ContainerSummary[]; hint?: string; onClose: (message?: string) => void }) {
   const [users, setUsers] = useState<Array<{ id: string; fullName: string }> | null>(null);
   useEffect(() => {
     api.basicUsers().then((r) => setUsers(r.users)).catch(() => setUsers([]));
@@ -673,7 +675,7 @@ export function BulkContainers(props: { rows: ContainerSummary[]; onClose: (mess
   return (
     <BulkEditor
       title={`Editar ${props.rows.length} contenedores`}
-      hint="Se editan los que se ven en la lista: usa los filtros para elegir cuáles. El código de un contenedor no cambia."
+      hint={props.hint ?? 'Se editan los que se ven en la lista: usa los filtros para elegir cuáles. El código de un contenedor no cambia.'}
       rows={props.rows}
       onSave={save}
       onClose={props.onClose}

@@ -171,12 +171,12 @@ describe('migraciones', () => {
     expect(again.skipped).toHaveLength(files.length);
   });
 
-  it('crean las 35 tablas del modelo y las 6 vistas', async () => {
+  it('crean las 38 tablas del modelo y las 6 vistas', async () => {
     const tables = await pool.query(
       `SELECT table_name FROM information_schema.tables
         WHERE table_schema = 'public' AND table_type = 'BASE TABLE' AND table_name <> 'schema_migrations'`,
     );
-    expect(tables.rowCount).toBe(35);
+    expect(tables.rowCount).toBe(38);
     const names = tables.rows.map((r) => r.table_name);
     for (const t of [
       'material', 'material_lot', 'storage_location', 'container', 'stock_balance', 'stock_allocation',

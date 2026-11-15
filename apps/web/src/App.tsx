@@ -8,6 +8,7 @@ import { LoansPage } from './pages/Loans';
 import { MaterialPage } from './pages/Material';
 import { MaterialsPage } from './pages/Materials';
 import { MovementsPage } from './pages/Movements';
+import { NotificationsPage } from './pages/Notifications';
 import { HomePage } from './pages/Home';
 import { LoginPage } from './pages/Login';
 import { ScannerPage } from './pages/ScannerPage';
@@ -19,7 +20,19 @@ import { navigate, useRoute } from './router';
 export function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [unread, setUnread] = useState(0);
   const route = useRoute();
+
+  // Avisos sin leer: al cambiar de pantalla y cada minuto.
+  const refreshUnread = useCallback(() => {
+    api.unreadCount().then((r) => setUnread(r.unread)).catch(() => undefined);
+  }, []);
+  useEffect(() => {
+    if (!user || user.mustChangePassword) return;
+    refreshUnread();
+    const t = window.setInterval(refreshUnread, 60_000);
+    return () => window.clearInterval(t);
+  }, [user, route.name, route.id, refreshUnread]);
 
   const refresh = useCallback(async () => {
     try {
@@ -69,17 +82,18 @@ export function App() {
   else if (route.name === 'usuarios' && can('admin.users.manage')) page = <UsersPage me={user} back={home} />;
   else if (route.name === 'auditoria' && can('audit.read')) page = <AuditPage back={home} />;
   else if (route.name === 'tipos' && can('admin.masterdata.manage')) page = <TypesPage />;
+  else if (route.name === 'avisos') page = <NotificationsPage onChanged={refreshUnread} />;
   else if (route.name === 'contrasena') page = <ChangePasswordPage onDone={home} onCancel={home} />;
   else page = <HomePage user={user} />;
 
   return (
-    <Shell user={user} onLogout={logout} withNav>
+    <Shell user={user} onLogout={logout} withNav unread={unread}>
       {page}
     </Shell>
   );
 }
 
-function Shell(props: { user: User; onLogout: () => void; withNav?: boolean; children: React.ReactNode }) {
+function Shell(props: { user: User; onLogout: () => void; withNav?: boolean; unread?: number; children: React.ReactNode }) {
   const { user } = props;
   return (
     <div className="shell">
@@ -97,8 +111,15 @@ function Shell(props: { user: User; onLogout: () => void; withNav?: boolean; chi
             <span>{user.roles.map(roleName).join(' · ') || 'Sin rol'}</span>
           </div>
           {props.withNav && (
-            <a className="btn btn-ghost" href="#/contrasena">
-              Contraseña
+            <a className={`btn btn-ghost bell ${props.unread ? 'bell-on' : ''}`} href="#/avisos" title="Avisos" aria-label={`Avisos: ${props.unread ?? 0} sin leer`}>
+              <span aria-hidden="true">🔔</span>
+              {props.unread ? <b className="bell-count">{props.unread > 99 ? '99+' : props.unread}</b> : null}
+            </a>
+          )}
+          {props.withNav && (
+            <a className="btn btn-ghost" href="#/contrasena" title="Cambiar contraseña" aria-label="Cambiar contraseña">
+              <span className="lbl-long">Contraseña</span>
+              <span className="lbl-short" aria-hidden="true">🔑</span>
             </a>
           )}
           <button className="btn btn-ghost" onClick={props.onLogout}>

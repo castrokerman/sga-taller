@@ -13,7 +13,7 @@ documentación técnica y calibración de equipos.
 | 2 | Almacén físico: ubicaciones, contenedores, QR, escáner | Completada, pendiente de probar con móviles reales |
 | 3 | Inventario: materiales, entradas, retiradas, recuentos, préstamos. Piloto en el taller | Completada, pendiente del piloto |
 | 4 | Proyectos y autorizaciones | Pendiente |
-| 5 | Documentación, metrología y avisos: notificaciones y correo electrónico | Pendiente |
+| 5 | Documentación, metrología y avisos por correo electrónico (los avisos dentro de la app ya funcionan) | Pendiente |
 | 6 | Cierre y migración a servidor online | Pendiente |
 | — | Mapa del taller con zonas pulsables | Más adelante, cuando esté el plano |
 
@@ -25,6 +25,8 @@ documentación técnica y calibración de equipos.
 - Ordenar y filtrar las listas de ubicaciones, contenedores y usuarios.
 - Editar varias ubicaciones, contenedores o materiales a la vez en una tabla.
 - Códigos de ubicación heredados: al cambiar uno, cambian los de dentro.
+- Fotos y anotaciones en ubicaciones, contenedores y materiales, con avisos a
+  responsables en una campana dentro de la app.
 - Dar de alta contenedores, anidarlos y moverlos, con historial.
 - Imprimir etiquetas QR en formato 6 × 4 pulgadas o en hojas A4 de 24.
 - Escanear etiquetas con la cámara, con un lector USB o tecleando el código.
@@ -65,6 +67,7 @@ sistema obliga a cambiar su contraseña al entrar.
 | Duplicar, exportar a Excel y árbol | Sí, 17 pruebas |
 | Inventario (Fase 3) | Sí, 27 pruebas |
 | Código heredado y edición en tabla | Sí, 12 pruebas y recorrido con navegador real |
+| Fotos, anotaciones y avisos | Sí, 9 pruebas y recorrido con navegador real, también en móvil |
 | Ordenar, filtrar y vista de árbol | Sí, recorrido con un navegador real |
 | Etiquetas QR legibles en los dos formatos | Sí, 4 pruebas que leen el QR del PDF |
 | Web, API y proxy HTTPS funcionando juntos | Sí, recorrido completo con un navegador real |

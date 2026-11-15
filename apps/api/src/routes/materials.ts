@@ -30,6 +30,7 @@ export const MATERIAL_SELECT = `
          m.quality_grade AS "qualityGrade", m.dimensions, m.unit_code AS "unitCode", u.decimals,
          m.quantity_tracking AS "quantityTracking", m.lot_tracked AS "lotTracked", m.is_loanable AS "isLoanable",
          m.min_stock::float AS "minStock", m.notes, m.status, m.created_at AS "createdAt",
+         (SELECT ph.id FROM photo ph WHERE ph.entity_type = 'material' AND ph.entity_id = m.id ORDER BY ph.position LIMIT 1) AS "photoId",
          s.quantity::float AS quantity, s.quantity_free::float AS "quantityFree", s.places::int AS places,
          coalesce(s.needs_recount, false) AS "needsRecount",
          (m.min_stock IS NOT NULL AND m.quantity_tracking <> 'NOT_TRACKED' AND coalesce(s.quantity, 0) < m.min_stock) AS "lowStock",
