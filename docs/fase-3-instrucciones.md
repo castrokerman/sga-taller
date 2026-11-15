@@ -40,7 +40,7 @@ permisos:
 
 | Bloque | Qué tiene | Quién lo ve |
 | --- | --- | --- |
-| **Día a día** | Escáner QR, Registrar entrada, Recepciones, Pre-recepciones, Buscador | Todos |
+| **Día a día** | Escáner QR, Registrar entrada, Registrar salida, Mover contenedor, Recepciones, Pre-recepciones, Buscador | Todos |
 | **Inventario** | Almacén, Contenidos, Préstamos, Proyectos | Todos |
 | **Control** | Movimientos (solo responsables de almacén), Auditoría | Responsables de almacén y administradores |
 | **Administración** | Usuarios, Tipos, Familias | Administradores |
@@ -188,6 +188,42 @@ Al terminar puedes seguir con **otra entrada en el mismo sitio** (si
 acabas de registrar un palet nuevo, «Otra entrada en PAL-…» mete más cosas
 en ese mismo palet), con **más
 del mismo contenido en otro sitio**, o empezar de cero.
+
+### Registrar salida (desde el inicio)
+
+Para lo que se va del taller. En el inicio, **«Registrar salida»**:
+
+- **Salida definitiva**: se va para no volver. Pide a dónde va y el motivo.
+  Lo que sale queda de baja: se descuenta del inventario y las herramientas
+  y equipos con su propio código quedan de baja.
+- **Salida temporal**: sale y vuelve (a calibrar, a una obra, a una
+  feria…). Pide a dónde va y cuánto tiempo (1 día, 1 semana, 2 semanas, 1
+  mes, 3 meses u otra fecha). Al acabar el plazo, el responsable recibe un
+  aviso en la campana: **«Indicar si ha regresado»** lleva a la salida, con
+  **«Ha vuelto»** (eliges dónde se guarda; por defecto, donde estaba) o
+  **«Aún no: nuevo plazo»**.
+
+¿Qué sale? **Contenido** (eliges cada cosa, de qué sitio y cuánto) o **un
+contenedor**. Con un contenedor, la app pregunta **«¿Y el contenedor?»**:
+
+- **«Se va con lo que lleva»**: sale entero. En una salida temporal, la
+  ficha del contenedor dice **«Fuera del taller»** y no se puede meter ni
+  sacar nada hasta que vuelva; en una definitiva, queda retirado.
+- **«Se queda en el taller para reutilizarlo»**: sale solo lo que lleva
+  dentro y el palet o la caja se queda vacío en su sitio, listo para usarlo
+  otra vez. En una salida temporal, al volver, lo de dentro regresa a ese
+  contenedor (o a donde elijas).
+
+Debajo, **«Fuera del taller ahora»** muestra lo que está fuera y cuándo
+tiene que volver (en rojo si se ha pasado el plazo). «Ver también las
+cerradas» enseña el historial.
+
+### Mover contenedor (desde el inicio)
+
+**«Mover contenedor»** lleva un contenedor, con todo lo que lleva, a otro
+sitio del taller: lo buscas por código, descripción o lo que lleva dentro,
+eliges el destino en la lista (o lo escaneas) y confirmas. Si el sitio ya
+tiene todos los contenedores que admite, la app avisa antes.
 
 ### Varias cosas a la vez
 

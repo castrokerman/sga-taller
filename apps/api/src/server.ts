@@ -3,6 +3,7 @@ import { buildApp } from './app.js';
 import { ensureFirstAdmin, seedDemoUsers } from './bootstrap.js';
 import { loadConfig } from './config.js';
 import { runMigrations } from './db/migrate.js';
+import { notifyDueDepartures } from './routes/departures.js';
 
 async function main() {
   const config = loadConfig();
@@ -22,6 +23,12 @@ async function main() {
       .catch((err) => app.log.error({ err }, 'fallo en la limpieza de sesiones'));
   }, 60 * 60 * 1000);
   cleanup.unref();
+
+  // Salidas temporales vencidas: aviso al responsable para que diga si ha vuelto.
+  const due = () => notifyDueDepartures(pool).catch((err) => app.log.error({ err }, 'fallo al revisar salidas vencidas'));
+  void due();
+  const dueTimer = setInterval(due, 10 * 60 * 1000);
+  dueTimer.unref();
 
   const shutdown = async () => {
     await app.close();

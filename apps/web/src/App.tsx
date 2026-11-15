@@ -10,6 +10,7 @@ import { MaterialsPage } from './pages/Materials';
 import { MovementsPage } from './pages/Movements';
 import { NotificationsPage } from './pages/Notifications';
 import { ReceivePage } from './pages/Receive';
+import { DeparturesPage, MoveContainerPage } from './pages/Departures';
 import { InboundListPage, InboundPage } from './pages/Inbound';
 import { ProjectPage, ProjectsPage } from './pages/Projects';
 import { PreReceiptsPage } from './pages/PreReceipts';
@@ -103,6 +104,8 @@ export function App() {
   else if (route.name === 'auditoria' && can('audit.read')) page = <AuditPage back={home} />;
   else if (route.name === 'tipos' && can('admin.masterdata.manage')) page = <TypesPage />;
   else if (route.name === 'buscar') page = <SearchPage />;
+  else if (route.name === 'salida' && can('stock.read')) page = <DeparturesPage user={user} focus={route.id} />;
+  else if (route.name === 'mover' && can('container.move')) page = <MoveContainerPage />;
   else if (route.name === 'entrada' && can('stock.receive')) page = <ReceivePage key={route.id ?? ''} user={user} initial={route.id} />;
   else if (route.name === 'recepciones') page = <InboundListPage user={user} />;
   else if (route.name === 'prerecepciones') page = <PreReceiptsPage user={user} />;

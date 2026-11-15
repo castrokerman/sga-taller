@@ -154,7 +154,7 @@ export interface ContainerSummary {
   id: string;
   code: string;
   qrToken: string;
-  status: 'ACTIVE' | 'RETIRED';
+  status: 'ACTIVE' | 'RETIRED' | 'OUT';
   reusePolicy: 'REUSABLE' | 'DISPOSABLE';
   description: string | null;
   locationId: string | null;
@@ -457,12 +457,12 @@ export interface AppNotification {
   createdAt: string;
   readAt: string | null;
   /** De un comentario o de una recepción pendiente de identificar. */
-  kind: 'note' | 'inbound';
+  kind: 'note' | 'inbound' | 'departure';
   noteId: string | null;
   /** El comentario es una respuesta a otro. */
   isReply?: boolean;
   body: string;
-  entityType: EntityType | 'inbound';
+  entityType: EntityType | 'inbound' | 'departure';
   inboundStatus: InboundStatus | null;
   /** Una recepción que me toca identificar y sigue pendiente. */
   actionNeeded: boolean | null;
@@ -773,6 +773,13 @@ export const api = {
   scan: (code: string) => request<ScanHit>('GET', `/api/scan/${encodeURIComponent(code)}`),
   orderTypes: (kind: TypeKind, codes: string[]) => request<{ ok: true }>('POST', `/api/${TYPE_PATHS[kind]}/order`, { codes }),
   deleteType: (kind: TypeKind, code: string) => request<{ ok: true }>('DELETE', `/api/${TYPE_PATHS[kind]}/${code}`),
+  departures: (all = false) => request<{ departures: Departure[] }>('GET', `/api/departures?all=${all}`),
+  createDeparture: (data: DepartureInput, key: string) =>
+    request<{ id: string; code: string; message: string; movementNumber: number | null; containers: Array<{ id: string; code: string }> }>('POST', '/api/departures', data, key),
+  returnDeparture: (id: string, to: PlaceRef | null, key: string) =>
+    request<OpResult>('POST', `/api/departures/${id}/return`, to ? { toContainerId: to.containerId, toLocationId: to.locationId } : {}, key),
+  extendDeparture: (id: string, data: { days?: number; dueDate?: string }) =>
+    request<{ ok: true; message: string }>('POST', `/api/departures/${id}/extend`, data),
   basicUsers: () => request<{ users: Array<{ id: string; fullName: string }> }>('GET', '/api/users/basic'),
 
   /** Pide el PDF de etiquetas y lo descarga. */
@@ -835,7 +842,47 @@ export const MOVEMENT_NAMES: Record<string, string> = {
   LOAN_OUT: 'Préstamo',
   LOAN_RETURN: 'Devolución de préstamo',
   REVERSAL: 'Reverso',
+  EXIT: 'Salida definitiva',
+  EXIT_OUT: 'Salida temporal',
+  EXIT_RETURN: 'Vuelta de salida',
 };
+
+export interface Departure {
+  id: string;
+  number: number;
+  code: string;
+  kind: 'DEFINITIVE' | 'TEMPORARY';
+  status: 'OUT' | 'RETURNED' | 'DONE';
+  destination: string;
+  reason: string | null;
+  dueAt: string | null;
+  createdAt: string;
+  returnedAt: string | null;
+  overdue: boolean;
+  containerId: string | null;
+  containerCode: string | null;
+  containerDescription: string | null;
+  /** El contenedor se quedó en el taller para reutilizarlo; salió lo de dentro. */
+  keptContainerId: string | null;
+  keptContainerCode: string | null;
+  fromCode: string | null;
+  responsibleId: string;
+  responsibleName: string;
+  createdByName: string;
+  returnedByName: string | null;
+  lines: Array<{ materialId: string; internalRef: string; description: string; quantity: number | null; unitCode: string; fromCode: string | null }>;
+}
+export interface DepartureInput {
+  kind: 'DEFINITIVE' | 'TEMPORARY';
+  destination: string;
+  reason?: string;
+  days?: number;
+  dueDate?: string;
+  responsibleUserId?: string;
+  containerId?: string;
+  keepContainer?: boolean;
+  lines?: Array<{ balanceId: string; quantity?: number }>;
+}
 
 export const formatDate = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—';
