@@ -20,11 +20,13 @@ export const CONTAINER_SELECT = `
          c.responsible_user_id AS "responsibleUserId", ru.full_name AS "responsibleName",
          t.code AS "typeCode", t.name AS "typeName",
          c.created_at AS "createdAt", c.retired_at AS "retiredAt",
+         c.project_id AS "projectId", pr.code AS "projectCode", pr.name AS "projectName",
          (SELECT ph.id FROM photo ph WHERE ph.entity_type = 'container' AND ph.entity_id = c.id ORDER BY ph.position LIMIT 1) AS "photoId",
          (SELECT count(*)::int FROM container k WHERE k.parent_container_id = c.id AND k.status = 'ACTIVE') AS "childCount"
     FROM container c
     JOIN container_type t ON t.id = c.container_type_id
-    LEFT JOIN app_user ru ON ru.id = c.responsible_user_id`;
+    LEFT JOIN app_user ru ON ru.id = c.responsible_user_id
+    LEFT JOIN project pr ON pr.id = c.project_id`;
 
 /** Cadena de ubicaciones desde la raíz hasta la indicada (incluida). */
 export async function locationPath(db: Db, locationId: string) {

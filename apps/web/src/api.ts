@@ -20,6 +20,38 @@ export interface AdminUser {
   lastLoginAt: string | null;
   createdAt: string;
   roles: string[];
+  projects: Array<{ id: string; code: string; name: string; role: ProjectRole }>;
+}
+
+export type ProjectRole = 'RESPONSIBLE' | 'MEMBER';
+export type ProjectStatus = 'ACTIVE' | 'ON_HOLD' | 'CLOSED';
+export interface Person { id: string; fullName: string; active?: boolean }
+export interface Project {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  status: ProjectStatus;
+  createdAt: string;
+  responsibles: Person[];
+  members: Person[];
+  containerCount: number;
+  pendingInbound: number;
+  myRole: ProjectRole | null;
+}
+export interface ProjectOption { id: string; code: string; name: string }
+export interface ProjectInput {
+  code?: string; name?: string; description?: string; status?: ProjectStatus; responsibleIds?: string[]; memberIds?: string[];
+}
+export interface ProjectDetail {
+  project: Project;
+  full: boolean;
+  canEdit?: boolean;
+  containers?: Array<{ id: string; code: string; description: string | null; typeName: string; locationCode: string | null; lines: number }>;
+  stock?: StockLine[];
+  inbound?: Array<{ id: string; code: string; status: InboundStatus; description: string | null; receivedAt: string; materialDescription: string | null; photoId: string | null }>;
+  loans?: Loan[];
+  movements?: MovementLine[];
 }
 
 export interface Role {
@@ -129,6 +161,10 @@ export interface ContainerSummary {
   retiredAt: string | null;
   childCount: number;
   photoId: string | null;
+  /** Proyecto del contenedor: lo que hay dentro está reservado para él. */
+  projectId: string | null;
+  projectCode: string | null;
+  projectName: string | null;
 }
 
 export interface PathItem {
@@ -417,6 +453,7 @@ export interface Inbound {
   quantity: number | null;
   lotCode: string | null;
   projectRef: string | null;
+  projectId: string | null;
   usagePlace: string | null;
   disposition: Disposition | null;
   finalContainerId: string | null;
@@ -436,6 +473,7 @@ export interface InboundCompletion {
   quantity?: number;
   lotCode?: string;
   projectRef?: string;
+  projectId?: string | null;
   usagePlace?: string;
   disposition: Disposition;
   containerId?: string;
@@ -609,7 +647,7 @@ export const api = {
   inboundItem: (id: string) => request<{ item: Inbound; canComplete: boolean; canCancel: boolean }>('GET', `/api/inbound/${id}`),
   inboundProjects: () => request<{ projects: string[] }>('GET', '/api/inbound/projects'),
   createInbound: (
-    data: { responsibleUserId: string; containerId?: string; locationId?: string; description?: string; packages?: number; externalReference?: string; photos: PhotoData[] },
+    data: { responsibleUserId?: string; projectId?: string; containerId?: string; locationId?: string; description?: string; packages?: number; externalReference?: string; photos: PhotoData[] },
     key: string,
   ) => request<{ id: string; code: string; responsible: string; notified: boolean; placeCode: string }>('POST', '/api/inbound', data, key),
   completeInbound: (id: string, data: InboundCompletion, key: string) =>
@@ -618,6 +656,15 @@ export const api = {
     request<{ ok: true; responsible: string }>('POST', `/api/inbound/${id}/reassign`, data, key),
   cancelInbound: (id: string, reason: string, key: string) =>
     request<{ ok: true }>('POST', `/api/inbound/${id}/cancel`, { reason }, key),
+
+  projects: (closed = false) => request<{ projects: Project[]; canManage: boolean }>('GET', `/api/projects?closed=${closed}`),
+  projectOptions: () => request<{ projects: ProjectOption[] }>('GET', '/api/projects/options'),
+  project: (id: string) => request<ProjectDetail>('GET', `/api/projects/${id}`),
+  createProject: (data: ProjectInput & { code: string; name: string; responsibleIds: string[] }) =>
+    request<{ id: string; code: string }>('POST', '/api/projects', data),
+  updateProject: (id: string, data: ProjectInput) => request<{ project: Project }>('PATCH', `/api/projects/${id}`, data),
+  setContainerProject: (containerId: string, projectId: string | null) =>
+    request<{ ok: true }>('PUT', `/api/containers/${containerId}/project`, { projectId }),
 
   search: (q: string) => request<SearchResult>('GET', `/api/search?q=${encodeURIComponent(q)}`),
   tree: () => request<{ locations: TreeLocation[]; containers: TreeContainer[] }>('GET', '/api/tree'),

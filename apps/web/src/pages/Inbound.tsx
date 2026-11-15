@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   api, errorMessage, formatDateTime, formatQty, newOperationKey, photoUrl,
-  type ContentType, type Disposition, type Family, type Inbound, type InboundStatus, type Material, type PhotoData, type PlaceRef, type Unit, type User,
+  type ContentType, type Disposition, type Family, type Inbound, type ProjectOption, type InboundStatus, type Material, type PhotoData, type PlaceRef, type Unit, type User,
 } from '../api';
 import { shrink } from '../components/ItemExtras';
 import { PhotoField, uploadMaterialPhoto } from '../components/PhotoField';
@@ -101,6 +101,12 @@ export function PendingReceive(props: { user: User; onBack: () => void }) {
   const [people, setPeople] = useState<Person[] | null>(null);
   const [recent, setRecent] = useState<string[]>(() => readStore(RECENT_PEOPLE, []));
   const [responsible, setResponsible] = useState('');
+  const [toProject, setToProject] = useState(false);
+  const [projectId, setProjectId] = useState('');
+  const [projectOptions, setProjectOptions] = useState<ProjectOption[]>([]);
+  useEffect(() => {
+    api.projectOptions().then((r) => setProjectOptions(r.projects)).catch(() => undefined);
+  }, []);
   const [place, setPlace] = useState<Place | null>(null);
   const [picking, setPicking] = useState(false);
   const [last] = useState<Place | null>(() => readStore(LAST_PLACE, null));
@@ -141,7 +147,7 @@ export function PendingReceive(props: { user: User; onBack: () => void }) {
     e.preventDefault();
     setError(null);
     if (!photos.length) return setError('Haz al menos una foto');
-    if (!responsible) return setError('Indica quién es el responsable');
+    if (toProject ? !projectId : !responsible) return setError(toProject ? 'Elige el proyecto' : 'Indica quién es el responsable');
     if (!place) return setError('Indica dónde lo dejas');
     try {
       setBusy('Preparando fotos…');
@@ -151,14 +157,16 @@ export function PendingReceive(props: { user: User; onBack: () => void }) {
       const n = parseInt(packages, 10);
       const r = await api.createInbound(
         {
-          ...place.ref, responsibleUserId: responsible, photos: data, description: description.trim() || undefined,
+          ...place.ref, ...(toProject ? { projectId } : { responsibleUserId: responsible }), photos: data, description: description.trim() || undefined,
           packages: n > 0 ? n : undefined, externalReference: albaran.trim() || undefined,
         },
         key,
       );
-      const next = [responsible, ...recent.filter((x) => x !== responsible)].slice(0, 4);
-      setRecent(next);
-      writeStore(RECENT_PEOPLE, next);
+      if (!toProject) {
+        const next = [responsible, ...recent.filter((x) => x !== responsible)].slice(0, 4);
+        setRecent(next);
+        writeStore(RECENT_PEOPLE, next);
+      }
       writeStore(LAST_PLACE, place);
       setDone(r);
     } catch (err) {
@@ -174,10 +182,10 @@ export function PendingReceive(props: { user: User; onBack: () => void }) {
       <div className="card form op-form done-card">
         <h3>Recepción {done.code} registrada</h3>
         <p>
-          Queda en <strong className="mono">{done.placeCode}</strong> a la espera de que {done.responsible} indique qué es.
-          {done.notified ? ' Ya le ha llegado el aviso.' : ''}
+          Queda en <strong className="mono">{done.placeCode}</strong>, pendiente de que lo identifique{done.responsible.startsWith('los responsables') ? 'n' : ''} {done.responsible}.
+          {done.notified ? (done.responsible.startsWith('los responsables') ? ' Ya les ha llegado el aviso.' : ' Ya le ha llegado el aviso.') : ''}
         </p>
-        <p className="muted small">Cuando lo identifique te llegará un aviso con lo que hay que hacer.</p>
+        <p className="muted small">Cuando esté identificado te llegará un aviso con lo que hay que hacer.</p>
         <div className="actions actions-wrap">
           <button className="btn btn-primary" onClick={reset}>
             Otra recepción en {done.placeCode}
@@ -238,7 +246,27 @@ export function PendingReceive(props: { user: User; onBack: () => void }) {
 
       <div className="field">
         <span className="field-l">2. ¿De quién es?</span>
-        <PersonPicker people={people} value={responsible} onChange={setResponsible} recent={recent} />
+        {projectOptions.length > 0 && (
+          <div className="segbar seg-gap" role="group" aria-label="De quién es">
+            <button type="button" className={!toProject ? 'on' : ''} onClick={() => setToProject(false)}>De una persona</button>
+            <button type="button" className={toProject ? 'on' : ''} onClick={() => setToProject(true)}>De un proyecto</button>
+          </div>
+        )}
+        {toProject ? (
+          <>
+            <select className="place-select" value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+              <option value="">Elige el proyecto…</option>
+              {projectOptions.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.code} · {p.name}
+                </option>
+              ))}
+            </select>
+            <small className="muted">Les llegará el aviso a todos los responsables del proyecto.</small>
+          </>
+        ) : (
+          <PersonPicker people={people} value={responsible} onChange={setResponsible} recent={recent} />
+        )}
       </div>
 
       <div className="field">
@@ -370,7 +398,7 @@ function InboundCard({ i, mine }: { i: Inbound; mine: boolean }) {
           {i.status === 'DONE' ? i.materialDescription : i.description || 'Sin descripción'}
         </strong>
         <span>
-          <span className="mono">{i.code}</span> · para {i.responsible} · 📍 {i.status === 'DONE' && i.finalPlaceCode ? i.finalPlaceCode : i.placeCode}
+          <span className="mono">{i.code}</span> · para {i.projectId ? `el proyecto ${i.projectRef}` : i.responsible} · 📍 {i.status === 'DONE' && i.finalPlaceCode ? i.finalPlaceCode : i.placeCode}
         </span>
         <small className="muted">
           Recibido por {i.receivedBy} {daysAgo(i.receivedAt)}
@@ -437,7 +465,7 @@ export function InboundPage({ user, inboundId, onChanged }: { user: User; inboun
             Recepción <span className="mono">{i.code}</span> <span className={`badge ${STATUS[i.status].cls}`}>{STATUS[i.status].label}</span>
           </h2>
           <p className="muted nomargin">
-            Recibida por {i.receivedBy} el {formatDateTime(i.receivedAt)} · para {i.responsible}
+            Recibida por {i.receivedBy} el {formatDateTime(i.receivedAt)} · para {i.projectId ? `el proyecto ${i.projectRef}` : i.responsible}
           </p>
         </div>
       </div>
@@ -573,14 +601,14 @@ function CompleteForm(props: { user: User; item: Inbound; onDone: (message: stri
   const [all, setAll] = useState<Material[] | null>(null);
   const [families, setFamilies] = useState<Family[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
-  const [projects, setProjects] = useState<string[]>([]);
+  const [projects, setProjects] = useState<ProjectOption[]>([]);
   const [material, setMaterial] = useState<Material | null>(null);
   const [isNew, setIsNew] = useState(false);
   const [nm, setNm] = useState({ contentTypeCode: 'MATERIAL', description: item.description ?? '', familyId: '', unitCode: 'ud', manufacturer: '', manufacturerRef: '' });
   const [types, setTypes] = useState<ContentType[]>([]);
   const [qty, setQty] = useState('1');
   const [lot, setLot] = useState('');
-  const [project, setProject] = useState('');
+  const [project, setProject] = useState(item.projectId ?? '');
   const [usage, setUsage] = useState('');
   const [disposition, setDisposition] = useState<Disposition | null>(null);
   const [dest, setDest] = useState<Place | null>(null);
@@ -597,7 +625,7 @@ function CompleteForm(props: { user: User; item: Inbound; onDone: (message: stri
     api.materials().then((r) => setAll(r.materials)).catch((e) => setError(errorMessage(e)));
     api.families().then((r) => setFamilies(r.families.filter((f) => f.active))).catch(() => undefined);
     api.units().then((r) => setUnits(r.units)).catch(() => undefined);
-    api.inboundProjects().then((r) => setProjects(r.projects)).catch(() => undefined);
+    api.projectOptions().then((r) => setProjects(r.projects)).catch(() => undefined);
     api.contentTypes().then((r) => setTypes(r.types.filter((t) => t.active))).catch(() => undefined);
   }, []);
 
@@ -641,7 +669,7 @@ function CompleteForm(props: { user: User; item: Inbound; onDone: (message: stri
             : { materialId: material!.id }),
           quantity: untracked ? undefined : n!,
           lotCode: lot.trim() || undefined,
-          projectRef: project.trim() || undefined,
+          projectId: project || null,
           usagePlace: usage.trim() || undefined,
           disposition,
           ...(disposition === 'STORE' && dest ? dest.ref : {}),
@@ -792,10 +820,15 @@ function CompleteForm(props: { user: User; item: Inbound; onDone: (message: stri
           <div className="grid-2">
             <label className="field">
               <span>Proyecto <span className="muted">(opcional)</span></span>
-              <input value={project} onChange={(e) => setProject(e.target.value)} maxLength={150} list="inbound-projects" placeholder="Código o nombre del proyecto" />
-              <datalist id="inbound-projects">
-                {projects.map((p) => <option key={p} value={p} />)}
-              </datalist>
+              <select value={project} onChange={(e) => setProject(e.target.value)}>
+                <option value="">Sin proyecto</option>
+                {item.projectId && !projects.some((p) => p.id === item.projectId) && <option value={item.projectId}>{item.projectRef}</option>}
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.code} · {p.name}
+                  </option>
+                ))}
+              </select>
             </label>
             <label className="field">
               <span>Dónde se va a usar <span className="muted">(opcional)</span></span>

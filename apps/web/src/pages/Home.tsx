@@ -40,6 +40,7 @@ const GROUPS: Group[] = [
       { icon: '🏭', title: 'Almacén', text: 'Ubicaciones y contenedores', path: 'almacen', permission: 'location.read' },
       { icon: '📦', title: 'Contenidos', text: 'Catálogo y cuánto hay', path: 'contenidos', permission: 'material.read' },
       { icon: '🔧', title: 'Préstamos', text: 'Quién tiene qué y hasta cuándo', path: 'prestamos', permission: 'stock.read' },
+      { icon: '📁', title: 'Proyectos', text: 'Sus responsables y lo reservado', path: 'proyectos', permission: 'project.read' },
     ],
   },
   {
@@ -106,7 +107,13 @@ export function HomePage({ user }: { user: User }) {
                   {t.title}
                   {t.path === 'recepciones' && pendingCount > 0 && <b className="tile-count">{pendingCount}</b>}
                 </strong>
-                <span>{t.path === 'prestamos' && !can('loan.read_all') ? 'Lo que tienes prestado' : t.text}</span>
+                <span>
+                  {t.path === 'prestamos' && !can('loan.read_all')
+                    ? 'Lo que tienes prestado'
+                    : t.path === 'proyectos' && !can('project.manage')
+                      ? 'Los proyectos en los que estás'
+                      : t.text}
+                </span>
               </a>
             ))}
           </div>

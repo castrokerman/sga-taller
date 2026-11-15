@@ -247,6 +247,36 @@ en rojo. Cada persona ve **solo sus préstamos** («Tus préstamos»); los
 otro. Para devolver: **«Devolver a…»** la deja en el sitio del que salió,
 y **«A otro sitio»** permite escanear un sitio distinto.
 
+### Proyectos
+
+En el inicio, **«Proyectos»**. Los crean y editan los **responsables de
+almacén**: código, nombre, responsables y, si se quiere, miembros.
+
+- Un proyecto puede tener **varios responsables**, y una persona puede ser
+  responsable de varios proyectos. El primero de la lista es el principal.
+- **Los responsables** ven todo lo del proyecto en su ficha: sus contenedores,
+  lo que hay dentro, sus recepciones, los préstamos de lo suyo y los últimos
+  movimientos.
+- **Los miembros** quedan asociados al proyecto, pero no ven todo.
+- Cada persona ve en «Proyectos» solo los suyos; los responsables de almacén
+  ven todos.
+
+**Contenedores del proyecto.** En la ficha de un contenedor, **«Proyecto»**
+lo asigna a un proyecto. Lo pueden hacer los responsables de almacén y los
+responsables de ese proyecto. Desde ese momento, lo que hay dentro (también
+en los contenedores que lleve dentro) queda **reservado**: solo lo pueden
+sacar, trasladar o prestar los responsables del proyecto y los responsables
+de almacén. A cualquier otro el sistema le dice para qué proyecto está
+reservado. El contenedor lleva la etiqueta 🔒 con el código del proyecto.
+
+**Recepciones para un proyecto.** Al registrar una recepción para que la
+identifique el responsable, en «¿De quién es?» se puede elegir **«De un
+proyecto»**. El aviso les llega a todos sus responsables y la completa
+cualquiera de ellos. Al completar una recepción, el proyecto se elige de la
+lista.
+
+En «Usuarios», una columna enseña los proyectos de cada persona.
+
 ## 5. Fotos y anotaciones
 
 En la ficha de cada **ubicación**, **contenedor** y **material** hay dos

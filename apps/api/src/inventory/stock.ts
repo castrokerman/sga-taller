@@ -1,5 +1,5 @@
 import type pg from 'pg';
-import { badRequest, conflict, notFound } from '../errors.js';
+import { badRequest, conflict, forbidden, notFound } from '../errors.js';
 
 /**
  * Núcleo del inventario. Toda variación de stock pasa por aquí:
@@ -114,6 +114,45 @@ export async function lockBalance(c: pg.PoolClient, id: string): Promise<Balance
   );
   b.free = b.quantity === null ? null : b.quantity - a.rows[0].restricted;
   return b;
+}
+
+/**
+ * Proyecto al que pertenece un contenedor: el suyo o el del primer contenedor
+ * que lo contiene y tenga proyecto (una bolsa dentro de la caja del proyecto
+ * también es del proyecto).
+ */
+export async function projectOfContainer(
+  db: pg.PoolClient | pg.Pool, containerId: string | null,
+): Promise<{ id: string; code: string; name: string } | null> {
+  if (!containerId) return null;
+  const r = await db.query(
+    `WITH RECURSIVE up AS (
+       SELECT id, parent_container_id, project_id, 0 AS depth FROM container WHERE id = $1
+       UNION ALL
+       SELECT k.id, k.parent_container_id, k.project_id, up.depth + 1 FROM container k JOIN up ON k.id = up.parent_container_id
+     )
+     SELECT p.id, p.code, p.name FROM up JOIN project p ON p.id = up.project_id ORDER BY up.depth LIMIT 1`,
+    [containerId],
+  );
+  return r.rows[0] ?? null;
+}
+
+/**
+ * Lo que está en un contenedor de un proyecto está reservado: solo lo sacan,
+ * trasladan o prestan sus responsables y los responsables de almacén.
+ */
+export async function assertCanTake(
+  c: pg.PoolClient, user: { id: string; permissions: string[] }, containerId: string | null, verb: string,
+): Promise<void> {
+  const project = await projectOfContainer(c, containerId);
+  if (!project || user.permissions.includes('project.manage')) return;
+  const r = await c.query(
+    `SELECT 1 FROM project_member WHERE project_id = $1 AND user_id = $2 AND role = 'RESPONSIBLE'`,
+    [project.id, user.id],
+  );
+  if (!r.rowCount) {
+    throw forbidden(`Está reservado para el proyecto ${project.code} · ${project.name}: solo sus responsables pueden ${verb}lo`);
+  }
 }
 
 export async function createMovement(

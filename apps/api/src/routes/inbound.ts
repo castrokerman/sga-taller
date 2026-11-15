@@ -47,7 +47,8 @@ const INBOUND_SELECT = `
          (SELECT count(*)::int FROM photo p WHERE p.entity_type = 'inbound' AND p.entity_id = i.id) AS "photoCount",
          i.material_id AS "materialId", m.internal_ref AS "materialRef", m.description AS "materialDescription",
          m.unit_code AS "unitCode", i.quantity::float AS quantity, i.lot_code AS "lotCode",
-         i.project_ref AS "projectRef", i.usage_place AS "usagePlace", i.disposition,
+         coalesce(pj.code || ' · ' || pj.name, i.project_ref) AS "projectRef", i.project_id AS "projectId",
+         i.usage_place AS "usagePlace", i.disposition,
          i.final_container_id AS "finalContainerId", i.final_location_id AS "finalLocationId",
          ${PLACE_CODE('i.final_container_id', 'i.final_location_id')} AS "finalPlaceCode",
          i.completion_note AS "completionNote", i.completed_at AS "completedAt", cb.full_name AS "completedBy",
@@ -57,7 +58,8 @@ const INBOUND_SELECT = `
     JOIN app_user rs ON rs.id = i.responsible_user_id
     LEFT JOIN app_user cb ON cb.id = i.completed_by
     LEFT JOIN app_user xb ON xb.id = i.cancelled_by
-    LEFT JOIN material m ON m.id = i.material_id`;
+    LEFT JOIN material m ON m.id = i.material_id
+    LEFT JOIN project pj ON pj.id = i.project_id`;
 
 interface InboundRow {
   id: string;
@@ -66,6 +68,7 @@ interface InboundRow {
   description: string | null;
   receivedById: string;
   responsibleId: string;
+  projectId: string | null;
   containerId: string | null;
   locationId: string | null;
   placeCode: string;
@@ -99,6 +102,12 @@ async function lockPending(c: pg.PoolClient, id: string): Promise<InboundRow> {
 }
 
 const isManager = (request: FastifyRequest) => request.user!.permissions.includes('inbound.manage');
+
+async function isProjectResponsible(c: pg.Pool | pg.PoolClient, projectId: string | null, userId: string): Promise<boolean> {
+  if (!projectId) return false;
+  const r = await c.query(`SELECT 1 FROM project_member WHERE project_id = $1 AND user_id = $2 AND role = 'RESPONSIBLE'`, [projectId, userId]);
+  return Boolean(r.rowCount);
+}
 
 async function insertPhotos(
   c: pg.PoolClient, inboundId: string, userId: string,
@@ -178,7 +187,7 @@ export function inboundRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
       const r = await pool.query(
         `${INBOUND_SELECT}
           WHERE ($1 = 'ALL' OR i.status = $1)
-            AND ($2 OR $3 IN (i.responsible_user_id, i.received_by))
+            AND ($2 OR $3 IN (i.responsible_user_id, i.received_by) OR EXISTS (SELECT 1 FROM project_member pm WHERE pm.project_id = i.project_id AND pm.user_id = $3 AND pm.role = 'RESPONSIBLE'))
           ORDER BY i.received_at DESC LIMIT 500`,
         [q.status, all, request.user!.id],
       );
@@ -189,10 +198,11 @@ export function inboundRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
   // Cuántas hay pendientes: las mías (para identificar) y todas (para quien gestiona).
   app.get('/api/inbound/count', { preHandler: requireAuth() }, async (request) => {
     const r = await pool.query(
-      `SELECT count(*) FILTER (WHERE responsible_user_id = $1)::int AS mine,
-              count(*) FILTER (WHERE received_by = $1)::int AS received,
+      `SELECT count(*) FILTER (WHERE i.responsible_user_id = $1 OR EXISTS (
+                SELECT 1 FROM project_member pm WHERE pm.project_id = i.project_id AND pm.user_id = $1 AND pm.role = 'RESPONSIBLE'))::int AS mine,
+              count(*) FILTER (WHERE i.received_by = $1)::int AS received,
               count(*)::int AS total
-         FROM inbound_item WHERE status = 'PENDING'`,
+         FROM inbound_item i WHERE i.status = 'PENDING'`,
       [request.user!.id],
     );
     const row = r.rows[0];
@@ -204,7 +214,7 @@ export function inboundRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
     const r = await pool.query(
       `SELECT x FROM (
          SELECT project_ref AS x, max(completed_at) AS t FROM inbound_item WHERE project_ref IS NOT NULL GROUP BY project_ref
-         UNION ALL SELECT code || ' · ' || name, now() - interval '100 years' FROM project WHERE status = 'ACTIVE'
+         UNION ALL SELECT code || ' · ' || name, now() - interval '100 years' FROM project WHERE false
        ) s GROUP BY x ORDER BY max(t) DESC NULLS LAST LIMIT 200`,
     );
     return { projects: r.rows.map((x) => x.x as string) };
@@ -218,7 +228,8 @@ export function inboundRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
     const item = r.rows[0];
     return {
       item,
-      canComplete: item.status === 'PENDING' && (item.responsibleId === request.user!.id || isManager(request)),
+      canComplete: item.status === 'PENDING' && (item.responsibleId === request.user!.id || isManager(request)
+        || (await isProjectResponsible(pool, item.projectId, request.user!.id))),
       canCancel: item.status === 'PENDING' && (item.receivedById === request.user!.id || isManager(request)),
     };
   });
@@ -231,9 +242,9 @@ export function inboundRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
       bodyLimit: 40 * 1024 * 1024,
       schema: {
         body: {
-          type: 'object', required: ['responsibleUserId', 'photos'], additionalProperties: false,
+          type: 'object', required: ['photos'], additionalProperties: false,
           properties: {
-            responsibleUserId: uuid, containerId: uuid, locationId: uuid,
+            responsibleUserId: uuid, projectId: uuid, containerId: uuid, locationId: uuid,
             description: text(500), packages: { type: 'integer', minimum: 1, maximum: 9999 },
             externalReference: text(80),
             photos: { type: 'array', minItems: 1, maxItems: 4, items: photoBody },
@@ -244,33 +255,52 @@ export function inboundRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
     (request, reply) =>
       idempotent(pool, request, reply, async () => {
         const b = request.body as {
-          responsibleUserId: string; containerId?: string; locationId?: string; description?: string; packages?: number;
+          responsibleUserId?: string; projectId?: string; containerId?: string; locationId?: string; description?: string; packages?: number;
           externalReference?: string; photos: Array<{ image: string; thumbnail: string; width: number; height: number }>;
         };
+        if (!b.responsibleUserId && !b.projectId) throw badRequest('Indica de quién es: una persona o un proyecto', 'FALTA_RESPONSABLE');
         const out = await withTransaction(pool, async (c) => {
-          const responsible = await activeUser(c, b.responsibleUserId);
+          // Si va a un proyecto, avisa a todos sus responsables; el primero queda como responsable de la recepción.
+          let project: { id: string; label: string; responsibles: string[] } | null = null;
+          if (b.projectId) {
+            const pr = await c.query(
+              `SELECT p.code || ' · ' || p.name AS label,
+                      array_agg(pm.user_id ORDER BY pm.position, pm.created_at) FILTER (WHERE pm.role = 'RESPONSIBLE' AND u.active) AS responsibles
+                 FROM project p LEFT JOIN project_member pm ON pm.project_id = p.id LEFT JOIN app_user u ON u.id = pm.user_id
+                WHERE p.id = $1 AND p.status <> 'CLOSED' GROUP BY p.id`,
+              [b.projectId],
+            );
+            if (!pr.rows[0]) throw badRequest('El proyecto no existe o está cerrado', 'PROYECTO_NO_VALIDO');
+            if (!pr.rows[0].responsibles?.length) throw badRequest('Ese proyecto no tiene responsables activos', 'PROYECTO_SIN_RESPONSABLE');
+            project = { id: b.projectId, label: pr.rows[0].label, responsibles: pr.rows[0].responsibles };
+          }
+          const responsibleId: string = b.responsibleUserId ?? project!.responsibles[0]!;
+          const responsible = await activeUser(c, responsibleId);
           const place = await resolvePlace(c, b);
           const r = await c.query(
-            `INSERT INTO inbound_item (description, packages, external_reference, received_by, responsible_user_id, container_id, location_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, 'REC-' || lpad(number::text, 6, '0') AS code`,
+            `INSERT INTO inbound_item (description, packages, external_reference, received_by, responsible_user_id, container_id, location_id, project_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, 'REC-' || lpad(number::text, 6, '0') AS code`,
             [b.description?.trim() || null, b.packages ?? null, b.externalReference?.trim() || null, request.user!.id,
-              b.responsibleUserId, place.containerId, place.locationId],
+              responsibleId, place.containerId, place.locationId, project?.id ?? null],
           );
           const { id, code } = r.rows[0] as { id: string; code: string };
           await insertPhotos(c, id, request.user!.id, b.photos);
-          const notified = b.responsibleUserId !== request.user!.id;
-          if (notified) {
+          const toNotify = [...new Set([responsibleId, ...(project?.responsibles ?? [])])].filter((u) => u !== request.user!.id);
+          for (const u of toNotify) {
             await notify(
-              c, b.responsibleUserId, id,
-              `Ha llegado algo a tu nombre y está en ${place.code}. Indica qué es y qué se hace con ello.`,
+              c, u, id,
+              project
+                ? `Ha llegado algo para el proyecto ${project.label} y está en ${place.code}. Indica qué es y qué se hace con ello.`
+                : `Ha llegado algo a tu nombre y está en ${place.code}. Indica qué es y qué se hace con ello.`,
               request.user!.id,
             );
           }
+          const notified = toNotify.length > 0;
           await audit(c, request, 'recepcion.alta', id, {
-            recepcion: code, responsable: responsible, sitio: place.code, descripcion: b.description ?? null,
+            recepcion: code, responsable: responsible, proyecto: project?.label ?? null, sitio: place.code, descripcion: b.description ?? null,
             bultos: b.packages ?? null, albaran: b.externalReference ?? null, fotos: b.photos.length,
           });
-          return { id, code, responsible, notified, placeCode: place.code };
+          return { id, code, responsible: project ? `los responsables de ${project.label}` : responsible, notified, placeCode: place.code };
         });
         reply.code(201);
         return out;
@@ -299,6 +329,7 @@ export function inboundRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
             quantity: { type: 'number', exclusiveMinimum: 0, maximum: 1e12 },
             lotCode: text(60),
             projectRef: text(150),
+            projectId: { anyOf: [{ type: 'null' }, uuid] },
             usagePlace: text(300),
             disposition: { type: 'string', enum: ['STORE', 'DEPLOY'] },
             containerId: uuid, locationId: uuid,
@@ -312,7 +343,7 @@ export function inboundRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
       idempotent(pool, request, reply, async () => {
         const { id } = request.params as { id: string };
         const b = request.body as {
-          materialId?: string; newMaterial?: NewMaterial; quantity?: number; lotCode?: string; projectRef?: string;
+          materialId?: string; newMaterial?: NewMaterial; quantity?: number; lotCode?: string; projectRef?: string; projectId?: string | null;
           usagePlace?: string; disposition: 'STORE' | 'DEPLOY'; containerId?: string; locationId?: string;
           usePhotoForMaterial: boolean; note?: string;
         };
@@ -321,7 +352,7 @@ export function inboundRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
         }
         return withTransaction(pool, async (c) => {
           const item = await lockPending(c, id);
-          if (item.responsibleId !== request.user!.id && !isManager(request)) {
+          if (item.responsibleId !== request.user!.id && !isManager(request) && !(await isProjectResponsible(c, item.projectId, request.user!.id))) {
             throw forbidden('Solo el responsable asignado o un responsable de almacén puede completarla');
           }
           const materialId = b.materialId ?? (await createMaterial(c, request, b.newMaterial!));
@@ -334,7 +365,11 @@ export function inboundRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
             .catch(() => {
               throw conflict(`El sitio provisional ${item.placeCode} ya no admite contenido`, 'SITIO_NO_VALIDO');
             });
-          const project = b.projectRef?.trim() || null;
+          // El proyecto se elige de la lista; si no se indica, se queda el de la recepción.
+          const projectId = b.projectId !== undefined ? b.projectId : item.projectId;
+          const pj = projectId ? (await c.query(`SELECT code || ' · ' || name AS label FROM project WHERE id = $1`, [projectId])).rows[0] : null;
+          if (projectId && !pj) throw badRequest('El proyecto no existe', 'PROYECTO_NO_VALIDO');
+          const project = pj?.label ?? (b.projectRef?.trim() || null);
           const usage = b.usagePlace?.trim() || null;
           const extra = [project && `proyecto ${project}`, usage && `uso: ${usage}`].filter(Boolean).join(' · ');
           const what = quantity === null ? m.description : `${fmt(quantity, m.unitCode)} de ${m.description}`;
@@ -384,13 +419,17 @@ export function inboundRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
             `UPDATE inbound_item
                 SET status = 'DONE', material_id = $2, quantity = $3, lot_code = $4, project_ref = $5, usage_place = $6,
                     disposition = $7, final_container_id = $8, final_location_id = $9, completion_note = $10,
-                    completed_by = $11, completed_at = now(), receipt_movement_id = $12, withdrawal_movement_id = $13
+                    completed_by = $11, completed_at = now(), receipt_movement_id = $12, withdrawal_movement_id = $13, project_id = $14
               WHERE id = $1`,
-            [id, m.id, quantity, b.lotCode?.trim() || null, project, usage, b.disposition, final?.containerId ?? null,
-              final?.locationId ?? null, b.note?.trim() || null, request.user!.id, receiptId, withdrawalId],
+            [id, m.id, quantity, b.lotCode?.trim() || null, projectId ? null : project, usage, b.disposition, final?.containerId ?? null,
+              final?.locationId ?? null, b.note?.trim() || null, request.user!.id, receiptId, withdrawalId, projectId ?? null],
           );
-          // Los avisos de esta recepción ya no hace falta atenderlos.
-          await c.query(`UPDATE notification SET read_at = coalesce(read_at, now()) WHERE inbound_id = $1 AND user_id = $2`, [id, request.user!.id]);
+          // Los avisos de esta recepción ya no hace falta atenderlos (tampoco los de los demás responsables del proyecto).
+          await c.query(
+            `UPDATE notification SET read_at = coalesce(read_at, now())
+              WHERE inbound_id = $1 AND read_at IS NULL AND user_id <> $2`,
+            [id, item.receivedById],
+          );
 
           // Aviso a quien la recibió: qué es y qué hacer con ello.
           const moved = final && (final.containerId !== provisional.containerId || final.locationId !== provisional.locationId);
@@ -429,7 +468,7 @@ export function inboundRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
         return withTransaction(pool, async (c) => {
           const item = await lockPending(c, id);
           const me = request.user!.id;
-          if (![item.responsibleId, item.receivedById].includes(me) && !isManager(request)) {
+          if (![item.responsibleId, item.receivedById].includes(me) && !isManager(request) && !(await isProjectResponsible(c, item.projectId, me))) {
             throw forbidden('Solo el responsable, quien la recibió o un responsable de almacén puede reasignarla');
           }
           if (b.responsibleUserId === item.responsibleId) throw badRequest('Ya es el responsable', 'MISMO_RESPONSABLE');

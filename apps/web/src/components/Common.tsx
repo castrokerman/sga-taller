@@ -57,6 +57,7 @@ export function ContainerCard({ c, q = '' }: { c: ContainerSummary; q?: string }
         <span><Highlight text={c.description ?? c.typeName} query={q} /></span>
       </span>
       <span className="item-meta">
+        {c.projectCode && <span className="tag tag-project" title={c.projectName ?? ''}>🔒 {c.projectCode}</span>}
         <span className="tag">{c.typeName}</span>
         <span>{c.childCount > 0 ? `${c.childCount} dentro` : ''}</span>
       </span>

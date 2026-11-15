@@ -113,6 +113,7 @@ export function UsersPage({ me, back }: { me: User; back: () => void }) {
                 <th>Nombre</th>
                 <th>Usuario</th>
                 <th>Roles</th>
+                <th>Proyectos</th>
                 <th>Estado</th>
                 <th>Último acceso</th>
                 <th></th>
@@ -124,6 +125,16 @@ export function UsersPage({ me, back }: { me: User; back: () => void }) {
                   <td><Highlight text={u.fullName} query={list.query} /></td>
                   <td className="mono"><Highlight text={u.username} query={list.query} /></td>
                   <td>{u.roles.map(roleName).join(', ') || '—'}</td>
+                  <td className="small">
+                    {u.projects.length === 0
+                      ? '—'
+                      : u.projects.map((p) => (
+                          <a key={p.id} href={`#/proyecto/${p.id}`} className="proj-link" title={p.name}>
+                            {p.code}
+                            {p.role === 'RESPONSIBLE' ? ' (resp.)' : ''}
+                          </a>
+                        ))}
+                  </td>
                   <td>
                     {!u.active ? (
                       <span className="badge badge-off">Desactivado</span>

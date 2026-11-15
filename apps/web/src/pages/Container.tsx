@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { api, ApiError, errorMessage, formatDateTime, newOperationKey, type ContainerDetail, type ScanHit, type User } from '../api';
+import { api, ApiError, errorMessage, formatDateTime, newOperationKey, type ContainerDetail, type Project, type ScanHit, type User } from '../api';
 import { Breadcrumbs, ContainerCard, containerListConfig, LabelPanel } from '../components/Common';
 import { useListControls } from '../components/ListControls';
 import { Scanner } from '../components/Scanner';
@@ -7,7 +7,7 @@ import { StockSection } from '../components/Stock';
 import { ItemExtras } from '../components/ItemExtras';
 import { BulkContainers, ContainerForm } from './Warehouse';
 
-type Panel = 'none' | 'move' | 'inside' | 'labels' | 'edit' | 'duplicate' | 'bulk';
+type Panel = 'none' | 'move' | 'inside' | 'labels' | 'edit' | 'duplicate' | 'bulk' | 'project';
 
 const place = (location: string | null, container: string | null) => location ?? container ?? '—';
 
@@ -18,6 +18,13 @@ export function ContainerPage({ user, containerId }: { user: User; containerId: 
   const [panel, setPanel] = useState<Panel>('none');
 
   const can = (p: string) => user.permissions.includes(p);
+  // Proyectos a los que puedo asignar contenedores: todos si gestiono proyectos; si no, de los que soy responsable.
+  const [myProjects, setMyProjects] = useState<Project[]>([]);
+  useEffect(() => {
+    if (!can('project.read')) return;
+    api.projects().then((r) => setMyProjects(r.canManage ? r.projects : r.projects.filter((p) => p.myRole === 'RESPONSIBLE'))).catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const inside = detail?.children ?? [];
   const insideList = useListControls(inside, containerListConfig(inside, 'contenedores-dentro'));
 
@@ -85,6 +92,15 @@ export function ContainerPage({ user, containerId }: { user: User; containerId: 
         </div>
         <span className={`badge push-right ${active ? 'badge-ok' : 'badge-off'}`}>{active ? 'Activo' : 'Retirado'}</span>
       </div>
+      {c.projectId && (
+        <p className="alert alert-project">
+          🔒 Reservado para el proyecto{' '}
+          <a href={`#/proyecto/${c.projectId}`}>
+            <strong className="mono">{c.projectCode}</strong> · {c.projectName}
+          </a>
+          . Lo que hay dentro solo lo pueden sacar sus responsables y los responsables de almacén.
+        </p>
+      )}
 
       {active && where && (
         <p className="where">
@@ -110,6 +126,11 @@ export function ContainerPage({ user, containerId }: { user: User; containerId: 
             Nuevo contenedor dentro
           </button>
         )}
+        {active && myProjects.length > 0 && (
+          <button className="btn" onClick={() => open('project')}>
+            Proyecto
+          </button>
+        )}
         {can('label.print') && (
           <button className="btn" onClick={() => open('labels')}>
             Etiqueta QR
@@ -133,6 +154,16 @@ export function ContainerPage({ user, containerId }: { user: User; containerId: 
       </div>
 
       {panel === 'move' && <MovePanel detail={detail} onCancel={() => setPanel('none')} onDone={done} />}
+      {panel === 'project' && (
+        <ProjectPanel
+          containerId={c.id}
+          current={c.projectId}
+          currentLabel={c.projectId ? `${c.projectCode} · ${c.projectName}` : null}
+          projects={myProjects}
+          onCancel={() => setPanel('none')}
+          onDone={done}
+        />
+      )}
       {panel === 'inside' && (
         <ContainerForm
           where={{ parentContainerId: c.id }}
@@ -433,6 +464,58 @@ function DuplicateContainerForm(props: { detail: ContainerDetail; onCancel: () =
         </button>
         <button className="btn btn-primary" disabled={busy}>
           {busy ? 'Creando…' : 'Crear copias'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/** Asignar el contenedor a un proyecto (o quitárselo). */
+function ProjectPanel(props: {
+  containerId: string; current: string | null; currentLabel: string | null; projects: Project[];
+  onCancel: () => void; onDone: (text: string) => void;
+}) {
+  const [value, setValue] = useState(props.current ?? '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const known = props.projects.some((p) => p.id === props.current);
+  const save = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api.setContainerProject(props.containerId, value || null);
+      const p = props.projects.find((x) => x.id === value);
+      props.onDone(p ? `Ahora es del proyecto ${p.code}: lo que hay dentro queda reservado.` : 'Ya no es de ningún proyecto.');
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form className="card form" onSubmit={save}>
+      <h3>Proyecto del contenedor</h3>
+      <p className="muted">Lo que hay dentro (también en los contenedores que lleve dentro) queda reservado para el proyecto.</p>
+      <label className="field">
+        <span>Proyecto</span>
+        <select value={value} onChange={(e) => setValue(e.target.value)}>
+          <option value="">Ninguno</option>
+          {props.current && !known && <option value={props.current}>{props.currentLabel}</option>}
+          {props.projects.filter((p) => p.status !== 'CLOSED').map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.code} · {p.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      {error && <p className="alert alert-error">{error}</p>}
+      <div className="actions">
+        <button type="button" className="btn" onClick={props.onCancel}>
+          Cancelar
+        </button>
+        <button className="btn btn-primary" disabled={busy || value === (props.current ?? '')}>
+          {busy ? 'Guardando…' : 'Guardar'}
         </button>
       </div>
     </form>

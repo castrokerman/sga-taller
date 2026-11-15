@@ -14,7 +14,10 @@ const USER_SELECT = `
          u.must_change_password AS "mustChangePassword",
          u.last_login_at AS "lastLoginAt", u.created_at AS "createdAt",
          (u.locked_until IS NOT NULL AND u.locked_until > now()) AS locked,
-         coalesce(array_agg(r.code ORDER BY r.code) FILTER (WHERE r.code IS NOT NULL), '{}') AS roles
+         coalesce(array_agg(r.code ORDER BY r.code) FILTER (WHERE r.code IS NOT NULL), '{}') AS roles,
+         coalesce((SELECT json_agg(json_build_object('id', p.id, 'code', p.code, 'name', p.name, 'role', pm.role) ORDER BY pm.role DESC, p.code)
+                     FROM project_member pm JOIN project p ON p.id = pm.project_id
+                    WHERE pm.user_id = u.id AND p.status <> 'CLOSED'), '[]') AS projects
     FROM app_user u
     LEFT JOIN user_role ur ON ur.user_id = u.id
     LEFT JOIN role r ON r.id = ur.role_id`;

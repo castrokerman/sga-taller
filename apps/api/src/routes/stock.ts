@@ -6,7 +6,7 @@ import { withTransaction } from '../db/tx.js';
 import { AppError, badRequest, conflict, forbidden, notFound } from '../errors.js';
 import { idempotent } from '../idempotency.js';
 import {
-  applyLine, checkQuantity, createMovement, emptyDisposable, findOrCreateLot, getMaterial, lockBalance, placeCode, resolvePlace,
+  applyLine, assertCanTake, checkQuantity, createMovement, emptyDisposable, findOrCreateLot, getMaterial, lockBalance, placeCode, resolvePlace,
   type Balance, type MaterialInfo,
 } from '../inventory/stock.js';
 import { getParameter } from '../warehouse/queries.js';
@@ -155,6 +155,7 @@ export function stockRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
         const b = request.body as { balanceId: string; quantity?: number; reason?: string; exhausted: boolean };
         return withTransaction(pool, async (c) => {
           const bal = await lockBalance(c, b.balanceId);
+          await assertCanTake(c, request.user!, bal.containerId, 'sacar');
           const m = await getMaterial(c, bal.materialId);
           const code = await placeCode(c, bal.containerId, bal.locationId);
           const mv = await createMovement(c, { type: 'WITHDRAWAL', userId: request.user!.id, reason: b.reason });
@@ -211,6 +212,7 @@ export function stockRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
         const b = request.body as { balanceId: string; quantity?: number; toContainerId?: string; toLocationId?: string; reason?: string };
         return withTransaction(pool, async (c) => {
           const bal = await lockBalance(c, b.balanceId);
+          await assertCanTake(c, request.user!, bal.containerId, 'trasladar');
           const m = await getMaterial(c, bal.materialId);
           const from = await placeCode(c, bal.containerId, bal.locationId);
           const to = await resolvePlace(c, { containerId: b.toContainerId, locationId: b.toLocationId });
@@ -376,6 +378,7 @@ export function stockRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
         }
         const out = await withTransaction(pool, async (c) => {
           const bal = await lockBalance(c, b.balanceId);
+          await assertCanTake(c, request.user!, bal.containerId, 'prestar');
           const m = await getMaterial(c, bal.materialId);
           if (!m.isLoanable) throw conflict(`${m.description} no está marcado como herramienta prestable`, 'NO_PRESTABLE');
           if (m.tracking === 'NOT_TRACKED') throw conflict('Para prestar algo hay que llevar su cantidad', 'NO_PRESTABLE');

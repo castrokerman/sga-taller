@@ -11,6 +11,7 @@ import { MovementsPage } from './pages/Movements';
 import { NotificationsPage } from './pages/Notifications';
 import { ReceivePage } from './pages/Receive';
 import { InboundListPage, InboundPage } from './pages/Inbound';
+import { ProjectPage, ProjectsPage } from './pages/Projects';
 import { SearchPage } from './pages/Search';
 import { HomePage } from './pages/Home';
 import { LoginPage } from './pages/Login';
@@ -90,6 +91,8 @@ export function App() {
   else if (route.name === 'buscar') page = <SearchPage />;
   else if (route.name === 'entrada' && can('stock.receive')) page = <ReceivePage key={route.id ?? ''} user={user} initial={route.id} />;
   else if (route.name === 'recepciones') page = <InboundListPage user={user} />;
+  else if (route.name === 'proyectos' && can('project.read')) page = <ProjectsPage user={user} />;
+  else if (route.name === 'proyecto' && route.id && can('project.read')) page = <ProjectPage user={user} projectId={route.id} />;
   else if (route.name === 'recepcion' && route.id) page = <InboundPage user={user} inboundId={route.id} onChanged={refreshUnread} />;
   else if (route.name === 'avisos') page = <NotificationsPage onChanged={refreshUnread} />;
   else if (route.name === 'contrasena') page = <ChangePasswordPage onDone={home} onCancel={home} />;

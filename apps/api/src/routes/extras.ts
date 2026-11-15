@@ -44,7 +44,12 @@ const photoQuery = {
  */
 export async function canSeeInbound(db: pg.Pool | pg.PoolClient, request: FastifyRequest, id: string): Promise<boolean> {
   if (request.user!.permissions.includes('inbound.manage')) return true;
-  const r = await db.query(`SELECT 1 FROM inbound_item WHERE id = $1 AND $2 IN (received_by, responsible_user_id)`, [id, request.user!.id]);
+  const r = await db.query(
+    `SELECT 1 FROM inbound_item i
+      WHERE i.id = $1 AND ($2 IN (i.received_by, i.responsible_user_id) OR EXISTS (
+            SELECT 1 FROM project_member pm WHERE pm.project_id = i.project_id AND pm.user_id = $2 AND pm.role = 'RESPONSIBLE'))`,
+    [id, request.user!.id],
+  );
   return Boolean(r.rowCount);
 }
 
@@ -337,7 +342,8 @@ export function extrasRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
                 CASE WHEN nf.inbound_id IS NULL THEN ${ENTITY_LABEL} ELSE 'REC-' || lpad(i.number::text, 6, '0') END AS "entityCode",
                 CASE WHEN nf.inbound_id IS NULL THEN ${ENTITY_NAME} ELSE i.description END AS "entityName",
                 i.status AS "inboundStatus",
-                (i.status = 'PENDING' AND i.responsible_user_id = nf.user_id) AS "actionNeeded"
+                (i.status = 'PENDING' AND (i.responsible_user_id = nf.user_id OR EXISTS (
+                   SELECT 1 FROM project_member pm WHERE pm.project_id = i.project_id AND pm.user_id = nf.user_id AND pm.role = 'RESPONSIBLE'))) AS "actionNeeded"
            FROM notification nf
            LEFT JOIN note n ON n.id = nf.note_id
            LEFT JOIN inbound_item i ON i.id = nf.inbound_id

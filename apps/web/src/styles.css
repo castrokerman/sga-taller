@@ -622,3 +622,14 @@ tr.clickable:hover td { background: #f7f9fb; }
   .home-group .tile strong { font-size: 0.98rem; }
   .home-group .tile > span { font-size: 0.82rem; }
 }
+.alert-project { background: #eef1fb; border: 1px solid #c4cdf0; color: #1f2b6b; }
+.alert-project a { color: inherit; }
+.tag-project { background: #eef1fb; color: #1f2b6b; border: 1px solid #c4cdf0; }
+.pchip-x { border: 0; background: none; margin-left: 0.35rem; cursor: pointer; font-size: 1rem; line-height: 1; color: inherit; padding: 0; }
+.people-picker input { width: 100%; }
+.seg-gap { margin-bottom: 0.5rem; }
+.proj-link { display: inline-block; margin-right: 0.4rem; white-space: nowrap; }
+ul.plain { list-style: none; padding: 0; margin: 0.5rem 0 0; }
+ul.plain li { padding: 0.35rem 0; border-bottom: 1px solid var(--line); }
+ul.plain li.over { color: var(--error); }
+section.card { margin-top: 1rem; }
