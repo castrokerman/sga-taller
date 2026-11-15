@@ -27,7 +27,7 @@ const GROUPS: Group[] = [
     title: 'Día a día',
     text: 'lo que se hace a diario',
     tiles: [
-      { icon: '📷', title: 'Escáner QR', text: 'Escanear cajas y ubicaciones', path: 'escaner', permission: 'container.read' },
+      { icon: '📷', title: 'Escanear QR', text: '', path: 'escaner', permission: 'container.read' },
       { icon: '📥', title: 'Registrar entrada', text: 'Lo que llega al taller', path: 'entrada', permission: 'stock.receive' },
       { icon: '📬', title: 'Recepciones', text: 'Lo que falta por identificar', path: 'recepciones' },
       { icon: '🚚', title: 'Pre-recepciones', text: 'Avisar de lo que esperas que llegue', path: 'prerecepciones' },
@@ -108,13 +108,13 @@ export function HomePage({ user }: { user: User }) {
                   {t.title}
                   {t.path === 'recepciones' && pendingCount > 0 && <b className="tile-count">{pendingCount}</b>}
                 </strong>
-                <span>
+                {t.text !== '' && <span>
                   {t.path === 'prestamos' && !can('loan.read_all')
                     ? 'Lo que tienes prestado'
                     : t.path === 'proyectos' && !can('project.manage')
                       ? 'Los proyectos en los que estás'
                       : t.text}
-                </span>
+                </span>}
               </a>
             ))}
           </div>

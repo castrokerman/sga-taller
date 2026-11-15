@@ -414,6 +414,20 @@ describe('el contenido va siempre en un contenedor', () => {
     expect((await call('GET', `/api/locations/${est.id}`, almacen)).json().location.looseLines).toBe(0);
   });
 
+  it('el contenedor tiene una descripción de su contenido, editable y que se busca', async () => {
+    const z = await loc('DESC', 'ZONA');
+    const r = await call('POST', '/api/containers', almacen, { typeCode: 'CAJA', locationId: z.id, contentDescription: 'Tornillería M6 inox' });
+    expect(r.statusCode, r.body).toBe(201);
+    const id = r.json().containers[0].id;
+    expect((await call('GET', `/api/containers/${id}`, almacen)).json().container.contentDescription).toBe('Tornillería M6 inox');
+    expect((await call('PATCH', `/api/containers/${id}`, almacen, { contentDescription: 'Arandelas M8' })).statusCode).toBe(200);
+    expect((await call('GET', `/api/containers/${id}`, almacen)).json().container.contentDescription).toBe('Arandelas M8');
+    const found = (await call('GET', '/api/search?q=arandelas', almacen)).json().containers;
+    expect(found.map((c: { id: string }) => c.id)).toContain(id);
+    expect((await call('PATCH', `/api/containers/${id}`, almacen, { contentDescription: '' })).statusCode).toBe(200);
+    expect((await call('GET', `/api/containers/${id}`, almacen)).json().container.contentDescription).toBeNull();
+  });
+
   it('cada tipo de ubicación puede limitar qué contenedores admite', async () => {
     const z = await loc('PALETS', 'ZONA');
     const ok = await call('PATCH', '/api/location-types/AREA', admin, { allowedContainerTypes: ['PALET'] });

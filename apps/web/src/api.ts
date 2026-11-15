@@ -173,6 +173,8 @@ export interface ContainerSummary {
   projectName: string | null;
   /** Responsables del proyecto, separados por comas. */
   projectResponsibles: string | null;
+  /** Qué lleva dentro, en texto libre. */
+  contentDescription: string | null;
 }
 
 export interface PathItem {
@@ -538,7 +540,7 @@ export interface SearchResult {
     places: Array<{ containerId: string | null; locationId: string | null; placeCode: string; locationCode: string | null; quantity: number | null }>;
   }>;
   containers: Array<{
-    id: string; code: string; description: string | null; typeName: string; status: string; locationCode: string | null;
+    id: string; code: string; description: string | null; contentDescription: string | null; typeName: string; status: string; locationCode: string | null;
     locationId: string | null; parentCode: string | null; parentContainerId: string | null; photoId: string | null;
   }>;
   locations: Array<{ id: string; code: string; name: string; typeName: string; active: boolean; parentCode: string | null; photoId: string | null }>;
@@ -618,12 +620,12 @@ export const api = {
     request<{ containers: ContainerSummary[] }>('GET', `/api/containers?q=${encodeURIComponent(q)}`),
   container: (id: string) => request<ContainerDetail>('GET', `/api/containers/${id}`),
   createContainers: (
-    data: { typeCode: string; locationId?: string; parentContainerId?: string; quantity: number; description?: string; force?: boolean },
+    data: { typeCode: string; locationId?: string; parentContainerId?: string; quantity: number; description?: string; contentDescription?: string; force?: boolean },
     key: string,
   ) => request<{ containers: ContainerSummary[] }>('POST', '/api/containers', data, key),
   bulkContainers: (items: Array<{ id: string } & Record<string, unknown>>) =>
     request<{ containers: ContainerSummary[] }>('PATCH', '/api/containers/bulk', { items }),
-  updateContainer: (id: string, data: { description?: string; reusePolicy?: string; responsibleUserId?: string | null }) =>
+  updateContainer: (id: string, data: { description?: string; contentDescription?: string; reusePolicy?: string; responsibleUserId?: string | null }) =>
     request<ContainerDetail>('PATCH', `/api/containers/${id}`, data),
   moveContainer: (id: string, data: { toLocationId?: string; toParentContainerId?: string; force?: boolean }, key: string) =>
     request<MoveResult>('POST', `/api/containers/${id}/move`, data, key),

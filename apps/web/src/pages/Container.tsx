@@ -90,6 +90,11 @@ export function ContainerPage({ user, containerId }: { user: User; containerId: 
             {c.responsibleName && ` · Responsable: ${c.responsibleName}`}
           </p>
           {c.description && <p className="nomargin">{c.description}</p>}
+          {c.contentDescription && (
+            <p className="nomargin">
+              <span className="tag tag-content">📦 {c.contentDescription}</span>
+            </p>
+          )}
         </div>
         <span className={`badge push-right ${active ? 'badge-ok' : 'badge-off'}`}>{active ? 'Activo' : 'Retirado'}</span>
       </div>
@@ -262,6 +267,7 @@ function MovePanel(props: { detail: ContainerDetail; onCancel: () => void; onDon
 function EditContainerForm(props: { detail: ContainerDetail; onCancel: () => void; onDone: () => void }) {
   const c = props.detail.container;
   const [description, setDescription] = useState(c.description ?? '');
+  const [contentDescription, setContentDescription] = useState(c.contentDescription ?? '');
   const [reusePolicy, setReusePolicy] = useState(c.reusePolicy);
   const [responsible, setResponsible] = useState(c.responsibleUserId ?? '');
   const [users, setUsers] = useState<Array<{ id: string; fullName: string }>>([]);
@@ -277,7 +283,7 @@ function EditContainerForm(props: { detail: ContainerDetail; onCancel: () => voi
     setBusy(true);
     setError(null);
     try {
-      await api.updateContainer(c.id, { description, reusePolicy, responsibleUserId: responsible || null });
+      await api.updateContainer(c.id, { description, contentDescription, reusePolicy, responsibleUserId: responsible || null });
       props.onDone();
     } catch (err) {
       setError(errorMessage(err));
@@ -292,6 +298,10 @@ function EditContainerForm(props: { detail: ContainerDetail; onCancel: () => voi
       <label className="field">
         <span>Descripción</span>
         <input value={description} onChange={(e) => setDescription(e.target.value)} maxLength={300} autoFocus />
+      </label>
+      <label className="field">
+        <span>Descripción del contenido</span>
+        <input value={contentDescription} onChange={(e) => setContentDescription(e.target.value)} maxLength={300} placeholder="Qué lleva dentro: tornillería M6, retales de chapa…" />
       </label>
       <div className="grid-2">
         <label className="field">

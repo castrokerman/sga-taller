@@ -31,10 +31,10 @@ export function ScannerPage() {
         <a className="btn" href="#/inicio">
           ← Inicio
         </a>
-        <h2>Escáner</h2>
+        <h2>Escanear QR</h2>
       </div>
       <div className="narrow-wide">
-        <Scanner onCode={onCode} busy={busy} hint="Apunta al QR de una ubicación o de un contenedor." />
+        <Scanner onCode={onCode} busy={busy} hint="Apunta a un código QR." />
         {error && <p className="alert alert-error">{error}</p>}
       </div>
     </>

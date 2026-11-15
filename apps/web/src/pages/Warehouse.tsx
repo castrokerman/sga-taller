@@ -520,6 +520,7 @@ export function ContainerForm(props: {
   const [types, setTypes] = useState<ContainerType[]>([]);
   const [typeCode, setTypeCode] = useState('');
   const [quantity, setQuantity] = useState('1');
+  const [contentDescription, setContentDescription] = useState('');
   const [description, setDescription] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
@@ -540,7 +541,7 @@ export function ContainerForm(props: {
     setError(null);
     try {
       const r = await api.createContainers(
-        { typeCode, quantity: Number(quantity) || 1, description: description || undefined, force, ...props.where },
+        { typeCode, quantity: Number(quantity) || 1, description: description || undefined, contentDescription: contentDescription.trim() || undefined, force, ...props.where },
         operationKey,
       );
       props.onDone(r.containers.map((c) => c.code));
@@ -579,6 +580,10 @@ export function ContainerForm(props: {
       <label className="field">
         <span>Descripción (opcional)</span>
         <input value={description} onChange={(e) => setDescription(e.target.value)} maxLength={300} />
+      </label>
+      <label className="field">
+        <span>Descripción del contenido (opcional)</span>
+        <input value={contentDescription} onChange={(e) => setContentDescription(e.target.value)} maxLength={300} placeholder="Qué lleva dentro: tornillería M6, retales de chapa…" />
       </label>
 
       {warning && (

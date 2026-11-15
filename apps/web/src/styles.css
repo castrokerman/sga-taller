@@ -654,3 +654,5 @@ ul.replies > li { padding: 0.4rem 0; }
 .tag-person { background: #f3ecfb; color: #4e2a84; border: 1px solid #d9c5f0; }
 .tag-ctype { background: #e4e9fb; color: #1a1f9c; border: 1px solid #c3ccf4; }
 .nmeta .tag-project, .nmeta .tag-person { margin-right: 0.3rem; }
+.tag-content { background: #e6f5f2; color: #0f5247; border: 1px solid #b5dfd6; max-width: 22rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
+.nmeta .tag-content { margin-right: 0.3rem; }

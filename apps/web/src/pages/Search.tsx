@@ -129,6 +129,11 @@ export function SearchPage() {
                       {c.description && <> · <Highlight text={c.description} query={query} /></>}
                       {c.status !== 'ACTIVE' && ' · retirado'}
                     </span>
+                    {c.contentDescription && (
+                      <span className="small">
+                        <span className="tag tag-content">📦 <Highlight text={c.contentDescription} query={query} /></span>
+                      </span>
+                    )}
                     <span className="where">
                       {c.locationCode ? (
                         <span className="where-item">

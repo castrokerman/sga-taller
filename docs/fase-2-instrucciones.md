@@ -28,7 +28,7 @@ no, empieza por [fase-1-instrucciones.md](fase-1-instrucciones.md).
    ```
 
    Tarda unos minutos. La base de datos se actualiza sola y no se pierde nada.
-5. Abre `https://localhost`. Si la pantalla de inicio no muestra «Escáner QR»
+5. Abre `https://localhost`. Si la pantalla de inicio no muestra «Escanear QR»
    y «Almacén» activos, recarga la página con Ctrl+F5.
 
 ## 2. Qué hay de nuevo
@@ -37,7 +37,7 @@ no, empieza por [fase-1-instrucciones.md](fase-1-instrucciones.md).
 | --- | --- | --- |
 | **Almacén** | Recorrer el árbol de ubicaciones y ver qué contenedores hay en cada una | Todos |
 | **Ficha de contenedor** | Ver dónde está, qué lleva dentro y su historial | Todos |
-| **Escáner QR** | Escanear una etiqueta y abrir su ficha | Todos |
+| **Escanear QR** | Escanear una etiqueta y abrir su ficha | Todos |
 | **Mover** | Cambiar uno o varios contenedores de sitio, eligiendo el destino en una lista o escaneándolo | Todos menos consulta |
 | **Etiquetas QR** | Descargar el PDF para imprimir | Todos menos consulta |
 | **Crear y editar** ubicaciones y contenedores | Montar y mantener el almacén | Responsable de almacén y administrador |
@@ -193,6 +193,11 @@ etiqueta de la caja.
 Las cajas son desechables por defecto y los palets y bandejas reutilizables.
 Se cambia en «Editar».
 
+**Descripción del contenido.** Al crear o editar un contenedor se puede
+escribir qué lleva dentro («tornillería M6», «chapa aluminio 2 mm, 12
+hojas»). Sale como una nube verde 📦 en la ficha, en las listas, en el árbol y
+en el buscador, y el buscador la encuentra.
+
 **Duplicar un contenedor** crea copias iguales (tipo, descripción,
 responsable y política) en el mismo sitio, hasta 50 de una vez. Si lleva
 otros contenedores dentro, puedes copiarlos también: se crean vacíos y con
@@ -227,8 +232,10 @@ el almacén anidado.
   su ubicación.
 - La búsqueda deja solo lo que coincide y el camino hasta ello, ya desplegado.
   Sirve para saber dónde está algo sin recorrer el almacén.
-- Junto a cada contenedor salen sus nubes: 🔒 el proyecto al que está
-  asignado y 👤 su responsable y los responsables del proyecto.
+- Junto a cada contenedor salen sus nubes: 📦 en verde, la descripción de lo
+  que lleva dentro; en violeta, 🔒 el proyecto al que está asignado y 👤 su
+  responsable y los responsables del proyecto. El tipo sale en azul en los
+  contenedores y en gris en las ubicaciones.
 - Pulsar una línea abre su ficha. La vista elegida se recuerda la próxima vez.
 - **Dentro de cada ubicación** también está el selector «Lista | Árbol»: el
   árbol muestra solo lo que cuelga de ella.
@@ -269,8 +276,8 @@ etiqueta.
 
 ### Con la cámara
 
-1. Pulsa «Escáner QR» y apunta a una etiqueta. Se abre la ficha de esa
-   ubicación o contenedor.
+1. Pulsa «Escanear QR» y apunta a una etiqueta. Se abre la ficha de lo que
+   sea: ubicación, contenedor, herramienta, equipo o material.
 2. Para mover un contenedor: abre su ficha, pulsa «Mover» y **elige el destino
    en la lista desplegable** o escanea su etiqueta. Puede ser una ubicación u
    otro contenedor. Las ubicaciones que no admiten ese tipo de contenedor salen
@@ -326,7 +333,7 @@ encontrar el sistema; pide a quien gestione la red que la reserve.
 ### 6.2. Probar primero sin instalar nada
 
 El navegador mostrará un aviso de conexión no privada. Pulsa «Avanzado» y
-«Continuar». Entra y abre «Escáner QR».
+«Continuar». Entra y abre «Escanear QR».
 
 - Si la cámara funciona, puedes dejarlo así para el piloto.
 - Si no pide permiso de cámara o dice que no está disponible, sigue con el
@@ -375,7 +382,7 @@ Se abre a pantalla completa, como una aplicación más.
 
 ## 7. Qué probar
 
-- [ ] Tras actualizar, «Escáner QR» y «Almacén» aparecen activos en el inicio.
+- [ ] Tras actualizar, «Escanear QR» y «Almacén» aparecen activos en el inicio.
 - [ ] Crear una zona, un pasillo dentro y una estantería dentro del pasillo.
 - [ ] La ruta de arriba («Almacén › ALM-A › ALM-A-P01…») permite volver atrás.
 - [ ] Crear un palet en la estantería y dos cajas dentro del palet.

@@ -27,6 +27,7 @@ const byCode = (a: Node, b: Node) =>
 /** Proyecto y responsable del contenedor y, si el proyecto tiene otros, los del proyecto. */
 function containerChips(c: TreeContainer) {
   const out: Array<{ text: string; cls: string; title: string }> = [];
+  if (c.contentDescription) out.push({ text: `📦 ${c.contentDescription}`, cls: 'tag-content', title: 'Descripción del contenido' });
   if (c.projectCode) out.push({ text: `🔒 ${c.projectCode}`, cls: 'tag-project', title: `Proyecto ${c.projectCode}${c.projectName ? ` · ${c.projectName}` : ''}` });
   const own = c.responsibleName;
   const proj = (c.projectResponsibles ?? '').split(', ').filter((x) => x && x !== own);

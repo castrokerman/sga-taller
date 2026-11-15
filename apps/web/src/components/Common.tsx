@@ -57,6 +57,7 @@ export function ContainerCard({ c, q = '' }: { c: ContainerSummary; q?: string }
         <span><Highlight text={c.description ?? c.typeName} query={q} /></span>
       </span>
       <span className="item-meta">
+        {c.contentDescription && <span className="tag tag-content" title="Descripción del contenido">📦 {c.contentDescription}</span>}
         {c.projectCode && <span className="tag tag-project" title={c.projectName ?? ''}>🔒 {c.projectCode}</span>}
         {(c.responsibleName || c.projectResponsibles) && (
           <span className="tag tag-person" title={c.responsibleName ? 'Responsable del contenedor' : 'Responsables del proyecto'}>
@@ -199,7 +200,7 @@ export function containerListConfig(items: ContainerSummary[], storageKey: strin
   return {
     storageKey,
     noun: 'contenedores',
-    text: (c) => [c.code, c.description, c.typeName, c.responsibleName],
+    text: (c) => [c.code, c.description, c.contentDescription, c.typeName, c.responsibleName],
     sorts: [
       { key: 'codigo', label: 'Código (1, 2, 10)', value: (c) => c.code },
       { key: 'codigo-alfa', label: 'Código alfanumérico (1, 10, 2)', value: (c) => c.code, alphanumeric: true },

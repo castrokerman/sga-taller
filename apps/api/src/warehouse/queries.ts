@@ -23,6 +23,7 @@ export const CONTAINER_SELECT = `
          c.responsible_user_id AS "responsibleUserId", ru.full_name AS "responsibleName",
          t.code AS "typeCode", t.name AS "typeName",
          c.created_at AS "createdAt", c.retired_at AS "retiredAt",
+         c.content_description AS "contentDescription",
          c.project_id AS "projectId", pr.code AS "projectCode", pr.name AS "projectName",
          (SELECT string_agg(u.full_name, ', ' ORDER BY m.position, u.full_name)
             FROM project_member m JOIN app_user u ON u.id = m.user_id
