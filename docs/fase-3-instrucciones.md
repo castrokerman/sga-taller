@@ -35,7 +35,20 @@ Un usuario puede tener varios roles a la vez.
 
 ## 2. Qué hay de nuevo
 
-En el inicio aparecen tres accesos:
+El inicio está ordenado en bloques, y cada persona ve los suyos según sus
+permisos:
+
+| Bloque | Qué tiene | Quién lo ve |
+| --- | --- | --- |
+| **Día a día** | Escáner QR, Registrar entrada, Recepciones, Buscador | Todos |
+| **Inventario** | Almacén, Contenidos, Préstamos | Todos |
+| **Control** | Movimientos, Auditoría | Responsables de almacén y administradores |
+| **Administración** | Usuarios, Tipos, Familias | Administradores |
+
+La tarjeta de Recepciones lleva el número de pendientes. Lo que llegará en
+fases posteriores aparece en una línea al final.
+
+Para el inventario, estos son los accesos principales:
 
 | Acceso | Para qué |
 | --- | --- |
@@ -44,7 +57,7 @@ En el inicio aparecen tres accesos:
 | **Préstamos** | Las herramientas prestadas, a quién y hasta qué día. |
 
 Y en la ficha de cada **contenedor** y de cada **ubicación** hay una sección
-nueva, **«Material»**, con lo que hay dentro y los botones para operar.
+nueva, **«Contenido»**, con lo que hay dentro y los botones para operar.
 
 ## 3. Preparar el catálogo
 

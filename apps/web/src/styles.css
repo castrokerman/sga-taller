@@ -605,3 +605,20 @@ tr.clickable:hover td { background: #f7f9fb; }
 .place-select { width: 100%; font-size: 1.02rem; padding: 0.65rem 0.7rem; }
 .place-extra { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 1.2rem; margin-top: 0.45rem; }
 .tag-type { background: var(--accent-soft); color: var(--accent); font-size: 0.72rem; padding: 0.05rem 0.45rem; vertical-align: 1px; }
+
+/* ---- Inicio agrupado por bloques ---- */
+.home-group { margin-top: 1.5rem; }
+.home-group h3 { margin: 0 0 0.6rem; font-size: 1.1rem; display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; }
+.home-group h3 span { font-size: 0.9rem; font-weight: 400; color: var(--ink-soft); }
+.home-group .tiles { margin-top: 0; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 0.75rem; }
+.home-group .tile { padding: 0.85rem 1rem; }
+.home-group .tile strong { font-size: 1.08rem; display: flex; align-items: center; gap: 0.5rem; }
+.tile-icon { font-size: 1.25rem; line-height: 1; }
+.home-group .tile > span { font-size: 0.92rem; margin-top: 0.2rem; }
+.home-soon { margin-top: 1.75rem; padding-top: 0.75rem; border-top: 1px dashed var(--line); color: var(--ink-soft); font-size: 0.92rem; }
+@media (max-width: 560px) {
+  .home-group .tiles { grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+  .home-group .tile { padding: 0.7rem 0.75rem; }
+  .home-group .tile strong { font-size: 0.98rem; }
+  .home-group .tile > span { font-size: 0.82rem; }
+}

@@ -33,6 +33,8 @@ documentación técnica y calibración de equipos.
 - Recepciones por identificar: foto, responsable y sitio provisional; el
   responsable completa qué es, proyecto, uso y si se guarda o se despliega.
 - Eliminar ubicaciones vacías y sin historial (solo administradores).
+- Inicio agrupado por bloques (Día a día, Inventario, Control, Administración);
+  cada persona ve los suyos según sus permisos.
 - Contenidos (antes «Materiales») con tipos editables: Material, Herramienta,
   Equipo y Consumible, cada uno con su prefijo de código (MAT-, HER-, EQU-, CSM-).
 - Dar de alta contenedores, anidarlos y moverlos, con historial.
