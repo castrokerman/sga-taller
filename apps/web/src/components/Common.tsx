@@ -35,7 +35,7 @@ export function LocationCard({ l, q = '' }: { l: LocationSummary; q?: string }) 
         <span><Highlight text={l.name} query={q} /></span>
       </span>
       <span className="item-meta">
-        {!l.active && <span className="badge badge-off">Desactivada</span>}
+        {!l.active && <span className="tag tag-inactive">Inactiva</span>}
         <span className="tag">{l.typeName}</span>
         <span className={over ? 'over' : undefined}>
           {l.childCount > 0 && `${l.childCount} ubic. `}
@@ -57,7 +57,14 @@ export function ContainerCard({ c, q = '' }: { c: ContainerSummary; q?: string }
         <span><Highlight text={c.description ?? c.typeName} query={q} /></span>
       </span>
       <span className="item-meta">
-        <span className="tag">{c.typeName}</span>
+        {c.contentDescription && <span className="tag tag-content" title="Descripción del contenido">📦 {c.contentDescription}</span>}
+        {c.projectCode && <span className="tag tag-project" title={c.projectName ?? ''}>🔒 {c.projectCode}</span>}
+        {(c.responsibleName || c.projectResponsibles) && (
+          <span className="tag tag-person" title={c.responsibleName ? 'Responsable del contenedor' : 'Responsables del proyecto'}>
+            👤 {c.responsibleName ?? c.projectResponsibles}
+          </span>
+        )}
+        <span className="tag tag-ctype">{c.typeName}</span>
         <span>{c.childCount > 0 ? `${c.childCount} dentro` : ''}</span>
       </span>
     </button>
@@ -193,7 +200,7 @@ export function containerListConfig(items: ContainerSummary[], storageKey: strin
   return {
     storageKey,
     noun: 'contenedores',
-    text: (c) => [c.code, c.description, c.typeName, c.responsibleName],
+    text: (c) => [c.code, c.description, c.contentDescription, c.typeName, c.responsibleName],
     sorts: [
       { key: 'codigo', label: 'Código (1, 2, 10)', value: (c) => c.code },
       { key: 'codigo-alfa', label: 'Código alfanumérico (1, 10, 2)', value: (c) => c.code, alphanumeric: true },

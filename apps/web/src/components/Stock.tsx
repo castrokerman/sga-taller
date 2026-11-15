@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import {
-  api, ApiError, errorMessage, formatDateTime, formatQty, newOperationKey,
-  type Material, type OpResult, type PlaceRef, type ScanHit, type StockLine, type User,
+  api, ApiError, errorMessage, formatDateTime, formatQty, newOperationKey, photoUrl,
+  type Material, type OpResult, type PlaceRef, type ScanHit, type StockLine, type UnitRef, type User,
 } from '../api';
 import { MaterialForm } from '../pages/Materials';
+import { LabelPanel } from './Common';
 import { navigate } from '../router';
 import { normalize } from './ListControls';
 import { Scanner } from './Scanner';
+import { PlaceSelect } from './PlaceSelect';
 
 /**
  * Material de un sitio (contenedor o ubicación) y todas las operaciones de
@@ -42,7 +44,14 @@ export function StockKind({ line }: { line: Pick<StockLine, 'allocations' | 'qua
   );
 }
 
-export function StockSection(props: { user: User; place: PlaceRef; placeCode: string; active: boolean; onChanged?: () => void }) {
+export function StockSection(props: {
+  user: User; place: PlaceRef; placeCode: string; active: boolean; onChanged?: () => void;
+  /** false: ubicación que solo aloja contenedores (no admite contenido suelto). */
+  holdsContent?: boolean;
+}) {
+  const holds = props.holdsContent ?? true;
+  const [boxing, setBoxing] = useState(false);
+  const [boxNotice, setBoxNotice] = useState<string | null>(null);
   const { user, place } = props;
   const [lines, setLines] = useState<StockLine[] | null>(null);
   const [op, setOp] = useState<Op | null>(null);
@@ -84,7 +93,7 @@ export function StockSection(props: { user: User; place: PlaceRef; placeCode: st
   return (
     <section>
       <div className="section-head">
-        <h3>Material</h3>
+        <h3>Contenido</h3>
         {props.active && (
           <div className="row-actions">
             {can(user, 'stock.withdraw') && lines && lines.length > 0 && (
@@ -92,7 +101,7 @@ export function StockSection(props: { user: User; place: PlaceRef; placeCode: st
                 Retirar
               </button>
             )}
-            {can(user, 'stock.receive') && (
+            {can(user, 'stock.receive') && holds && (
               <button className="btn" onClick={() => start({ kind: 'receipt' })}>
                 + Entrada
               </button>
@@ -103,6 +112,38 @@ export function StockSection(props: { user: User; place: PlaceRef; placeCode: st
 
       {notice && <OpNotice r={notice} />}
       {error && <p className="alert alert-error">{error}</p>}
+      {!holds && lines && lines.length > 0 && props.place.locationId && (
+        <div className="alert alert-warn">
+          <p className="nomargin">
+            Aquí solo van contenedores, pero hay {lines.length === 1 ? 'una línea de contenido suelta' : `${lines.length} líneas de contenido sueltas`}.
+            El contenido tiene que estar dentro de una caja, una bandeja o una ubicación que guarde contenido.
+          </p>
+          {can(user, 'container.manage') && props.active && (
+            <button
+              className="btn btn-small"
+              disabled={boxing}
+              onClick={async () => {
+                setBoxing(true);
+                setError(null);
+                try {
+                  const r = await api.boxLoose(props.place.locationId!);
+                  setNotice(null);
+                  await load();
+                  props.onChanged?.();
+                  setBoxNotice(`Metido en la caja nueva ${r.code} (${r.lines} línea${r.lines === 1 ? '' : 's'}). Imprime su etiqueta desde la caja.`);
+                } catch (e) {
+                  setError(errorMessage(e));
+                } finally {
+                  setBoxing(false);
+                }
+              }}
+            >
+              {boxing ? 'Metiendo…' : 'Meter todo en una caja nueva'}
+            </button>
+          )}
+        </div>
+      )}
+      {boxNotice && <p className="alert alert-ok">{boxNotice}</p>}
 
       {op && (
         <OpPanel
@@ -119,13 +160,17 @@ export function StockSection(props: { user: User; place: PlaceRef; placeCode: st
       {lines === null ? (
         <p className="muted">Cargando…</p>
       ) : lines.length === 0 ? (
-        <p className="muted">No hay material registrado aquí.</p>
+        <p className="muted">
+          {holds
+            ? 'No hay contenido registrado aquí.'
+            : 'Aquí solo van contenedores: el contenido se mete en una caja o bandeja de esta ubicación.'}
+        </p>
       ) : (
         <div className="table-wrap card">
           <table className="stock-table">
             <thead>
               <tr>
-                <th>Material</th>
+                <th>Contenido</th>
                 <th>Tipo de stock</th>
                 <th className="num">Cantidad</th>
                 {props.active && <th />}
@@ -135,12 +180,19 @@ export function StockSection(props: { user: User; place: PlaceRef; placeCode: st
               {lines.map((l) => (
                 <tr key={l.id}>
                   <td>
-                    <a href={`#/material/${l.materialId}`}>
-                      <strong>{l.description}</strong>
-                    </a>
-                    <div className="muted small">
-                      {l.internalRef}
-                      {l.lotCode && ` · lote ${l.lotCode}`}
+                    <div className="stock-name">
+                      <a href={`#/material/${l.materialId}`} className="stock-thumb" aria-hidden="true" tabIndex={-1}>
+                        {l.photoId ? <img src={photoUrl(l.photoId)} alt="" loading="lazy" /> : <span>📦</span>}
+                      </a>
+                      <div>
+                        <a href={`#/material/${l.materialId}`}>
+                          <strong>{l.description}</strong>
+                        </a>
+                        <div className="muted small">
+                          {l.internalRef}
+                          {l.lotCode && ` · lote ${l.lotCode}`}
+                        </div>
+                      </div>
                     </div>
                   </td>
                   <td>
@@ -179,7 +231,7 @@ export function LineActions(props: { user: User; line: StockLine; onOp: (op: Op)
           Trasladar
         </button>
       )}
-      {can(user, 'stock.count') && (
+      {can(user, 'stock.count') && !line.unitTracked && (
         <button className="btn btn-small" onClick={() => props.onOp({ kind: 'count', line })}>
           Recuento
         </button>
@@ -199,6 +251,7 @@ export function OpNotice({ r }: { r: OpResult }) {
       <p className="nomargin">
         {r.message}. <span className="muted small">Movimiento n.º {r.movementNumber}</span>
       </p>
+      {r.units && r.units.length > 0 && <UnitLabels units={r.units} />}
       {r.emptyDisposable && (
         <p className="nomargin small" style={{ marginTop: '0.4rem' }}>
           {r.emptyDisposable} es desechable y se ha quedado vacía: si ya no se usa, retírala con el botón «Retirar» de su ficha.
@@ -309,7 +362,7 @@ function WithdrawForm(props: { user: User; lines: StockLine[]; initial: StockLin
 
   return (
     <form className="card form op-form" onSubmit={submit}>
-      <h3>Retirar material de {line.placeCode}</h3>
+      <h3>Retirar contenido de {line.placeCode}</h3>
       {props.lines.length > 1 && (
         <>
           <span className="field-l">¿Qué te llevas?</span>
@@ -348,7 +401,7 @@ function WithdrawForm(props: { user: User; lines: StockLine[]; initial: StockLin
         <>
           <span className="field-l">Cantidad</span>
           <QtyStepper value={qty} onChange={setQty} decimals={line.decimals} unit={line.unitCode} />
-          {line.quantityTracking === 'ESTIMATED' && <p className="muted small">La cantidad de este material es aproximada.</p>}
+          {line.quantityTracking === 'ESTIMATED' && <p className="muted small">La cantidad de este contenido es aproximada.</p>}
         </>
       )}
 
@@ -440,7 +493,7 @@ function ReceiptForm(props: {
         )}
       </p>
       {untracked ? (
-        <p className="muted">Este material no se cuenta: solo se anota que hay en este sitio.</p>
+        <p className="muted">Este contenido no se cuenta: solo se anota que hay en este sitio.</p>
       ) : (
         <>
           <span className="field-l">Cantidad</span>
@@ -472,7 +525,7 @@ function ReceiptForm(props: {
           <input type="checkbox" checked={isReturn} onChange={(e) => setIsReturn(e.target.checked)} />
           <span>
             <strong>Es una devolución</strong>
-            <small className="muted"> — material que se sacó y vuelve sin usar</small>
+            <small className="muted"> — contenido que se sacó y vuelve sin usar</small>
           </span>
         </label>
       )}
@@ -514,7 +567,8 @@ export function MaterialPicker(props: { user: User; onPick: (m: Material) => voi
   if (creating) {
     return (
       <MaterialForm
-        title="Material nuevo"
+        title="Contenido nuevo"
+        canPhoto={props.user.permissions.includes('photo.add')}
         onCancel={() => setCreating(false)}
         onDone={(m) => props.onPick(m)}
         embedded
@@ -525,7 +579,7 @@ export function MaterialPicker(props: { user: User; onPick: (m: Material) => voi
   return (
     <>
       <label className="field">
-        <span>¿Qué material?</span>
+        <span>¿Qué contenido?</span>
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Escribe parte del nombre o la referencia" autoFocus />
       </label>
       {error && <p className="alert alert-error">{error}</p>}
@@ -544,7 +598,7 @@ export function MaterialPicker(props: { user: User; onPick: (m: Material) => voi
               <span className="r">{formatQty(m.quantity, m.unitCode, m.quantityTracking)}</span>
             </button>
           ))}
-          {hits.length === 0 && <p className="muted">{all.length === 0 ? 'El catálogo está vacío.' : 'Ningún material coincide.'}</p>}
+          {hits.length === 0 && <p className="muted">{all.length === 0 ? 'El catálogo está vacío.' : 'Ningún contenido coincide.'}</p>}
         </div>
       )}
       <div className="actions">
@@ -553,7 +607,7 @@ export function MaterialPicker(props: { user: User; onPick: (m: Material) => voi
         </button>
         {can(props.user, 'material.manage') && (
           <button type="button" className="btn" onClick={() => setCreating(true)}>
-            + Material nuevo
+            + Contenido nuevo
           </button>
         )}
       </div>
@@ -562,7 +616,12 @@ export function MaterialPicker(props: { user: User; onPick: (m: Material) => voi
 }
 
 /** Elegir un sitio escaneando su QR o tecleando su código. */
-export function PlacePicker(props: { hint: string; exclude?: string | null; onPick: (p: { ref: PlaceRef; code: string }) => void; onCancel: () => void }) {
+export function PlacePicker(props: {
+  hint: string; exclude?: string | null; onPick: (p: { ref: PlaceRef; code: string }) => void; onCancel: () => void;
+  /** Solo escáner: cuando la pantalla ya tiene su propia lista al lado. */
+  scanOnly?: boolean;
+  anyLocation?: boolean;
+}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const onCode = async (code: string) => {
@@ -571,7 +630,7 @@ export function PlacePicker(props: { hint: string; exclude?: string | null; onPi
     setError(null);
     try {
       const hit: ScanHit = await api.scan(code);
-      if (hit.kind === 'equipment') setError('Eso es un equipo. Escanea un contenedor o una ubicación');
+      if (hit.kind === 'equipment' || hit.kind === 'material') setError(`${hit.code} es un contenido. Escanea un contenedor o una ubicación`);
       else if (hit.id === props.exclude) setError('Es el mismo sitio en el que ya está');
       else props.onPick({ ref: hit.kind === 'container' ? { containerId: hit.id } : { locationId: hit.id }, code: hit.code });
     } catch (e) {
@@ -582,6 +641,13 @@ export function PlacePicker(props: { hint: string; exclude?: string | null; onPi
   };
   return (
     <>
+      {!props.scanOnly && (
+        <div className="field">
+          <span className="field-l">Elige el sitio de la lista</span>
+          <PlaceSelect value={null} exclude={props.exclude} anyLocation={props.anyLocation} onChange={(p) => p && props.onPick(p)} />
+          <small className="muted">O escanea su etiqueta:</small>
+        </div>
+      )}
       <Scanner onCode={onCode} busy={busy} hint={props.hint} />
       {error && <p className="alert alert-error">{error}</p>}
       <div className="actions">
@@ -787,3 +853,22 @@ function LendForm(props: { user: User; line: StockLine; onCancel: () => void; on
 }
 
 export const goMaterial = (id: string) => navigate(`material/${id}`);
+
+/** Etiquetas QR de las unidades que acaban de entrar (herramientas y equipos). */
+export function UnitLabels({ units }: { units: UnitRef[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="unit-labels">
+      {!open ? (
+        <button type="button" className="btn btn-small" onClick={() => setOpen(true)}>
+          🏷️ Etiqueta{units.length === 1 ? '' : 's'} QR de {units.length === 1 ? units[0]!.internalRef : `las ${units.length} unidades`}
+        </button>
+      ) : (
+        <LabelPanel
+          groups={[{ label: units.length === 1 ? units[0]!.internalRef : `${units.length} unidades`, items: units.map((u) => ({ kind: 'material' as const, id: u.id })) }]}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </div>
+  );
+}

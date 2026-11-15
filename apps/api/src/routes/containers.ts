@@ -213,7 +213,7 @@ export function containerRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
       const q = request.query as { q?: string; includeRetired: boolean };
       const r = await pool.query(
         `${CONTAINER_SELECT}
-          WHERE ($1::text IS NULL OR c.code ILIKE '%' || $1 || '%' OR c.description ILIKE '%' || $1 || '%')
+          WHERE ($1::text IS NULL OR c.code ILIKE '%' || $1 || '%' OR c.description ILIKE '%' || $1 || '%' OR c.content_description ILIKE '%' || $1 || '%')
             AND (c.status = 'ACTIVE' OR $2)
           ORDER BY c.code LIMIT 100`,
         [q.q?.trim() || null, q.includeRetired],
@@ -241,6 +241,7 @@ export function containerRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
             locationId: uuid,
             parentContainerId: uuid,
             description: { type: 'string', maxLength: 300 },
+            contentDescription: { type: 'string', maxLength: 300 },
             reusePolicy: { type: 'string', enum: ['REUSABLE', 'DISPOSABLE'] },
             responsibleUserId: uuid,
             quantity: { type: 'integer', minimum: 1, maximum: 100, default: 1 },
@@ -252,7 +253,7 @@ export function containerRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
     (request, reply) =>
       idempotent(pool, request, reply, async () => {
         const body = request.body as {
-          typeCode: string; locationId?: string; parentContainerId?: string; description?: string;
+          typeCode: string; locationId?: string; parentContainerId?: string; description?: string; contentDescription?: string;
           reusePolicy?: string; responsibleUserId?: string; quantity: number; force: boolean;
         };
 
@@ -278,12 +279,12 @@ export function containerRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
             const r = await c.query(
               `INSERT INTO container
                  (qr_token, code, container_type_id, location_id, parent_container_id, reuse_policy,
-                  responsible_user_id, description)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+                  responsible_user_id, description, content_description)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
               [
                 newQrToken(), code, type.id, dest.locationId, dest.parentId,
                 body.reusePolicy ?? type.default_reuse_policy, body.responsibleUserId ?? null,
-                body.description?.trim() || null,
+                body.description?.trim() || null, body.contentDescription?.trim() || null,
               ],
             );
             const id = r.rows[0].id as string;
@@ -384,11 +385,11 @@ export function containerRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
             const r = await c.query(
               `INSERT INTO container
                  (qr_token, code, container_type_id, location_id, parent_container_id, reuse_policy,
-                  responsible_user_id, description)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, code`,
+                  responsible_user_id, description, content_description)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, code`,
               [
                 newQrToken(), nextCode(row.container_type_id as string), row.container_type_id, where.locationId,
-                where.parentId, row.reuse_policy, row.responsible_user_id, row.description,
+                where.parentId, row.reuse_policy, row.responsible_user_id, row.description, row.content_description ?? null,
               ],
             );
             const created = r.rows[0] as { id: string; code: string };
@@ -439,6 +440,7 @@ export function containerRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
           type: 'object', additionalProperties: false, minProperties: 1,
           properties: {
             description: { type: 'string', maxLength: 300 },
+            contentDescription: { type: 'string', maxLength: 300 },
             reusePolicy: { type: 'string', enum: ['REUSABLE', 'DISPOSABLE'] },
             responsibleUserId: { anyOf: [{ type: 'null' }, uuid] },
           },
@@ -447,7 +449,7 @@ export function containerRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
     },
     async (request) => {
       const { id } = request.params as { id: string };
-      const body = request.body as { description?: string; reusePolicy?: string; responsibleUserId?: string | null };
+      const body = request.body as { description?: string; contentDescription?: string; reusePolicy?: string; responsibleUserId?: string | null };
       await withTransaction(pool, async (c) => {
         const before = (await c.query(`${CONTAINER_SELECT} WHERE c.id = $1`, [id])).rows[0];
         if (!before) throw notFound('El contenedor no existe');
@@ -460,13 +462,14 @@ export function containerRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
               SET description = CASE WHEN $2::text IS NULL THEN description ELSE nullif($2, '') END,
                   reuse_policy = coalesce($3, reuse_policy),
                   responsible_user_id = CASE WHEN $4 THEN $5::uuid ELSE responsible_user_id END,
+                  content_description = CASE WHEN $6::text IS NULL THEN content_description ELSE nullif($6, '') END,
                   updated_at = now()
             WHERE id = $1`,
-          [id, body.description?.trim() ?? null, body.reusePolicy ?? null, 'responsibleUserId' in body, body.responsibleUserId ?? null],
+          [id, body.description?.trim() ?? null, body.reusePolicy ?? null, 'responsibleUserId' in body, body.responsibleUserId ?? null, body.contentDescription?.trim() ?? null],
         );
         const after = (await c.query(`${CONTAINER_SELECT} WHERE c.id = $1`, [id])).rows[0];
         const pick = (k: Record<string, unknown>) => ({
-          description: k.description, reusePolicy: k.reusePolicy, responsibleUserId: k.responsibleUserId,
+          description: k.description, contentDescription: k.contentDescription, reusePolicy: k.reusePolicy, responsibleUserId: k.responsibleUserId,
         });
         await writeAudit(c, {
           userId: request.user!.id, action: 'contenedor.modificacion', entityType: 'container', entityId: id,
@@ -493,6 +496,7 @@ export function containerRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
                 properties: {
                   id: uuid,
                   description: { type: 'string', maxLength: 300 },
+                  contentDescription: { type: 'string', maxLength: 300 },
                   reusePolicy: { type: 'string', enum: ['REUSABLE', 'DISPOSABLE'] },
                   responsibleUserId: { anyOf: [{ type: 'null' }, uuid] },
                 },
@@ -503,7 +507,7 @@ export function containerRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
       },
     },
     async (request) => {
-      const { items } = request.body as { items: Array<{ id: string; description?: string; reusePolicy?: string; responsibleUserId?: string | null }> };
+      const { items } = request.body as { items: Array<{ id: string; description?: string; contentDescription?: string; reusePolicy?: string; responsibleUserId?: string | null }> };
       if (new Set(items.map((i) => i.id)).size !== items.length) throw badRequest('Un contenedor aparece dos veces');
       await withTransaction(pool, async (c) => {
         for (const body of items) {
@@ -519,13 +523,14 @@ export function containerRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
                 SET description = CASE WHEN $2::text IS NULL THEN description ELSE nullif($2, '') END,
                     reuse_policy = coalesce($3, reuse_policy),
                     responsible_user_id = CASE WHEN $4 THEN $5::uuid ELSE responsible_user_id END,
+                    content_description = CASE WHEN $6::text IS NULL THEN content_description ELSE nullif($6, '') END,
                     updated_at = now()
               WHERE id = $1`,
-            [body.id, body.description?.trim() ?? null, body.reusePolicy ?? null, 'responsibleUserId' in body, body.responsibleUserId ?? null],
+            [body.id, body.description?.trim() ?? null, body.reusePolicy ?? null, 'responsibleUserId' in body, body.responsibleUserId ?? null, body.contentDescription?.trim() ?? null],
           );
           await writeAudit(c, {
             userId: request.user!.id, action: 'contenedor.modificacion', entityType: 'container', entityId: body.id,
-            before: { description: before.description, reusePolicy: before.reusePolicy, responsibleUserId: before.responsibleUserId },
+            before: { description: before.description, contentDescription: before.contentDescription, reusePolicy: before.reusePolicy, responsibleUserId: before.responsibleUserId },
             after: body, ip: request.ip, requestId: request.id,
           });
         }
@@ -681,6 +686,9 @@ export function containerRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
          UNION ALL
          SELECT 'equipment', id, code, description, (qr_token = $1) FROM equipment
           WHERE qr_token = $1 OR upper(code) = upper($1)
+         UNION ALL
+         SELECT 'material', id, internal_ref, description, (qr_token = $1) FROM material
+          WHERE qr_token = $1 OR upper(internal_ref) = upper($1)
          ORDER BY exact DESC LIMIT 1`,
         [raw],
       );

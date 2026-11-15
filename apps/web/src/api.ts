@@ -20,6 +20,38 @@ export interface AdminUser {
   lastLoginAt: string | null;
   createdAt: string;
   roles: string[];
+  projects: Array<{ id: string; code: string; name: string; role: ProjectRole }>;
+}
+
+export type ProjectRole = 'RESPONSIBLE' | 'MEMBER';
+export type ProjectStatus = 'ACTIVE' | 'ON_HOLD' | 'CLOSED';
+export interface Person { id: string; fullName: string; active?: boolean }
+export interface Project {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  status: ProjectStatus;
+  createdAt: string;
+  responsibles: Person[];
+  members: Person[];
+  containerCount: number;
+  pendingInbound: number;
+  myRole: ProjectRole | null;
+}
+export interface ProjectOption { id: string; code: string; name: string }
+export interface ProjectInput {
+  code?: string; name?: string; description?: string; status?: ProjectStatus; responsibleIds?: string[]; memberIds?: string[];
+}
+export interface ProjectDetail {
+  project: Project;
+  full: boolean;
+  canEdit?: boolean;
+  containers?: Array<{ id: string; code: string; description: string | null; typeName: string; locationCode: string | null; lines: number }>;
+  stock?: StockLine[];
+  inbound?: Array<{ id: string; code: string; status: InboundStatus; description: string | null; receivedAt: string; materialDescription: string | null; photoId: string | null }>;
+  loans?: Loan[];
+  movements?: MovementLine[];
 }
 
 export interface Role {
@@ -104,6 +136,12 @@ export interface LocationSummary {
   qrToken: string;
   typeCode: string;
   typeName: string;
+  /** Su tipo guarda contenido directamente (armario, cajonera…); si no, solo aloja contenedores. */
+  holdsContent: boolean;
+  /** Tipos de contenedor que admite (vacío: cualquiera). */
+  allowedContainerTypes: string[];
+  /** Líneas de contenido suelto directamente en ella. */
+  looseLines: number;
   maxCapacity: number | null;
   allowedHazardClasses: string[];
   active: boolean;
@@ -129,6 +167,14 @@ export interface ContainerSummary {
   retiredAt: string | null;
   childCount: number;
   photoId: string | null;
+  /** Proyecto del contenedor: lo que hay dentro está reservado para él. */
+  projectId: string | null;
+  projectCode: string | null;
+  projectName: string | null;
+  /** Responsables del proyecto, separados por comas. */
+  projectResponsibles: string | null;
+  /** Qué lleva dentro, en texto libre. */
+  contentDescription: string | null;
 }
 
 export interface PathItem {
@@ -232,16 +278,39 @@ export interface Material {
   lowStock: boolean;
   onLoan: number;
   photoId: string | null;
+  /** Tipo de contenido: Material, Herramienta, Equipo, Consumible… */
+  contentTypeCode: string;
+  contentTypeName: string;
+  /** Su tipo se lleva por unidad: es una sola unidad física, con su código y su QR. */
+  unitTracked: boolean;
+  serialNumber: string | null;
+  qrToken: string;
 }
 
 export type MaterialInput = Partial<Omit<Material,
-  'id' | 'familyName' | 'decimals' | 'createdAt' | 'quantity' | 'quantityFree' | 'places' | 'needsRecount' | 'lowStock' | 'onLoan'>>;
+  'id' | 'familyName' | 'decimals' | 'createdAt' | 'quantity' | 'quantityFree' | 'places' | 'needsRecount' | 'lowStock' | 'onLoan' | 'contentTypeName' | 'unitTracked' | 'qrToken'>>;
+
+export interface ContentType {
+  code: string;
+  name: string;
+  codePrefix: string;
+  defaultTracking: Tracking;
+  defaultLoanable: boolean;
+  unitTracked: boolean;
+  active: boolean;
+  sortOrder: number;
+  contentCount: number;
+}
 
 export interface Allocation { availability: 'FREE' | 'RESTRICTED'; quantity: number; projectCode: string | null; projectName: string | null }
 
 export interface StockLine {
   id: string;
   materialId: string;
+  /** Primera foto del contenido, si tiene. */
+  photoId: string | null;
+  /** Unidad con su propio código (herramienta, equipo): no se recuenta. */
+  unitTracked: boolean;
   internalRef: string;
   description: string;
   unitCode: string;
@@ -323,7 +392,10 @@ export interface OpResult {
   remaining: number | null;
   needsRecount?: boolean;
   emptyDisposable?: string | null;
+  /** Herramientas y equipos: las unidades que han entrado, cada una con su código. */
+  units?: UnitRef[];
 }
+export interface UnitRef { id: string; internalRef: string }
 
 export interface PlaceRef { containerId?: string; locationId?: string }
 
@@ -353,19 +425,116 @@ export interface Note {
   createdById: string;
   createdBy: string;
   recipients: string[];
+  /** Si es una respuesta, el comentario al que responde. */
+  parentId: string | null;
 }
 
 export interface AppNotification {
   id: string;
   createdAt: string;
   readAt: string | null;
-  noteId: string;
+  /** De un comentario o de una recepción pendiente de identificar. */
+  kind: 'note' | 'inbound';
+  noteId: string | null;
+  /** El comentario es una respuesta a otro. */
+  isReply?: boolean;
   body: string;
-  entityType: EntityType;
+  entityType: EntityType | 'inbound';
+  inboundStatus: InboundStatus | null;
+  /** Una recepción que me toca identificar y sigue pendiente. */
+  actionNeeded: boolean | null;
   entityId: string;
   entityCode: string | null;
   entityName: string | null;
   createdBy: string;
+}
+
+export type InboundStatus = 'PENDING' | 'DONE' | 'CANCELLED';
+export type Disposition = 'STORE' | 'DEPLOY';
+export interface PhotoData { image: string; thumbnail: string; width: number; height: number }
+
+/** Algo recibido que identifica su responsable. */
+export interface Inbound {
+  id: string;
+  number: number;
+  code: string;
+  status: InboundStatus;
+  description: string | null;
+  packages: number | null;
+  externalReference: string | null;
+  receivedAt: string;
+  receivedById: string;
+  receivedBy: string;
+  responsibleId: string;
+  responsible: string;
+  containerId: string | null;
+  locationId: string | null;
+  placeCode: string;
+  photoId: string | null;
+  photoCount: number;
+  materialId: string | null;
+  materialRef: string | null;
+  materialDescription: string | null;
+  unitCode: string | null;
+  quantity: number | null;
+  lotCode: string | null;
+  projectRef: string | null;
+  projectId: string | null;
+  preReceiptId: string | null;
+  /** Lo anunciado en la pre-recepción enlazada: código, descripción, proveedor y pedido. */
+  preReceipt: string | null;
+  usagePlace: string | null;
+  disposition: Disposition | null;
+  finalContainerId: string | null;
+  finalLocationId: string | null;
+  finalPlaceCode: string | null;
+  completionNote: string | null;
+  completedAt: string | null;
+  completedBy: string | null;
+  cancelReason: string | null;
+  cancelledAt: string | null;
+  cancelledBy: string | null;
+}
+
+export type PreReceiptStatus = 'OPEN' | 'RECEIVED' | 'CANCELLED';
+/** Lo que alguien espera que llegue. */
+export interface PreReceipt {
+  id: string;
+  number: number;
+  code: string;
+  status: PreReceiptStatus;
+  description: string;
+  supplier: string | null;
+  orderRef: string | null;
+  projectId: string | null;
+  projectLabel: string | null;
+  expectedDate: string | null;
+  note: string | null;
+  createdById: string;
+  createdBy: string;
+  createdAt: string;
+  inboundId: string | null;
+  inboundCode: string | null;
+  receivedAt: string | null;
+  cancelledAt: string | null;
+  late: boolean;
+  /** En las sugerencias: cuántas palabras de lo escrito coinciden. */
+  score?: number;
+}
+
+export interface InboundCompletion {
+  materialId?: string;
+  newMaterial?: { contentTypeCode?: string; description: string; familyId: string; unitCode: string; manufacturer?: string; manufacturerRef?: string };
+  quantity?: number;
+  lotCode?: string;
+  projectRef?: string;
+  projectId?: string | null;
+  usagePlace?: string;
+  disposition: Disposition;
+  containerId?: string;
+  locationId?: string;
+  usePhotoForMaterial: boolean;
+  note?: string;
 }
 
 export interface SearchResult {
@@ -375,7 +544,7 @@ export interface SearchResult {
     places: Array<{ containerId: string | null; locationId: string | null; placeCode: string; locationCode: string | null; quantity: number | null }>;
   }>;
   containers: Array<{
-    id: string; code: string; description: string | null; typeName: string; status: string; locationCode: string | null;
+    id: string; code: string; description: string | null; contentDescription: string | null; typeName: string; status: string; locationCode: string | null;
     locationId: string | null; parentCode: string | null; parentContainerId: string | null; photoId: string | null;
   }>;
   locations: Array<{ id: string; code: string; name: string; typeName: string; active: boolean; parentCode: string | null; photoId: string | null }>;
@@ -383,11 +552,14 @@ export interface SearchResult {
 
 export const photoUrl = (id: string, size: 'thumb' | 'image' = 'thumb') => `/api/photos/${id}/${size}`;
 
-export interface LocationType { code: string; name: string; active: boolean; codePrefix: string; sortOrder: number; locationCount: number }
+export interface LocationType {
+  code: string; name: string; active: boolean; codePrefix: string; sortOrder: number; locationCount: number;
+  holdsContent: boolean; allowedContainerTypes: string[];
+}
 export interface ContainerType { code: string; name: string; codePrefix: string; defaultReusePolicy: string; active: boolean; containerCount: number }
-export interface ScanHit { kind: 'container' | 'location' | 'equipment'; id: string; code: string; name: string | null }
+export interface ScanHit { kind: 'container' | 'location' | 'equipment' | 'material'; id: string; code: string; name: string | null }
 export type LabelFormat = '4x6' | 'a4-24';
-export interface LabelRef { kind: 'location' | 'container'; id: string }
+export interface LabelRef { kind: 'location' | 'container' | 'material'; id: string }
 
 export const api = {
   me: () => request<{ user: User }>('GET', '/api/auth/me'),
@@ -401,6 +573,7 @@ export const api = {
   users: () => request<{ users: AdminUser[] }>('GET', '/api/admin/users'),
   createUser: (data: { username: string; fullName: string; password: string; roles: string[] }) =>
     request<{ user: AdminUser }>('POST', '/api/admin/users', data),
+  deleteUser: (id: string) => request<{ ok: true; fullName: string }>('DELETE', `/api/admin/users/${id}`),
   updateUser: (id: string, data: { fullName?: string; active?: boolean; roles?: string[] }) =>
     request<{ user: AdminUser }>('PATCH', `/api/admin/users/${id}`, data),
   resetPassword: (id: string, newPassword: string) =>
@@ -414,9 +587,9 @@ export const api = {
     request<{ actions: Array<{ action: string; n: number }>; users: Array<{ id: string; fullName: string }> }>('GET', '/api/admin/audit/actions'),
 
   locationTypes: () => request<{ types: LocationType[] }>('GET', '/api/location-types'),
-  createLocationType: (data: { name: string; codePrefix: string }) =>
+  createLocationType: (data: { name: string; codePrefix: string; holdsContent?: boolean; allowedContainerTypes?: string[] }) =>
     request<{ type: LocationType }>('POST', '/api/location-types', data),
-  updateLocationType: (code: string, data: { name?: string; codePrefix?: string; active?: boolean }) =>
+  updateLocationType: (code: string, data: { name?: string; codePrefix?: string; active?: boolean; holdsContent?: boolean; allowedContainerTypes?: string[] }) =>
     request<{ recoded: number }>('PATCH', `/api/location-types/${code}`, data),
   updateContainerType: (code: string, data: { name?: string; codePrefix?: string; defaultReusePolicy?: string; active?: boolean }) =>
     request<{ recoded: number }>('PATCH', `/api/container-types/${code}`, data),
@@ -424,10 +597,17 @@ export const api = {
     request<{ parentCode: string | null; typePrefix: string; seq: number; code: string }>(
       'GET', `/api/locations/next-code?parentId=${parentId}&typeCode=${typeCode}${exceptId ? `&exceptId=${exceptId}` : ''}`,
     ),
+  contentTypes: () => request<{ types: ContentType[] }>('GET', '/api/content-types'),
+  createContentType: (data: { name: string; codePrefix: string; defaultTracking?: Tracking; defaultLoanable?: boolean; unitTracked?: boolean }) =>
+    request<{ code: string }>('POST', '/api/content-types', data),
+  updateContentType: (code: string, data: { name?: string; codePrefix?: string; defaultTracking?: Tracking; defaultLoanable?: boolean; unitTracked?: boolean; active?: boolean }) =>
+    request<{ recoded: number }>('PATCH', `/api/content-types/${code}`, data),
   containerTypes: () => request<{ types: ContainerType[] }>('GET', '/api/container-types'),
   createContainerType: (data: { code?: string; name: string; codePrefix: string; defaultReusePolicy: string }) =>
     request<{ type: ContainerType }>('POST', '/api/container-types', data),
 
+  boxLoose: (id: string, typeCode = 'CAJA') => request<{ containerId: string; code: string; lines: number }>('POST', `/api/locations/${id}/box-loose`, { typeCode }),
+  deleteLocation: (id: string) => request<{ ok: true; code: string }>('DELETE', `/api/locations/${id}`),
   rootLocations: () => request<{ locations: LocationSummary[] }>('GET', '/api/locations'),
   location: (id: string) => request<LocationDetail>('GET', `/api/locations/${id}`),
   createLocation: (data: { segment?: string; seq?: number; name: string; typeCode: string; parentId?: string; maxCapacity?: number }) =>
@@ -444,12 +624,12 @@ export const api = {
     request<{ containers: ContainerSummary[] }>('GET', `/api/containers?q=${encodeURIComponent(q)}`),
   container: (id: string) => request<ContainerDetail>('GET', `/api/containers/${id}`),
   createContainers: (
-    data: { typeCode: string; locationId?: string; parentContainerId?: string; quantity: number; description?: string; force?: boolean },
+    data: { typeCode: string; locationId?: string; parentContainerId?: string; quantity: number; description?: string; contentDescription?: string; force?: boolean },
     key: string,
   ) => request<{ containers: ContainerSummary[] }>('POST', '/api/containers', data, key),
   bulkContainers: (items: Array<{ id: string } & Record<string, unknown>>) =>
     request<{ containers: ContainerSummary[] }>('PATCH', '/api/containers/bulk', { items }),
-  updateContainer: (id: string, data: { description?: string; reusePolicy?: string; responsibleUserId?: string | null }) =>
+  updateContainer: (id: string, data: { description?: string; contentDescription?: string; reusePolicy?: string; responsibleUserId?: string | null }) =>
     request<ContainerDetail>('PATCH', `/api/containers/${id}`, data),
   moveContainer: (id: string, data: { toLocationId?: string; toParentContainerId?: string; force?: boolean }, key: string) =>
     request<MoveResult>('POST', `/api/containers/${id}/move`, data, key),
@@ -495,14 +675,14 @@ export const api = {
     request<OpResult>('POST', '/api/stock/count', data, key),
   reverse: (movementId: string, reason: string, key: string) =>
     request<OpResult>('POST', `/api/stock/movements/${movementId}/reverse`, { reason }, key),
-  loans: (all = false) => request<{ loans: Loan[] }>('GET', `/api/loans?all=${all}`),
+  loans: (all = false) => request<{ loans: Loan[]; everyone: boolean }>('GET', `/api/loans?all=${all}`),
   lend: (data: { balanceId: string; quantity?: number; dueDate?: string; borrowerId?: string; notes?: string }, key: string) =>
     request<OpResult>('POST', '/api/loans', data, key),
   returnLoan: (id: string, data: PlaceRef & { notes?: string }, key: string) =>
     request<OpResult>('POST', `/api/loans/${id}/return`, data, key),
 
 
-  photos: (entityType: EntityType, entityId: string) =>
+  photos: (entityType: EntityType | 'inbound', entityId: string) =>
     request<{ photos: Photo[] }>('GET', `/api/photos?entityType=${entityType}&entityId=${entityId}`),
   addPhoto: (data: { entityType: EntityType; entityId: string; image: string; thumbnail: string; width: number; height: number }, key: string) =>
     request<{ photo: Photo }>('POST', '/api/photos', data, key),
@@ -514,12 +694,45 @@ export const api = {
     request<{ suggested: string[]; users: Array<{ id: string; fullName: string; roles: string[] }> }>(
       'GET', `/api/notes/recipients?entityType=${entityType}&entityId=${entityId}`,
     ),
-  addNote: (data: { entityType: EntityType; entityId: string; body: string; notify: boolean; recipientIds?: string[] }, key: string) =>
+  addNote: (data: { entityType: EntityType; entityId: string; body: string; notify: boolean; recipientIds?: string[]; parentId?: string }, key: string) =>
     request<{ note: Note; notified: number }>('POST', '/api/notes', data, key),
   notifications: (all = false) => request<{ notifications: AppNotification[] }>('GET', `/api/notifications?all=${all}`),
   unreadCount: () => request<{ unread: number }>('GET', '/api/notifications/count'),
   markRead: (id: string) => request<{ ok: true }>('POST', `/api/notifications/${id}/read`, {}),
   markAllRead: () => request<{ marked: number }>('POST', '/api/notifications/read-all', {}),
+
+  inbound: (status: InboundStatus | 'ALL' = 'PENDING', scope: 'mine' | 'all' = 'mine') =>
+    request<{ items: Inbound[] }>('GET', `/api/inbound?status=${status}&scope=${scope}`),
+  inboundCount: () => request<{ mine: number; received: number; total: number | null }>('GET', '/api/inbound/count'),
+  inboundItem: (id: string) => request<{ item: Inbound; canComplete: boolean; canCancel: boolean }>('GET', `/api/inbound/${id}`),
+  inboundProjects: () => request<{ projects: string[] }>('GET', '/api/inbound/projects'),
+  createInbound: (
+    data: { responsibleUserId?: string; projectId?: string; preReceiptId?: string; containerId?: string; locationId?: string; description?: string; packages?: number; externalReference?: string; photos: PhotoData[] },
+    key: string,
+  ) => request<{ id: string; code: string; responsible: string; notified: boolean; placeCode: string }>('POST', '/api/inbound', data, key),
+  completeInbound: (id: string, data: InboundCompletion, key: string) =>
+    request<{ message: string; materialId: string; finalPlaceCode: string | null; units?: UnitRef[] }>('POST', `/api/inbound/${id}/complete`, data, key),
+  splitUnits: (id: string) => request<{ units: UnitRef[] }>('POST', `/api/materials/${id}/split-units`),
+  reassignInbound: (id: string, data: { responsibleUserId: string; note?: string }, key: string) =>
+    request<{ ok: true; responsible: string }>('POST', `/api/inbound/${id}/reassign`, data, key),
+  cancelInbound: (id: string, reason: string, key: string) =>
+    request<{ ok: true }>('POST', `/api/inbound/${id}/cancel`, { reason }, key),
+
+  projects: (closed = false) => request<{ projects: Project[]; canManage: boolean }>('GET', `/api/projects?closed=${closed}`),
+  projectOptions: () => request<{ projects: ProjectOption[] }>('GET', '/api/projects/options'),
+  project: (id: string) => request<ProjectDetail>('GET', `/api/projects/${id}`),
+  createProject: (data: ProjectInput & { code: string; name: string; responsibleIds: string[] }) =>
+    request<{ id: string; code: string }>('POST', '/api/projects', data),
+  updateProject: (id: string, data: ProjectInput) => request<{ project: Project }>('PATCH', `/api/projects/${id}`, data),
+  setContainerProject: (containerId: string, projectId: string | null) =>
+    request<{ ok: true }>('PUT', `/api/containers/${containerId}/project`, { projectId }),
+
+  preReceipts: (scope: 'mine' | 'open' = 'mine') =>
+    request<{ items: PreReceipt[]; canSeeAll: boolean }>('GET', `/api/pre-receipts?scope=${scope}`),
+  suggestPreReceipts: (q: string) => request<{ items: PreReceipt[] }>('GET', `/api/pre-receipts/suggest?q=${encodeURIComponent(q)}`),
+  createPreReceipt: (data: { description: string; supplier?: string; orderRef?: string; note?: string; projectId?: string | null; expectedDate?: string | null }) =>
+    request<{ id: string; code: string }>('POST', '/api/pre-receipts', data),
+  cancelPreReceipt: (id: string) => request<{ ok: true }>('POST', `/api/pre-receipts/${id}/cancel`),
 
   search: (q: string) => request<SearchResult>('GET', `/api/search?q=${encodeURIComponent(q)}`),
   tree: () => request<{ locations: TreeLocation[]; containers: TreeContainer[] }>('GET', '/api/tree'),

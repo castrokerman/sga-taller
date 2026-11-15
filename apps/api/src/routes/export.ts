@@ -146,7 +146,7 @@ export function exportRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
          JOIN material_stock s ON s.material_id = m.id
         ORDER BY tree.ruta, m.description`,
     );
-    const data = await workbook('Materiales', [
+    const data = await workbook('Contenidos', [
       { header: 'Referencia', key: 'referencia', width: 13 },
       { header: 'Descripción', key: 'descripcion', width: 40 },
       { header: 'Familia', key: 'familia', width: 30 },

@@ -1,8 +1,10 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { api, errorMessage, formatQty, newOperationKey, type Material, type OpResult, type PlaceRef, type User } from '../api';
 import { shrink } from '../components/ItemExtras';
-import { MaterialPicker, parseNumber, PlacePicker, QtyStepper } from '../components/Stock';
+import { MaterialPicker, parseNumber, PlacePicker, QtyStepper, UnitLabels } from '../components/Stock';
 import { navigate } from '../router';
+import { PendingReceive } from './Inbound';
+import { PlaceSelect } from '../components/PlaceSelect';
 
 type Place = { ref: PlaceRef; code: string };
 const LAST_PLACE = 'sga.entrada-ultimo-sitio';
@@ -19,12 +21,14 @@ const readLast = (): Place | null => {
  * Registrar entrada, paso a paso: qué material (o crearlo con su foto),
  * dónde se guarda (escaneando) y cuánto entra.
  */
-export function ReceivePage({ user }: { user: User }) {
+export function ReceivePage({ user, initial }: { user: User; initial?: string }) {
+  const [mode, setMode] = useState<'choose' | 'direct' | 'pending'>(initial === 'pendiente' ? 'pending' : initial === 'directa' ? 'direct' : 'choose');
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [material, setMaterial] = useState<Material | null>(null);
   const [place, setPlace] = useState<Place | null>(null);
   const [result, setResult] = useState<OpResult | null>(null);
   const [last, setLast] = useState<Place | null>(readLast);
+  const [scanning, setScanning] = useState(false);
 
   const choosePlace = (p: Place) => {
     setPlace(p);
@@ -56,14 +60,32 @@ export function ReceivePage({ user }: { user: User }) {
       <div className="page-head">
         <div>
           <h2>Registrar entrada</h2>
-          <p className="muted nomargin">Material que llega al almacén o que vuelve a él.</p>
+          <p className="muted nomargin">Lo que llega al almacén o vuelve a él.</p>
         </div>
       </div>
 
+      {mode === 'choose' && (
+        <div className="mode-choice">
+          <button className="mode-card" onClick={() => setMode('pending')}>
+            <span className="mode-icon" aria-hidden="true">📷</span>
+            <b>Lo identifica el responsable</b>
+            <span>No sabes qué es: haz una foto, di de quién es y dónde lo dejas. Le llega un aviso para completar el registro.</span>
+          </button>
+          <button className="mode-card" onClick={() => setMode('direct')}>
+            <span className="mode-icon" aria-hidden="true">✓</span>
+            <b>Sé lo que es</b>
+            <span>Lo eliges del catálogo (o lo das de alta), escaneas dónde lo guardas y la cantidad.</span>
+          </button>
+        </div>
+      )}
+
+      {mode === 'pending' && <PendingReceive user={user} onBack={() => setMode('choose')} />}
+
+      {mode === 'direct' && (<>
       <ol className="steps">
         <li className={step === 1 ? 'on' : step > 1 ? 'done' : undefined}>
           <button disabled={step === 4} onClick={() => setStep(1)}>
-            1. Material{material && step > 1 ? `: ${material.description}` : ''}
+            1. Contenido{material && step > 1 ? `: ${material.description}` : ''}
           </button>
         </li>
         <li className={step === 2 ? 'on' : step > 2 ? 'done' : undefined}>
@@ -78,14 +100,14 @@ export function ReceivePage({ user }: { user: User }) {
 
       {step === 1 && (
         <div className="card form op-form">
-          <h3>¿Qué material entra?</h3>
+          <h3>¿Qué contenido entra?</h3>
           <MaterialPicker
             user={user}
             onPick={(m) => {
               setMaterial(m);
               setStep(place ? 3 : 2);
             }}
-            onCancel={() => navigate('inicio')}
+            onCancel={() => setMode('choose')}
           />
         </div>
       )}
@@ -96,12 +118,31 @@ export function ReceivePage({ user }: { user: User }) {
           <p className="confirm">
             <strong>{material.description}</strong> · {material.internalRef}
           </p>
-          {last && (
-            <button className="btn btn-big-inline last-place" onClick={() => choosePlace(last)}>
-              Al mismo sitio que la última vez: <strong className="mono">{last.code}</strong>
-            </button>
+          {scanning ? (
+            <PlacePicker
+              hint="Escanea la etiqueta de la caja, bandeja o ubicación, o escribe su código."
+              scanOnly
+              onPick={(p) => { setScanning(false); choosePlace(p); }}
+              onCancel={() => setScanning(false)}
+            />
+          ) : (
+            <>
+              <PlaceSelect value={null} onChange={(p) => p && choosePlace(p)} />
+              <div className="place-extra">
+                {last && (
+                  <button className="linkbtn" onClick={() => choosePlace(last)}>
+                    El mismo que la última vez: <strong className="mono">{last.code}</strong>
+                  </button>
+                )}
+                <button className="linkbtn" onClick={() => setScanning(true)}>
+                  📷 O escanea su etiqueta
+                </button>
+              </div>
+              <div className="actions">
+                <button className="btn" onClick={() => setStep(1)}>← Otro contenido</button>
+              </div>
+            </>
           )}
-          <PlacePicker hint="Escanea la etiqueta de la caja, bandeja o ubicación, o escribe su código." onPick={choosePlace} onCancel={() => setStep(1)} />
         </div>
       )}
 
@@ -123,6 +164,12 @@ export function ReceivePage({ user }: { user: User }) {
           <h3>Entrada registrada</h3>
           <p>{result.message}.</p>
           <p className="muted small">Movimiento n.º {result.movementNumber}, a nombre de {user.fullName}.</p>
+          {result.units && result.units.length > 0 && (
+            <>
+              <p className="small nomargin">Pega a cada unidad su etiqueta, para que se pueda escanear al prestarla o moverla.</p>
+              <UnitLabels units={result.units} />
+            </>
+          )}
           <div className="actions actions-wrap">
             <button className="btn btn-primary" onClick={() => restart('place')}>
               Otra entrada en {place.code}
@@ -135,8 +182,8 @@ export function ReceivePage({ user }: { user: User }) {
             </button>
           </div>
           <div className="actions actions-wrap">
-            <a className="linkbtn" href={`#/material/${material.id}`}>
-              Ver la ficha del material
+            <a className="linkbtn" href={`#/contenido/${material.id}`}>
+              Ver la ficha del contenido
             </a>
             <a className="linkbtn" href={place.ref.containerId ? `#/contenedor/${place.ref.containerId}` : `#/almacen/${place.ref.locationId}`}>
               Ver {place.code}
@@ -144,6 +191,7 @@ export function ReceivePage({ user }: { user: User }) {
           </div>
         </div>
       )}
+      </>)}
     </>
   );
 }
@@ -203,7 +251,16 @@ function QuantityStep(props: { user: User; material: Material; place: Place; onB
         {material.places > 0 && !untracked && <span className="muted"> · ya hay {formatQty(material.quantity, material.unitCode, material.quantityTracking)} en total</span>}
       </p>
       {untracked ? (
-        <p className="muted">Este material no se cuenta: solo se anota que hay en este sitio.</p>
+        <p className="muted">Este contenido no se cuenta: solo se anota que hay en este sitio.</p>
+      ) : material.unitTracked ? (
+        <>
+          <span className="field-l">¿Cuántas unidades?</span>
+          <QtyStepper value={qty} onChange={setQty} decimals={0} unit="unidades" autoFocus />
+          <small className="muted">
+            {material.contentTypeName} se lleva por unidad: cada una tendrá su propio código y su etiqueta QR
+            {material.places > 0 || (material.onLoan ?? 0) > 0 ? ` (esta ya está registrada, así que se crearán unidades nuevas con los mismos datos)` : ''}.
+          </small>
+        </>
       ) : (
         <>
           <span className="field-l">Cantidad</span>
@@ -211,12 +268,14 @@ function QuantityStep(props: { user: User; material: Material; place: Place; onB
         </>
       )}
       <div className="grid-2" style={{ marginTop: '1rem' }}>
+        {!material.unitTracked && (
         <label className="field">
           <span>
             Lote {material.lotTracked ? '' : <span className="muted">(opcional)</span>}
           </span>
           <input value={lot} onChange={(e) => setLot(e.target.value)} maxLength={60} required={material.lotTracked} />
         </label>
+        )}
         <label className="field">
           <span>
             Albarán o pedido <span className="muted">(opcional)</span>
@@ -232,7 +291,7 @@ function QuantityStep(props: { user: User; material: Material; place: Place; onB
       </label>
       {canPhoto && (
         <div className="field">
-          <span className="field-l">Foto del material <span className="muted">(opcional)</span></span>
+          <span className="field-l">Foto del contenido <span className="muted">(opcional)</span></span>
           <label className="btn">
             {photo ? `📷 ${photo.name}` : '📷 Hacer o elegir foto'}
             <input ref={input} type="file" accept="image/*" hidden onChange={(e) => setPhoto(e.target.files?.[0] ?? null)} />
@@ -242,7 +301,7 @@ function QuantityStep(props: { user: User; material: Material; place: Place; onB
               Quitar
             </button>
           )}
-          <small className="muted" style={{ display: 'block' }}>Se añade a la ficha del material.</small>
+          <small className="muted" style={{ display: 'block' }}>Se añade a la ficha del contenido.</small>
         </div>
       )}
       {canReturn && (
@@ -250,7 +309,7 @@ function QuantityStep(props: { user: User; material: Material; place: Place; onB
           <input type="checkbox" checked={isReturn} onChange={(e) => setIsReturn(e.target.checked)} />
           <span>
             <strong>Es una devolución</strong>
-            <small className="muted"> — material que se sacó y vuelve sin usar</small>
+            <small className="muted"> — contenido que se sacó y vuelve sin usar</small>
           </span>
         </label>
       )}
@@ -260,7 +319,12 @@ function QuantityStep(props: { user: User; material: Material; place: Place; onB
           ← Otro sitio
         </button>
         <button className="btn btn-primary btn-big-inline" disabled={Boolean(busy) || (!untracked && !n)}>
-          {busy ?? (untracked ? 'Registrar entrada' : `Registrar ${n ? formatQty(n, material.unitCode) : ''}`)}
+          {busy ??
+            (untracked
+              ? 'Registrar entrada'
+              : material.unitTracked
+                ? `Registrar ${n ?? ''} ${n === 1 ? 'unidad' : 'unidades'}`
+                : `Registrar ${n ? formatQty(n, material.unitCode) : ''}`)}
         </button>
       </div>
     </form>

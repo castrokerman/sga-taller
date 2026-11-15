@@ -1,5 +1,5 @@
 import type pg from 'pg';
-import { badRequest, conflict, notFound } from '../errors.js';
+import { badRequest, conflict, forbidden, notFound } from '../errors.js';
 
 /**
  * Núcleo del inventario. Toda variación de stock pasa por aquí:
@@ -28,21 +28,27 @@ export interface MaterialInfo {
   lotTracked: boolean;
   isLoanable: boolean;
   status: string;
+  /** Su tipo se lleva por unidad: cada contenido es una sola unidad física. */
+  unitTracked: boolean;
 }
 
 export async function getMaterial(c: pg.PoolClient, id: string): Promise<MaterialInfo> {
   const r = await c.query(
     `SELECT m.id, m.internal_ref AS "internalRef", m.description, m.unit_code AS "unitCode", u.decimals,
-            m.quantity_tracking AS tracking, m.lot_tracked AS "lotTracked", m.is_loanable AS "isLoanable", m.status
-       FROM material m JOIN unit_of_measure u ON u.code = m.unit_code WHERE m.id = $1`,
+            m.quantity_tracking AS tracking, m.lot_tracked AS "lotTracked", m.is_loanable AS "isLoanable", m.status,
+            t.unit_tracked AS "unitTracked"
+       FROM material m JOIN unit_of_measure u ON u.code = m.unit_code JOIN content_type t ON t.code = m.content_type_code
+      WHERE m.id = $1`,
     [id],
   );
-  if (!r.rows[0]) throw notFound('El material no existe');
+  if (!r.rows[0]) throw notFound('El contenido no existe');
   return r.rows[0];
 }
 
 /** Comprueba que el sitio existe y admite material: un contenedor activo o una ubicación activa. */
-export async function resolvePlace(c: pg.PoolClient, p: { containerId?: string | null; locationId?: string | null }): Promise<Place> {
+export async function resolvePlace(
+  c: pg.PoolClient, p: { containerId?: string | null; locationId?: string | null }, opts: { forContent?: boolean } = {},
+): Promise<Place> {
   if (Boolean(p.containerId) === Boolean(p.locationId)) {
     throw badRequest('Indica dónde: un contenedor o una ubicación', 'SITIO_NO_VALIDO');
   }
@@ -52,14 +58,31 @@ export async function resolvePlace(c: pg.PoolClient, p: { containerId?: string |
     if (r.rows[0].status !== 'ACTIVE') throw conflict('El contenedor está retirado', 'CONTENEDOR_RETIRADO');
     return { containerId: p.containerId, locationId: null, code: r.rows[0].code };
   }
-  const r = await c.query(`SELECT code, active FROM storage_location WHERE id = $1`, [p.locationId]);
+  const r = await c.query(
+    `SELECT l.code, l.active, t.holds_content, t.name AS type_name FROM storage_location l
+       JOIN location_type t ON t.id = l.location_type_id WHERE l.id = $1`,
+    [p.locationId],
+  );
   if (!r.rows[0]) throw badRequest('La ubicación no existe', 'UBICACION_NO_EXISTE');
   if (!r.rows[0].active) throw conflict('La ubicación está desactivada', 'UBICACION_INACTIVA');
+  // El contenido va siempre en un contenedor, salvo en las ubicaciones que hacen de contenedor (armarios, cajoneras…).
+  if ((opts.forContent ?? true) && !r.rows[0].holds_content) {
+    throw conflict(
+      `${r.rows[0].code} es ${String(r.rows[0].type_name).toLowerCase()} y solo aloja contenedores: mete el contenido en una caja o bandeja de ahí`,
+      'SOLO_CONTENEDORES',
+    );
+  }
   return { containerId: null, locationId: p.locationId!, code: r.rows[0].code };
 }
 
 /** Comprueba que una cantidad encaja con la unidad del material. */
 export function checkQuantity(m: MaterialInfo, quantity: number | null | undefined, what = 'La cantidad'): number | null {
+  if (m.unitTracked) {
+    if (quantity !== undefined && quantity !== null && quantity !== 1) {
+      throw badRequest(`${m.internalRef} es una unidad con su propio código: la cantidad es siempre 1`, 'UNIDAD_UNICA');
+    }
+    return 1;
+  }
   if (m.tracking === 'NOT_TRACKED') return null;
   if (quantity === null || quantity === undefined || !Number.isFinite(quantity) || quantity <= 0) {
     throw badRequest(`${what} debe ser mayor que cero`, 'CANTIDAD_NO_VALIDA');
@@ -106,7 +129,7 @@ export async function lockBalance(c: pg.PoolClient, id: string): Promise<Balance
     [id],
   );
   const b = r.rows[0];
-  if (!b) throw notFound('Ese material ya no está en ese sitio. Actualiza la pantalla');
+  if (!b) throw notFound('Ese contenido ya no está en ese sitio. Actualiza la pantalla');
   const a = await c.query(
     `SELECT coalesce(sum(quantity) FILTER (WHERE availability = 'RESTRICTED'), 0)::float AS restricted
        FROM stock_allocation WHERE stock_balance_id = $1`,
@@ -114,6 +137,45 @@ export async function lockBalance(c: pg.PoolClient, id: string): Promise<Balance
   );
   b.free = b.quantity === null ? null : b.quantity - a.rows[0].restricted;
   return b;
+}
+
+/**
+ * Proyecto al que pertenece un contenedor: el suyo o el del primer contenedor
+ * que lo contiene y tenga proyecto (una bolsa dentro de la caja del proyecto
+ * también es del proyecto).
+ */
+export async function projectOfContainer(
+  db: pg.PoolClient | pg.Pool, containerId: string | null,
+): Promise<{ id: string; code: string; name: string } | null> {
+  if (!containerId) return null;
+  const r = await db.query(
+    `WITH RECURSIVE up AS (
+       SELECT id, parent_container_id, project_id, 0 AS depth FROM container WHERE id = $1
+       UNION ALL
+       SELECT k.id, k.parent_container_id, k.project_id, up.depth + 1 FROM container k JOIN up ON k.id = up.parent_container_id
+     )
+     SELECT p.id, p.code, p.name FROM up JOIN project p ON p.id = up.project_id ORDER BY up.depth LIMIT 1`,
+    [containerId],
+  );
+  return r.rows[0] ?? null;
+}
+
+/**
+ * Lo que está en un contenedor de un proyecto está reservado: solo lo sacan,
+ * trasladan o prestan sus responsables y los responsables de almacén.
+ */
+export async function assertCanTake(
+  c: pg.PoolClient, user: { id: string; permissions: string[] }, containerId: string | null, verb: string,
+): Promise<void> {
+  const project = await projectOfContainer(c, containerId);
+  if (!project || user.permissions.includes('project.manage')) return;
+  const r = await c.query(
+    `SELECT 1 FROM project_member WHERE project_id = $1 AND user_id = $2 AND role = 'RESPONSIBLE'`,
+    [project.id, user.id],
+  );
+  if (!r.rowCount) {
+    throw forbidden(`Está reservado para el proyecto ${project.code} · ${project.name}: solo sus responsables pueden ${verb}lo`);
+  }
 }
 
 export async function createMovement(
@@ -214,10 +276,10 @@ export async function applyLine(
   return after;
 }
 
-async function deleteBalance(c: pg.PoolClient, id: string) {
+export async function deleteBalance(c: pg.PoolClient, id: string) {
   const a = await c.query(`SELECT 1 FROM stock_allocation WHERE stock_balance_id = $1 AND quantity > 0 LIMIT 1`, [id]);
   if (a.rowCount) {
-    throw conflict('Ese material tiene cantidad asignada a un proyecto y no puede vaciarse así', 'STOCK_ASIGNADO');
+    throw conflict('Ese contenido tiene cantidad asignada a un proyecto y no puede vaciarse así', 'STOCK_ASIGNADO');
   }
   await c.query(`DELETE FROM stock_allocation WHERE stock_balance_id = $1`, [id]);
   await c.query(`DELETE FROM stock_balance WHERE id = $1`, [id]);
@@ -249,4 +311,56 @@ export async function placeCode(c: pg.PoolClient | pg.Pool, containerId: string 
     ? await c.query(`SELECT code FROM container WHERE id = $1`, [containerId])
     : await c.query(`SELECT code FROM storage_location WHERE id = $1`, [locationId]);
   return (r.rows[0]?.code as string) ?? '—';
+}
+
+/** Unidades que tiene ya un contenido: en el almacén y prestadas. */
+export async function heldUnits(c: pg.PoolClient, materialId: string): Promise<number> {
+  const r = await c.query(
+    `SELECT coalesce((SELECT sum(quantity) FROM stock_balance WHERE material_id = $1), 0)
+          + coalesce((SELECT sum(quantity) FROM tool_loan WHERE material_id = $1 AND status = 'OPEN'), 0) AS n`,
+    [materialId],
+  );
+  return Number(r.rows[0].n);
+}
+
+/**
+ * Crea otra unidad de un contenido por unidad: un contenido nuevo con los
+ * mismos datos y fotos, su propio código (el siguiente de su tipo) y su QR.
+ */
+export async function copyUnit(c: pg.PoolClient, m: MaterialInfo, userId: string): Promise<MaterialInfo> {
+  const r = await c.query(
+    `INSERT INTO material (internal_ref, description, family_id, manufacturer, manufacturer_ref, material_spec, quality_grade,
+                           dimensions, unit_code, quantity_tracking, lot_tracked, is_loanable, notes, content_type_code)
+     SELECT t.code_prefix || '-' || lpad(nextval('material_ref_seq')::text, 6, '0'), m.description, m.family_id, m.manufacturer,
+            m.manufacturer_ref, m.material_spec, m.quality_grade, m.dimensions, m.unit_code, m.quantity_tracking, m.lot_tracked,
+            m.is_loanable, m.notes, m.content_type_code
+       FROM material m JOIN content_type t ON t.code = m.content_type_code WHERE m.id = $1
+     RETURNING id`,
+    [m.id],
+  );
+  const id = r.rows[0].id as string;
+  await c.query(
+    `INSERT INTO photo (entity_type, entity_id, position, mime_type, width, height, image, thumbnail, caption, uploaded_by)
+     SELECT 'material', $2, position, mime_type, width, height, image, thumbnail, caption, $3
+       FROM photo WHERE entity_type = 'material' AND entity_id = $1`,
+    [m.id, id, userId],
+  );
+  return getMaterial(c, id);
+}
+
+/**
+ * Reparte n unidades de un contenido por unidad: el propio contenido si aún
+ * no tiene ninguna, y copias para el resto. Para los demás tipos, el mismo.
+ */
+export async function unitTargets(c: pg.PoolClient, m: MaterialInfo, n: number | null | undefined, userId: string): Promise<MaterialInfo[]> {
+  if (!m.unitTracked) return [m];
+  const count = n ?? 1;
+  if (!Number.isInteger(count) || count < 1) {
+    throw badRequest('Las herramientas y equipos se registran por unidades enteras', 'CANTIDAD_NO_VALIDA');
+  }
+  if (count > 200) throw badRequest('Como mucho 200 unidades de una vez', 'CANTIDAD_NO_VALIDA');
+  const out: MaterialInfo[] = [];
+  if ((await heldUnits(c, m.id)) === 0) out.push(m);
+  while (out.length < count) out.push(await copyUnit(c, m, userId));
+  return out;
 }

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { api, errorMessage, formatQty, photoUrl, TRACKING_NAMES, type Family, type Material, type MaterialInput, type Unit, type User } from '../api';
+import { api, errorMessage, formatQty, photoUrl, TRACKING_NAMES, type ContentType, type Family, type Material, type MaterialInput, type Unit, type User } from '../api';
 import { Highlight, optionsFrom, useListControls, type ListConfig } from '../components/ListControls';
 import { navigate } from '../router';
 import { BulkEditor, type BulkChanges } from '../components/BulkEditor';
+import { PhotoField, uploadMaterialPhoto } from '../components/PhotoField';
 
 const FAMILY_KEY = 'sga.familia-elegida';
 
@@ -73,12 +74,12 @@ export function MaterialsPage({ user }: { user: User }) {
         <a href="#/inicio">Inicio</a>
         <span>
           <i>›</i>
-          <strong>Materiales</strong>
+          <strong>Contenidos</strong>
         </span>
       </nav>
       <div className="page-head">
         <div>
-          <h2>Materiales</h2>
+          <h2>Contenidos</h2>
           <p className="muted nomargin">Catálogo de todo lo que se guarda en el almacén</p>
         </div>
         <div className="push-right row-actions">
@@ -97,7 +98,7 @@ export function MaterialsPage({ user }: { user: User }) {
           )}
           {can('material.manage') && (
             <button className="btn btn-primary" onClick={() => { setBulk(false); setCreating(true); }}>
-              + Nuevo material
+              + Nuevo contenido
             </button>
           )}
         </div>
@@ -119,7 +120,8 @@ export function MaterialsPage({ user }: { user: User }) {
       )}
       {creating && (
         <MaterialForm
-          title="Nuevo material"
+          title="Nuevo contenido"
+          canPhoto={user.permissions.includes('photo.add')}
           initial={family ? { familyId: family.id, unitCode: family.defaultUnitCode ?? undefined } : undefined}
           onCancel={() => setCreating(false)}
           onDone={(m) => navigate(`material/${m.id}`)}
@@ -171,7 +173,7 @@ export function MaterialsPage({ user }: { user: User }) {
             <p className="muted">Cargando…</p>
           ) : materials.length === 0 ? (
             <p className="alert alert-info">
-              Todavía no hay materiales. {can('material.manage') ? 'Crea el primero con «+ Nuevo material», o desde un contenedor con «+ Entrada».' : ''}
+              Todavía no hay contenidos. {can('material.manage') ? 'Crea el primero con «+ Nuevo contenido», o desde un contenedor con «+ Entrada».' : ''}
             </p>
           ) : (
             <>
@@ -180,7 +182,7 @@ export function MaterialsPage({ user }: { user: User }) {
                 <table className="mat-table">
                   <thead>
                     <tr>
-                      <th>Material</th>
+                      <th>Contenido</th>
                       <th className="hide-m">Familia</th>
                       <th className="hide-m">Se cuenta</th>
                       <th className="num">En almacén</th>
@@ -199,7 +201,7 @@ export function MaterialsPage({ user }: { user: User }) {
                             </strong>
                           </a>
                           <div className="muted small">
-                            <Highlight text={m.internalRef} query={list.query} />
+                            <span className="tag tag-type">{m.contentTypeName}</span> <Highlight text={m.internalRef} query={list.query} />
                             {m.manufacturerRef && <> · <Highlight text={m.manufacturerRef} query={list.query} /></>}
                             {m.status === 'OBSOLETE' && <span className="badge badge-off"> De baja</span>}
                             {m.isLoanable && <span className="badge badge-ok"> Prestable</span>}
@@ -219,7 +221,7 @@ export function MaterialsPage({ user }: { user: User }) {
                   </tbody>
                 </table>
               </div>
-              {list.visible.length === 0 && <p className="muted">Ningún material cumple los filtros.</p>}
+              {list.visible.length === 0 && <p className="muted">Ningún contenido cumple los filtros.</p>}
             </>
           )}
         </div>
@@ -231,7 +233,7 @@ export function MaterialsPage({ user }: { user: User }) {
 function materialListConfig(items: Material[]): ListConfig<Material> {
   return {
     storageKey: 'materiales',
-    noun: 'materiales',
+    noun: 'contenidos',
     placeholder: 'Buscar por nombre, referencia, fabricante…',
     text: (m) => [m.description, m.internalRef, m.manufacturer, m.manufacturerRef, m.materialSpec, m.qualityGrade, m.dimensions, m.familyName],
     sorts: [
@@ -243,6 +245,7 @@ function materialListConfig(items: Material[]): ListConfig<Material> {
       { key: 'alta', label: 'Fecha de alta', value: (m) => m.createdAt, defaultDir: 'desc' },
     ],
     filters: [
+      { key: 'tipo', label: 'Tipo', options: optionsFrom(items, (m) => m.contentTypeName), test: (m, v) => m.contentTypeName === v },
       {
         key: 'estado', label: 'Estado del stock',
         options: [
@@ -259,7 +262,7 @@ function materialListConfig(items: Material[]): ListConfig<Material> {
         test: (m, v) => m.quantityTracking === v,
       },
       {
-        key: 'prestable', label: 'Herramientas',
+        key: 'prestable', label: 'Préstamos',
         options: [{ value: 'si', label: 'Solo prestables' }, { value: 'prestado', label: 'Con algo prestado' }],
         test: (m, v) => (v === 'si' ? m.isLoanable : m.onLoan > 0),
       },
@@ -274,26 +277,34 @@ export function MaterialForm(props: {
   initial?: MaterialInput;
   materialId?: string;
   embedded?: boolean;
+  /** Si se ofrece foto al crear (hace falta permiso para añadir fotos). */
+  canPhoto?: boolean;
   onCancel: () => void;
   onDone: (m: Material) => void;
 }) {
   const init = props.initial ?? {};
   const [families, setFamilies] = useState<Family[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
+  const [types, setTypes] = useState<ContentType[]>([]);
   const [f, setF] = useState<MaterialInput>({
     description: '', familyId: '', unitCode: 'ud', quantityTracking: 'EXACT', lotTracked: false, isLoanable: false,
+    contentTypeCode: 'MATERIAL',
     ...init,
   });
+  const unitType = Boolean(types.find((t) => t.code === f.contentTypeCode)?.unitTracked);
   const [min, setMin] = useState(init.minStock != null ? String(init.minStock).replace('.', ',') : '');
   const [more, setMore] = useState(Boolean(init.manufacturer || init.manufacturerRef || init.materialSpec || init.qualityGrade || init.dimensions || init.notes));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [photo, setPhoto] = useState<File | null>(null);
+  const canPhoto = !props.materialId && Boolean(props.canPhoto ?? true);
 
   useEffect(() => {
-    Promise.all([api.families(), api.units()])
-      .then(([fa, u]) => {
+    Promise.all([api.families(), api.units(), api.contentTypes()])
+      .then(([fa, u, t]) => {
         setFamilies(fa.families.filter((x) => x.active || x.id === init.familyId));
         setUnits(u.units);
+        setTypes(t.types.filter((x) => x.active || x.code === init.contentTypeCode));
       })
       .catch((e) => setError(errorMessage(e)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -311,8 +322,8 @@ export function MaterialForm(props: {
       setBusy(false);
       return;
     }
-    const keys = ['description', 'familyId', 'internalRef', 'manufacturer', 'manufacturerRef', 'materialSpec', 'qualityGrade',
-      'dimensions', 'unitCode', 'quantityTracking', 'lotTracked', 'isLoanable', 'notes', 'status'] as const;
+    const keys = ['contentTypeCode', 'description', 'familyId', 'internalRef', 'manufacturer', 'manufacturerRef', 'materialSpec', 'qualityGrade',
+      'dimensions', 'unitCode', 'quantityTracking', 'lotTracked', 'isLoanable', 'notes', 'status', 'serialNumber'] as const;
     const data: MaterialInput = Object.fromEntries(keys.filter((k) => f[k] !== undefined).map((k) => [k, f[k]]));
     data.description = f.description?.trim();
     data.minStock = f.quantityTracking === 'NOT_TRACKED' ? null : minStock;
@@ -325,6 +336,12 @@ export function MaterialForm(props: {
     }
     try {
       const r = props.materialId ? await api.updateMaterial(props.materialId, data) : await api.createMaterial(data);
+      // La foto se sube después de crear el material. Si falla, el material ya está creado.
+      if (canPhoto && photo) {
+        const up = await uploadMaterialPhoto(r.material.id, photo);
+        if (up.id) r.material.photoId = up.id;
+        else window.setTimeout(() => window.alert(`El contenido se ha creado, pero la foto no se ha podido subir (${up.error}). Puedes añadirla desde su ficha.`), 0);
+      }
       props.onDone(r.material);
     } catch (err) {
       setError(errorMessage(err));
@@ -336,6 +353,39 @@ export function MaterialForm(props: {
   const body = (
     <>
       {!props.embedded && <h3>{props.title}</h3>}
+      <div className="field">
+        <span className="field-l">Tipo</span>
+        <div className="pchips">
+          {types.map((t) => (
+            <button
+              type="button"
+              key={t.code}
+              className={`pchip ${f.contentTypeCode === t.code ? 'on' : ''}`}
+              onClick={() =>
+                // En un alta, el tipo propone cómo se cuenta y si se presta.
+                setF((x) => ({
+                  ...x, contentTypeCode: t.code,
+                  ...(props.materialId ? {} : { quantityTracking: t.unitTracked ? 'EXACT' : t.defaultTracking, isLoanable: t.defaultLoanable }),
+                  ...(t.unitTracked ? { quantityTracking: 'EXACT' as const, lotTracked: false } : {}),
+                }))
+              }
+            >
+              {t.name}
+            </button>
+          ))}
+        </div>
+        {(() => {
+          const t = types.find((x) => x.code === f.contentTypeCode);
+          if (!t) return null;
+          return (
+            <small className="muted">
+              {props.materialId
+                ? `Si cambias el tipo, un código automático cambia de prefijo (${t.codePrefix}-…).`
+                : `El código será ${t.codePrefix}-000… salvo que pongas uno propio.`}
+            </small>
+          );
+        })()}
+      </div>
       <label className="field">
         <span>Descripción</span>
         <input value={f.description ?? ''} onChange={(e) => set('description', e.target.value)} maxLength={300} required autoFocus placeholder="Tornillo DIN 912 M6x20 inox A2" />
@@ -371,6 +421,20 @@ export function MaterialForm(props: {
           </select>
         </label>
       </div>
+      {unitType ? (
+        <>
+          <p className="alert alert-info small">
+            {types.find((t) => t.code === f.contentTypeCode)?.name} se lleva <strong>por unidad</strong>: este contenido es una sola unidad, con su
+            propio código y su etiqueta QR. Si entran varias iguales, cada una se registra con su código.
+          </p>
+          <label className="field narrow">
+            <span>
+              Número de serie <span className="muted">(opcional)</span>
+            </span>
+            <input value={f.serialNumber ?? ''} onChange={(e) => set('serialNumber', e.target.value)} maxLength={80} placeholder="El del fabricante" />
+          </label>
+        </>
+      ) : (
       <fieldset className="field">
         <legend>Cómo se cuenta</legend>
         <div className="seg">
@@ -385,8 +449,9 @@ export function MaterialForm(props: {
           ))}
         </div>
       </fieldset>
+      )}
       <div className="grid-2">
-        {f.quantityTracking !== 'NOT_TRACKED' && (
+        {f.quantityTracking !== 'NOT_TRACKED' && !unitType && (
           <label className="field">
             <span>
               Avisar si baja de <span className="muted">(opcional)</span>
@@ -398,7 +463,7 @@ export function MaterialForm(props: {
           <span>
             Referencia interna <span className="muted">(opcional)</span>
           </span>
-          <input value={f.internalRef ?? ''} onChange={(e) => set('internalRef', e.target.value)} maxLength={40} placeholder={props.materialId ? '' : 'Se pone sola: MAT-000001…'} />
+          <input value={f.internalRef ?? ''} onChange={(e) => set('internalRef', e.target.value)} maxLength={40} placeholder={props.materialId ? '' : `Se pone sola: ${types.find((t) => t.code === f.contentTypeCode)?.codePrefix ?? 'MAT'}-000001…`} />
         </label>
       </div>
       <label className="check">
@@ -408,13 +473,15 @@ export function MaterialForm(props: {
           <small className="muted"> — se presta y se devuelve, no se gasta</small>
         </span>
       </label>
+      {!unitType && (
       <label className="check">
         <input type="checkbox" checked={Boolean(f.lotTracked)} onChange={(e) => set('lotTracked', e.target.checked)} />
         <span>
           <strong>Exigir lote en cada entrada</strong>
-          <small className="muted"> — para material con certificado o colada</small>
+          <small className="muted"> — para contenido con certificado o colada</small>
         </span>
       </label>
+      )}
       {!more ? (
         <button type="button" className="linkbtn" onClick={() => setMore(true)}>
           + Fabricante, calidad, dimensiones y notas
@@ -458,13 +525,14 @@ export function MaterialForm(props: {
           </span>
         </label>
       )}
+      {canPhoto && <PhotoField label="Foto del contenido" file={photo} onChange={setPhoto} hint="Se guarda en su ficha. Puedes añadir más después." />}
       {error && <p className="alert alert-error">{error}</p>}
       <div className="actions">
         <button type="button" className="btn" onClick={props.onCancel}>
           Cancelar
         </button>
         <button className="btn btn-primary" disabled={busy}>
-          {busy ? 'Guardando…' : props.materialId ? 'Guardar' : 'Crear material'}
+          {busy ? (photo ? 'Guardando y subiendo foto…' : 'Guardando…') : props.materialId ? 'Guardar' : 'Crear contenido'}
         </button>
       </div>
     </>
@@ -472,7 +540,7 @@ export function MaterialForm(props: {
 
   return props.embedded ? (
     <form onSubmit={save}>
-      <p className="muted">Material nuevo en el catálogo. Después indicas la cantidad que entra.</p>
+      <p className="muted">Contenido nuevo en el catálogo. Después indicas la cantidad que entra.</p>
       {body}
     </form>
   ) : (
@@ -484,6 +552,10 @@ export function MaterialForm(props: {
 
 /** Edición en tabla de los materiales que se ven en la lista. */
 function BulkMaterials(props: { rows: Material[]; families: Family[]; onClose: (message?: string) => void }) {
+  const [types, setTypes] = useState<ContentType[]>([]);
+  useEffect(() => {
+    api.contentTypes().then((r) => setTypes(r.types)).catch(() => undefined);
+  }, []);
   const famOptions = props.families
     .filter((f) => f.active)
     .map((f) => ({ value: f.id, label: `${'\u00a0\u00a0'.repeat(f.ancestorIds.length - 1)}${f.name}` }));
@@ -499,24 +571,27 @@ function BulkMaterials(props: { rows: Material[]; families: Family[]; onClose: (
         } else if (k === 'isLoanable') item.isLoanable = Boolean(v);
         else if (k === 'status') item.status = v as 'ACTIVE' | 'OBSOLETE';
         else if (k === 'familyId') item.familyId = String(v);
+        else if (k === 'contentTypeCode') item.contentTypeCode = String(v);
         else if (k === 'description') item.description = String(v);
         else (item as Record<string, unknown>)[k] = String(v).trim() === '' ? null : String(v);
       }
       return item;
     });
     await api.bulkMaterials(items);
-    return `Guardados los cambios de ${items.length} material${items.length > 1 ? 'es' : ''}`;
+    return `Guardados los cambios de ${items.length} contenido${items.length > 1 ? 's' : ''}`;
   };
 
   return (
     <BulkEditor
-      title={`Editar ${props.rows.length} materiales`}
+      title={`Editar ${props.rows.length} contenidos`}
       hint="Se editan los que se ven en la lista: usa la familia, la búsqueda y los filtros para elegir cuáles. Lo cambiado se marca en amarillo y se guarda todo junto."
       rows={props.rows}
       onSave={save}
       onClose={props.onClose}
       columns={[
         { key: 'ref', label: 'Referencia', type: 'static', get: (m) => m.internalRef },
+        { key: 'contentTypeCode', label: 'Tipo', type: 'select', required: true, fillAll: true, get: (m) => m.contentTypeCode,
+          options: types.filter((t) => t.active).map((t) => ({ value: t.code, label: t.name })), width: '130px' },
         { key: 'description', label: 'Descripción', type: 'text', get: (m) => m.description, width: '260px' },
         { key: 'familyId', label: 'Familia', type: 'select', required: true, fillAll: true, get: (m) => m.familyId, options: famOptions, width: '170px' },
         { key: 'minStock', label: 'Avisar si baja de', type: 'number', decimals: true, fillAll: true,

@@ -34,7 +34,7 @@ async function sessionOf(username: string): Promise<Cookie> {
   return { sga_session: res.cookies.find((c) => c.name === 'sga_session')!.value };
 }
 
-const call = (method: 'GET' | 'POST' | 'PATCH', path: string, cookies: Cookie, payload?: unknown) =>
+const call = (method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: string, cookies: Cookie, payload?: unknown) =>
   app.inject({
     method, url: path, cookies, payload: payload as never,
     headers: { 'x-sga-client': 'web', ...(method === 'POST' ? { 'idempotency-key': randomUUID() } : {}) },
@@ -63,6 +63,8 @@ beforeAll(async () => {
     `UPDATE location_type SET code_prefix = x.p FROM (VALUES ('PASILLO', 'P'), ('ESTANTERIA', 'E'), ('NIVEL', 'N'), ('POSICION', 'S')) AS x (c, p) WHERE code = x.c`,
   );
   await pool.query(`UPDATE app_user SET must_change_password = false`);
+  // Estas pruebas guardan contenido suelto en zonas: aquí la zona hace de contenedor.
+  await pool.query(`UPDATE location_type SET holds_content = true WHERE code = 'ZONA'`);
   [almacen, usuario] = await Promise.all([sessionOf('demo.almacen'), sessionOf('demo.usuario')]);
 });
 
@@ -251,6 +253,32 @@ describe('prefijo por tipo de ubicación', () => {
     admin = { sga_session: res.cookies.find((c) => c.name === 'sga_session')!.value };
   });
 
+  it('eliminar: solo administradores y solo si no deja huella; si no, se desactiva', async () => {
+    const z = await loc('BORRA', 'ZONA');
+    const e = await loc('E1', 'ESTANTERIA', z.id);
+    expect((await call('DELETE', `/api/locations/${e.id}`, almacen)).statusCode).toBe(403);
+    // Con algo dentro, no.
+    const full = await call('DELETE', `/api/locations/${z.id}`, admin);
+    expect(full.statusCode).toBe(409);
+    expect(full.json().error.message).toContain('tiene 1 ubicación dentro');
+    // Vacía y sin historial, sí; desaparece y queda en la auditoría.
+    const ok = await call('DELETE', `/api/locations/${e.id}`, admin);
+    expect(ok.statusCode, ok.body).toBe(200);
+    expect((await call('GET', `/api/locations/${e.id}`, almacen)).statusCode).toBe(404);
+    const a = (await pool.query(`SELECT before_data AS before FROM audit_log WHERE action = 'ubicacion.baja' AND entity_id = $1`, [e.id])).rows[0];
+    expect(a.before.codigo).toBe('BORRA-E01');
+    // Con movimientos en su historial, no: hay que desactivarla.
+    const fam = (await call('GET', '/api/material-families', almacen)).json().families[0].id;
+    const mat = (await call('POST', '/api/materials', almacen, { description: 'FICTICIO Tornillo', familyId: fam, unitCode: 'ud' })).json().material.id;
+    expect((await call('POST', '/api/stock/receipt', almacen, { materialId: mat, locationId: z.id, quantity: 2 })).statusCode).toBe(201);
+    const bal = (await pool.query(`SELECT id FROM stock_balance WHERE material_id = $1`, [mat])).rows[0].id;
+    expect((await call('POST', '/api/stock/withdraw', almacen, { balanceId: bal, quantity: 2 })).statusCode).toBe(200);
+    const hist = await call('DELETE', `/api/locations/${z.id}`, admin);
+    expect(hist.statusCode).toBe(409);
+    expect(hist.json().error.code).toBe('UBICACION_CON_HISTORIAL');
+    expect((await call('GET', `/api/locations/${z.id}`, almacen)).statusCode).toBe(200);
+  });
+
   it('cambiar el prefijo de un tipo recodifica sus ubicaciones y las de dentro', async () => {
     const z = await loc('PREF', 'ZONA');
     const e = await loc('E1', 'ESTANTERIA', z.id);
@@ -343,5 +371,76 @@ describe('auditoría', () => {
     const busq = (await call('GET', '/api/admin/audit?q=MULTI-E10', almacen)).json().entries;
     expect(busq.length).toBeGreaterThan(0);
     expect((await call('GET', '/api/admin/audit', usuario)).statusCode).toBe(403);
+  });
+});
+
+describe('el contenido va siempre en un contenedor', () => {
+  let admin: Cookie;
+  beforeAll(async () => {
+    const res = await app.inject({
+      method: 'POST', url: '/api/auth/login', headers: { 'x-sga-client': 'web' },
+      payload: { username: 'admin', password: config.adminPassword },
+    });
+    admin = { sga_session: res.cookies.find((c) => c.name === 'sga_session')!.value };
+  });
+  it('solo los muebles (armario, cajonera, cajón) guardan contenido directamente', async () => {
+    const types = (await call('GET', '/api/location-types', almacen)).json().types;
+    expect(types.filter((t: { holdsContent: boolean }) => t.holdsContent).map((t: { code: string }) => t.code).sort()).toEqual(['ARMARIO', 'CAJON', 'CAJONERA', 'ZONA']);
+    const z = await loc('CONT', 'ZONA');
+    const est = await loc('E1', 'ESTANTERIA', z.id);
+    const arm = await loc('A1', 'ARMARIO', z.id);
+    const fam = (await call('GET', '/api/material-families', almacen)).json().families[0].id;
+    const mat = (await call('POST', '/api/materials', almacen, { description: 'FICTICIO Arandela', familyId: fam, unitCode: 'ud' })).json().material.id;
+    const no = await call('POST', '/api/stock/receipt', almacen, { materialId: mat, locationId: est.id, quantity: 5 });
+    expect(no.statusCode).toBe(409);
+    expect(no.json().error.code).toBe('SOLO_CONTENEDORES');
+    expect(no.json().error.message).toContain('solo aloja contenedores');
+    expect((await call('POST', '/api/stock/receipt', almacen, { materialId: mat, locationId: arm.id, quantity: 5 })).statusCode).toBe(201);
+    // Se puede cambiar en Tipos.
+    expect((await call('PATCH', '/api/location-types/ESTANTERIA', admin, { holdsContent: true })).statusCode).toBe(200);
+    expect((await call('POST', '/api/stock/receipt', almacen, { materialId: mat, locationId: est.id, quantity: 2 })).statusCode).toBe(201);
+    // Un estimado también: al meterlo en la caja no deja una línea a cero suelta.
+    const est2 = (await call('POST', '/api/materials', almacen, { description: 'FICTICIO Bridas', familyId: fam, unitCode: 'ud', quantityTracking: 'ESTIMATED' })).json().material.id;
+    expect((await call('POST', '/api/stock/receipt', almacen, { materialId: est2, locationId: est.id, quantity: 50 })).statusCode).toBe(201);
+    await call('PATCH', '/api/location-types/ESTANTERIA', admin, { holdsContent: false });
+    // Lo que quedó suelto se avisa y se mete en una caja nueva con un botón.
+    const d = (await call('GET', `/api/locations/${est.id}`, almacen)).json().location;
+    expect(d).toMatchObject({ holdsContent: false, looseLines: 2 });
+    const box = await call('POST', `/api/locations/${est.id}/box-loose`, almacen, {});
+    expect(box.statusCode, box.body).toBe(200);
+    expect(box.json().code).toMatch(/^CAJ-/);
+    const inBox = (await pool.query(`SELECT quantity::float AS q FROM stock_balance WHERE container_id = $1 ORDER BY quantity`, [box.json().containerId])).rows;
+    expect(inBox).toEqual([{ q: 2 }, { q: 50 }]);
+    expect((await call('GET', `/api/locations/${est.id}`, almacen)).json().location.looseLines).toBe(0);
+  });
+
+  it('el contenedor tiene una descripción de su contenido, editable y que se busca', async () => {
+    const z = await loc('DESC', 'ZONA');
+    const r = await call('POST', '/api/containers', almacen, { typeCode: 'CAJA', locationId: z.id, contentDescription: 'Tornillería M6 inox' });
+    expect(r.statusCode, r.body).toBe(201);
+    const id = r.json().containers[0].id;
+    expect((await call('GET', `/api/containers/${id}`, almacen)).json().container.contentDescription).toBe('Tornillería M6 inox');
+    expect((await call('PATCH', `/api/containers/${id}`, almacen, { contentDescription: 'Arandelas M8' })).statusCode).toBe(200);
+    expect((await call('GET', `/api/containers/${id}`, almacen)).json().container.contentDescription).toBe('Arandelas M8');
+    const found = (await call('GET', '/api/search?q=arandelas', almacen)).json().containers;
+    expect(found.map((c: { id: string }) => c.id)).toContain(id);
+    expect((await call('PATCH', `/api/containers/${id}`, almacen, { contentDescription: '' })).statusCode).toBe(200);
+    expect((await call('GET', `/api/containers/${id}`, almacen)).json().container.contentDescription).toBeNull();
+  });
+
+  it('cada tipo de ubicación puede limitar qué contenedores admite', async () => {
+    const z = await loc('PALETS', 'ZONA');
+    const ok = await call('PATCH', '/api/location-types/AREA', admin, { allowedContainerTypes: ['PALET'] });
+    expect(ok.statusCode, ok.body).toBe(200);
+    const area = await loc('AR1', 'AREA', z.id);
+    const caja = await call('POST', '/api/containers', almacen, { typeCode: 'CAJA', locationId: area.id });
+    expect(caja.statusCode).toBe(409);
+    expect(caja.json().error.message).toContain('no caben contenedores de tipo Caja');
+    expect((await call('POST', '/api/containers', almacen, { typeCode: 'PALET', locationId: area.id })).statusCode).toBe(201);
+    // Mover una caja ahí tampoco se deja.
+    const otra = (await call('POST', '/api/containers', almacen, { typeCode: 'CAJA', locationId: z.id })).json().containers[0].id;
+    expect((await call('POST', `/api/containers/${otra}/move`, almacen, { toLocationId: area.id })).statusCode).toBe(409);
+    expect((await call('GET', '/api/location-types', almacen)).json().types.find((t: { code: string }) => t.code === 'AREA').allowedContainerTypes).toEqual(['PALET']);
+    await call('PATCH', '/api/location-types/AREA', admin, { allowedContainerTypes: [] });
   });
 });

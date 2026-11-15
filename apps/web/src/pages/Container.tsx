@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { api, ApiError, errorMessage, formatDateTime, newOperationKey, type ContainerDetail, type ScanHit, type User } from '../api';
+import { api, ApiError, errorMessage, formatDateTime, newOperationKey, photoUrl, type ContainerDetail, type Project, type ScanHit, type User } from '../api';
 import { Breadcrumbs, ContainerCard, containerListConfig, LabelPanel } from '../components/Common';
 import { useListControls } from '../components/ListControls';
 import { Scanner } from '../components/Scanner';
+import { MoveContainersPanel } from '../components/MoveContainers';
 import { StockSection } from '../components/Stock';
 import { ItemExtras } from '../components/ItemExtras';
 import { BulkContainers, ContainerForm } from './Warehouse';
 
-type Panel = 'none' | 'move' | 'inside' | 'labels' | 'edit' | 'duplicate' | 'bulk';
+type Panel = 'none' | 'move' | 'inside' | 'labels' | 'edit' | 'duplicate' | 'bulk' | 'project';
 
 const place = (location: string | null, container: string | null) => location ?? container ?? '—';
 
@@ -18,6 +19,13 @@ export function ContainerPage({ user, containerId }: { user: User; containerId: 
   const [panel, setPanel] = useState<Panel>('none');
 
   const can = (p: string) => user.permissions.includes(p);
+  // Proyectos a los que puedo asignar contenedores: todos si gestiono proyectos; si no, de los que soy responsable.
+  const [myProjects, setMyProjects] = useState<Project[]>([]);
+  useEffect(() => {
+    if (!can('project.read')) return;
+    api.projects().then((r) => setMyProjects(r.canManage ? r.projects : r.projects.filter((p) => p.myRole === 'RESPONSIBLE'))).catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const inside = detail?.children ?? [];
   const insideList = useListControls(inside, containerListConfig(inside, 'contenedores-dentro'));
 
@@ -75,6 +83,11 @@ export function ContainerPage({ user, containerId }: { user: User; containerId: 
       <Breadcrumbs locations={detail.locationPath} containers={detail.containerPath} current={c.id} />
 
       <div className="page-head">
+        {c.photoId && (
+          <a className="head-thumb" href={photoUrl(c.photoId, 'image')} target="_blank" rel="noreferrer" title="Ver la foto">
+            <img src={photoUrl(c.photoId)} alt="" />
+          </a>
+        )}
         <div>
           <h2>{c.code}</h2>
           <p className="muted nomargin">
@@ -82,9 +95,23 @@ export function ContainerPage({ user, containerId }: { user: User; containerId: 
             {c.responsibleName && ` · Responsable: ${c.responsibleName}`}
           </p>
           {c.description && <p className="nomargin">{c.description}</p>}
+          {c.contentDescription && (
+            <p className="nomargin">
+              <span className="tag tag-content">📦 {c.contentDescription}</span>
+            </p>
+          )}
         </div>
         <span className={`badge push-right ${active ? 'badge-ok' : 'badge-off'}`}>{active ? 'Activo' : 'Retirado'}</span>
       </div>
+      {c.projectId && (
+        <p className="alert alert-project">
+          🔒 Reservado para el proyecto{' '}
+          <a href={`#/proyecto/${c.projectId}`}>
+            <strong className="mono">{c.projectCode}</strong> · {c.projectName}
+          </a>
+          . Lo que hay dentro solo lo pueden sacar sus responsables y los responsables de almacén.
+        </p>
+      )}
 
       {active && where && (
         <p className="where">
@@ -110,6 +137,11 @@ export function ContainerPage({ user, containerId }: { user: User; containerId: 
             Nuevo contenedor dentro
           </button>
         )}
+        {active && myProjects.length > 0 && (
+          <button className="btn" onClick={() => open('project')}>
+            Proyecto
+          </button>
+        )}
         {can('label.print') && (
           <button className="btn" onClick={() => open('labels')}>
             Etiqueta QR
@@ -133,6 +165,16 @@ export function ContainerPage({ user, containerId }: { user: User; containerId: 
       </div>
 
       {panel === 'move' && <MovePanel detail={detail} onCancel={() => setPanel('none')} onDone={done} />}
+      {panel === 'project' && (
+        <ProjectPanel
+          containerId={c.id}
+          current={c.projectId}
+          currentLabel={c.projectId ? `${c.projectCode} · ${c.projectName}` : null}
+          projects={myProjects}
+          onCancel={() => setPanel('none')}
+          onDone={done}
+        />
+      )}
       {panel === 'inside' && (
         <ContainerForm
           where={{ parentContainerId: c.id }}
@@ -217,96 +259,20 @@ export function ContainerPage({ user, containerId }: { user: User; containerId: 
 /** Mover: se escanea (o se teclea) el destino y se confirma. */
 function MovePanel(props: { detail: ContainerDetail; onCancel: () => void; onDone: (text: string) => void }) {
   const c = props.detail.container;
-  const [dest, setDest] = useState<ScanHit | null>(null);
-  const [key, setKey] = useState(newOperationKey);
-  const [error, setError] = useState<string | null>(null);
-  const [warning, setWarning] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const onCode = async (code: string) => {
-    if (busy || dest) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const hit = await api.scan(code);
-      if (hit.kind === 'equipment') setError('Un equipo no puede ser destino de un contenedor');
-      else if (hit.id === c.id) setError('Has escaneado el propio contenedor. Escanea el sitio de destino');
-      else {
-        setDest(hit);
-        setKey(newOperationKey());
-        setWarning(null);
-      }
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const confirm = async (force: boolean) => {
-    if (!dest) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const r = await api.moveContainer(
-        c.id,
-        { ...(dest.kind === 'location' ? { toLocationId: dest.id } : { toParentContainerId: dest.id }), force },
-        key,
-      );
-      const extra = r.descendantsMoved > 0 ? `, con ${r.descendantsMoved} contenedor${r.descendantsMoved > 1 ? 'es' : ''} dentro` : '';
-      props.onDone(`${c.code} movido a ${r.destination}${extra}`);
-    } catch (e) {
-      if (e instanceof ApiError && e.code === 'CAPACIDAD_SUPERADA') {
-        setWarning(e.message);
-        setKey(newOperationKey());
-      } else {
-        setError(errorMessage(e));
-      }
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
-    <div className="card form">
-      <h3>Mover {c.code}</h3>
-      {!dest ? (
-        <>
-          <Scanner onCode={onCode} busy={busy} hint="Escanea el QR del sitio de destino: una ubicación u otro contenedor." />
-          {error && <p className="alert alert-error">{error}</p>}
-          <div className="actions">
-            <button className="btn" onClick={props.onCancel}>
-              Cancelar
-            </button>
-          </div>
-        </>
-      ) : (
-        <>
-          <p className="confirm">
-            Mover <strong>{c.code}</strong> {dest.kind === 'location' ? 'a la ubicación' : 'dentro del contenedor'}{' '}
-            <strong>{dest.code}</strong>
-            {dest.name ? ` (${dest.name})` : ''}
-            {props.detail.children.length > 0 && ', con todo lo que lleva dentro'}.
-          </p>
-          {warning && <p className="alert alert-warn">{warning}. Puedes moverlo de todos modos.</p>}
-          {error && <p className="alert alert-error">{error}</p>}
-          <div className="actions">
-            <button className="btn" onClick={() => { setDest(null); setError(null); setWarning(null); }} disabled={busy}>
-              Otro destino
-            </button>
-            <button className="btn btn-primary btn-big-inline" onClick={() => confirm(Boolean(warning))} disabled={busy}>
-              {busy ? 'Moviendo…' : warning ? 'Mover de todos modos' : 'Confirmar'}
-            </button>
-          </div>
-        </>
-      )}
-    </div>
+    <MoveContainersPanel
+      containers={[{ id: c.id, code: c.code, typeCode: c.typeCode, hasInside: props.detail.children.length > 0 }]}
+      from={c.parentContainerId ?? c.locationId}
+      onCancel={props.onCancel}
+      onDone={props.onDone}
+    />
   );
 }
 
 function EditContainerForm(props: { detail: ContainerDetail; onCancel: () => void; onDone: () => void }) {
   const c = props.detail.container;
   const [description, setDescription] = useState(c.description ?? '');
+  const [contentDescription, setContentDescription] = useState(c.contentDescription ?? '');
   const [reusePolicy, setReusePolicy] = useState(c.reusePolicy);
   const [responsible, setResponsible] = useState(c.responsibleUserId ?? '');
   const [users, setUsers] = useState<Array<{ id: string; fullName: string }>>([]);
@@ -322,7 +288,7 @@ function EditContainerForm(props: { detail: ContainerDetail; onCancel: () => voi
     setBusy(true);
     setError(null);
     try {
-      await api.updateContainer(c.id, { description, reusePolicy, responsibleUserId: responsible || null });
+      await api.updateContainer(c.id, { description, contentDescription, reusePolicy, responsibleUserId: responsible || null });
       props.onDone();
     } catch (err) {
       setError(errorMessage(err));
@@ -337,6 +303,10 @@ function EditContainerForm(props: { detail: ContainerDetail; onCancel: () => voi
       <label className="field">
         <span>Descripción</span>
         <input value={description} onChange={(e) => setDescription(e.target.value)} maxLength={300} autoFocus />
+      </label>
+      <label className="field">
+        <span>Descripción del contenido</span>
+        <input value={contentDescription} onChange={(e) => setContentDescription(e.target.value)} maxLength={300} placeholder="Qué lleva dentro: tornillería M6, retales de chapa…" />
       </label>
       <div className="grid-2">
         <label className="field">
@@ -402,7 +372,7 @@ function DuplicateContainerForm(props: { detail: ContainerDetail; onCancel: () =
       <h3>Duplicar {c.code}</h3>
       <p className="muted">
         Las copias serán {c.typeName.toLowerCase()}s iguales, en el mismo sitio, cada una con su propio código y QR. El
-        material no se copia.
+        contenido no se copia.
       </p>
       <label className="field">
         <span>Cuántas copias</span>
@@ -433,6 +403,58 @@ function DuplicateContainerForm(props: { detail: ContainerDetail; onCancel: () =
         </button>
         <button className="btn btn-primary" disabled={busy}>
           {busy ? 'Creando…' : 'Crear copias'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/** Asignar el contenedor a un proyecto (o quitárselo). */
+function ProjectPanel(props: {
+  containerId: string; current: string | null; currentLabel: string | null; projects: Project[];
+  onCancel: () => void; onDone: (text: string) => void;
+}) {
+  const [value, setValue] = useState(props.current ?? '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const known = props.projects.some((p) => p.id === props.current);
+  const save = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api.setContainerProject(props.containerId, value || null);
+      const p = props.projects.find((x) => x.id === value);
+      props.onDone(p ? `Ahora es del proyecto ${p.code}: lo que hay dentro queda reservado.` : 'Ya no es de ningún proyecto.');
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form className="card form" onSubmit={save}>
+      <h3>Proyecto del contenedor</h3>
+      <p className="muted">Lo que hay dentro (también en los contenedores que lleve dentro) queda reservado para el proyecto.</p>
+      <label className="field">
+        <span>Proyecto</span>
+        <select value={value} onChange={(e) => setValue(e.target.value)}>
+          <option value="">Ninguno</option>
+          {props.current && !known && <option value={props.current}>{props.currentLabel}</option>}
+          {props.projects.filter((p) => p.status !== 'CLOSED').map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.code} · {p.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      {error && <p className="alert alert-error">{error}</p>}
+      <div className="actions">
+        <button type="button" className="btn" onClick={props.onCancel}>
+          Cancelar
+        </button>
+        <button className="btn btn-primary" disabled={busy || value === (props.current ?? '')}>
+          {busy ? 'Guardando…' : 'Guardar'}
         </button>
       </div>
     </form>

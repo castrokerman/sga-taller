@@ -28,11 +28,11 @@ export function MovementsPage({ user }: { user: User }) {
   const list = useListControls(items, {
     storageKey: 'movimientos',
     noun: 'líneas',
-    placeholder: 'Buscar material, sitio, persona o motivo…',
+    placeholder: 'Buscar contenido, sitio, persona o motivo…',
     text: (l) => [l.description, l.internalRef, l.placeCode, l.performedBy, l.reason, l.externalReference, l.lotCode, String(l.movementNumber)],
     sorts: [
       { key: 'fecha', label: 'Fecha', value: (l) => l.movementNumber * 1000 + l.lineNo, defaultDir: 'desc' },
-      { key: 'material', label: 'Material', value: (l) => l.description },
+      { key: 'material', label: 'Contenido', value: (l) => l.description },
       { key: 'persona', label: 'Persona', value: (l) => l.performedBy },
     ],
     filters: [
@@ -57,7 +57,7 @@ export function MovementsPage({ user }: { user: User }) {
       <div className="page-head">
         <div>
           <h2>Movimientos</h2>
-          <p className="muted nomargin">Entradas, retiradas, traslados, recuentos y préstamos de material. Los más recientes primero.</p>
+          <p className="muted nomargin">Entradas, retiradas, traslados, recuentos y préstamos de contenido. Los más recientes primero.</p>
         </div>
         <a className="btn push-right" href="/api/export/stock.xlsx" download>
           Stock a Excel
@@ -68,7 +68,7 @@ export function MovementsPage({ user }: { user: User }) {
       {lines === null ? (
         <p className="muted">Cargando…</p>
       ) : lines.length === 0 ? (
-        <p className="muted">Todavía no hay movimientos de material.</p>
+        <p className="muted">Todavía no hay movimientos de contenido.</p>
       ) : (
         <>
           {list.bar}

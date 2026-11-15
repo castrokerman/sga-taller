@@ -10,6 +10,9 @@ import { MaterialsPage } from './pages/Materials';
 import { MovementsPage } from './pages/Movements';
 import { NotificationsPage } from './pages/Notifications';
 import { ReceivePage } from './pages/Receive';
+import { InboundListPage, InboundPage } from './pages/Inbound';
+import { ProjectPage, ProjectsPage } from './pages/Projects';
+import { PreReceiptsPage } from './pages/PreReceipts';
 import { SearchPage } from './pages/Search';
 import { HomePage } from './pages/Home';
 import { LoginPage } from './pages/Login';
@@ -23,7 +26,9 @@ export function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [unread, setUnread] = useState(0);
-  const route = useRoute();
+  const raw = useRoute();
+  // «Contenidos» es el nombre nuevo de «Materiales»: las dos direcciones llevan al mismo sitio.
+  const route = raw.name === 'contenidos' ? { ...raw, name: 'materiales' } : raw.name === 'contenido' ? { ...raw, name: 'material' } : raw;
 
   // Avisos sin leer: al cambiar de pantalla y cada minuto.
   const refreshUnread = useCallback(() => {
@@ -78,14 +83,19 @@ export function App() {
   else if (route.name === 'materiales' && can('material.read')) page = <MaterialsPage user={user} />;
   else if (route.name === 'material' && route.id && can('material.read')) page = <MaterialPage user={user} materialId={route.id} />;
   else if (route.name === 'familias' && can('material.read')) page = <FamiliesPage user={user} />;
-  else if (route.name === 'movimientos' && can('stock.read')) page = <MovementsPage user={user} />;
+  else if (route.name === 'movimientos' && can('movement.read_all')) page = <MovementsPage user={user} />;
   else if (route.name === 'prestamos' && can('stock.read')) page = <LoansPage user={user} />;
   else if (route.name === 'escaner' && can('container.read')) page = <ScannerPage />;
   else if (route.name === 'usuarios' && can('admin.users.manage')) page = <UsersPage me={user} back={home} />;
   else if (route.name === 'auditoria' && can('audit.read')) page = <AuditPage back={home} />;
   else if (route.name === 'tipos' && can('admin.masterdata.manage')) page = <TypesPage />;
   else if (route.name === 'buscar') page = <SearchPage />;
-  else if (route.name === 'entrada' && can('stock.receive')) page = <ReceivePage user={user} />;
+  else if (route.name === 'entrada' && can('stock.receive')) page = <ReceivePage key={route.id ?? ''} user={user} initial={route.id} />;
+  else if (route.name === 'recepciones') page = <InboundListPage user={user} />;
+  else if (route.name === 'prerecepciones') page = <PreReceiptsPage user={user} />;
+  else if (route.name === 'proyectos' && can('project.read')) page = <ProjectsPage user={user} />;
+  else if (route.name === 'proyecto' && route.id && can('project.read')) page = <ProjectPage user={user} projectId={route.id} />;
+  else if (route.name === 'recepcion' && route.id) page = <InboundPage user={user} inboundId={route.id} onChanged={refreshUnread} />;
   else if (route.name === 'avisos') page = <NotificationsPage onChanged={refreshUnread} />;
   else if (route.name === 'contrasena') page = <ChangePasswordPage onDone={home} onCancel={home} />;
   else page = <HomePage user={user} />;

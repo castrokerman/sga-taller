@@ -24,7 +24,7 @@ export function labelRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
               items: {
                 type: 'object', required: ['kind', 'id'], additionalProperties: false,
                 properties: {
-                  kind: { type: 'string', enum: ['location', 'container'] },
+                  kind: { type: 'string', enum: ['location', 'container', 'material'] },
                   id: { type: 'string', format: 'uuid' },
                 },
               },
@@ -34,10 +34,10 @@ export function labelRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
       },
     },
     async (request, reply) => {
-      const body = request.body as { format: LabelFormat; items: Array<{ kind: 'location' | 'container'; id: string }> };
+      const body = request.body as { format: LabelFormat; items: Array<{ kind: 'location' | 'container' | 'material'; id: string }> };
       const ids = (kind: string) => body.items.filter((i) => i.kind === kind).map((i) => i.id);
 
-      const [locations, containers] = await Promise.all([
+      const [locations, containers, units] = await Promise.all([
         pool.query(
           `SELECT l.id, l.qr_token, l.code, l.name, t.name AS type_name
              FROM storage_location l JOIN location_type t ON t.id = l.location_type_id WHERE l.id = ANY($1)`,
@@ -48,6 +48,12 @@ export function labelRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
              FROM container c JOIN container_type t ON t.id = c.container_type_id WHERE c.id = ANY($1)`,
           [ids('container')],
         ),
+        // Herramientas y equipos: cada unidad lleva su etiqueta.
+        pool.query(
+          `SELECT m.id, m.qr_token, m.internal_ref AS code, m.description, m.serial_number, t.name AS type_name
+             FROM material m JOIN content_type t ON t.code = m.content_type_code WHERE m.id = ANY($1)`,
+          [ids('material')],
+        ),
       ]);
       const byId = new Map<string, LabelItem>();
       for (const l of locations.rows) {
@@ -55,6 +61,11 @@ export function labelRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
       }
       for (const c of containers.rows) {
         byId.set(`container:${c.id}`, { token: c.qr_token, code: c.code, title: c.type_name, subtitle: c.description });
+      }
+      for (const m of units.rows) {
+        byId.set(`material:${m.id}`, {
+          token: m.qr_token, code: m.code, title: m.description, subtitle: m.serial_number ? `${m.type_name} · nº de serie ${m.serial_number}` : m.type_name,
+        });
       }
 
       const labels = body.items.map((i) => byId.get(`${i.kind}:${i.id}`));

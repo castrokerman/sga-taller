@@ -6,7 +6,7 @@ import { withTransaction } from '../db/tx.js';
 import { AppError, badRequest, conflict, forbidden, notFound } from '../errors.js';
 import { idempotent } from '../idempotency.js';
 import {
-  applyLine, checkQuantity, createMovement, emptyDisposable, findOrCreateLot, getMaterial, lockBalance, placeCode, resolvePlace,
+  applyLine, assertCanTake, checkQuantity, unitTargets, createMovement, emptyDisposable, findOrCreateLot, getMaterial, lockBalance, placeCode, resolvePlace,
   type Balance, type MaterialInfo,
 } from '../inventory/stock.js';
 import { getParameter } from '../warehouse/queries.js';
@@ -37,6 +37,8 @@ interface OpResult {
   movementNumber: number;
   message: string;
   remaining: number | null;
+  /** Herramientas y equipos: las unidades que han entrado, cada una con su código (para sacar sus etiquetas). */
+  units?: Array<{ id: string; internalRef: string }>;
   needsRecount?: boolean;
   emptyDisposable?: string | null;
 }
@@ -70,7 +72,8 @@ export function stockRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
   app.get(
     '/api/stock/movements',
     {
-      preHandler: requirePermission('stock.read'),
+      // Los movimientos de todo el almacén son de control: solo responsables de almacén.
+      preHandler: requirePermission('movement.read_all'),
       schema: {
         querystring: {
           type: 'object', additionalProperties: false,
@@ -113,8 +116,36 @@ export function stockRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
         if (b.isReturn && !request.user!.permissions.includes('stock.return')) throw forbidden();
         const out = await withTransaction(pool, async (c) => {
           const m = await getMaterial(c, b.materialId);
-          if (m.status !== 'ACTIVE') throw conflict('El material está dado de baja', 'MATERIAL_OBSOLETO');
+          if (m.status !== 'ACTIVE') throw conflict('El contenido está dado de baja', 'MATERIAL_OBSOLETO');
           const place = await resolvePlace(c, b);
+          if (m.unitTracked) {
+            // Herramientas y equipos: cada unidad es un contenido con su propio código.
+            const units = await unitTargets(c, m, b.quantity, request.user!.id);
+            const mv = await createMovement(c, {
+              type: b.isReturn ? 'RETURN' : 'RECEIPT', userId: request.user!.id, reason: b.reason, externalReference: b.externalReference,
+            });
+            for (const [i, u] of units.entries()) {
+              await applyLine(c, mv, i + 1, { material: u, lotId: null, containerId: place.containerId, locationId: place.locationId, delta: 1, presence: true });
+              if (u.id !== m.id) {
+                await writeAudit(c, {
+                  userId: request.user!.id, action: 'material.alta', entityType: 'material', entityId: u.id,
+                  after: { ref: u.internalRef, unidad_de: m.internalRef, descripcion: u.description }, ip: request.ip, requestId: request.id,
+                });
+              }
+            }
+            const refs = units.map((u) => u.internalRef);
+            await audit(c, request, b.isReturn ? 'stock.devolucion' : 'stock.entrada', mv.id, {
+              movimiento: mv.number, unidades: refs, sitio: place.code,
+            });
+            return {
+              movementNumber: mv.number,
+              remaining: 1,
+              units: units.map((u) => ({ id: u.id, internalRef: u.internalRef })),
+              message: units.length === 1
+                ? `${b.isReturn ? 'Devolución' : 'Entrada'} registrada: ${m.description} (${refs[0]}) en ${place.code}`
+                : `Entrada registrada: ${units.length} unidades de ${m.description} en ${place.code}, cada una con su código: ${refs.join(', ')}`,
+            };
+          }
           const quantity = checkQuantity(m, b.quantity);
           if (m.lotTracked && !b.lotCode?.trim()) throw badRequest(`${m.description} exige indicar el lote`, 'FALTA_LOTE');
           const lotId = await findOrCreateLot(c, m.id, b.lotCode);
@@ -155,6 +186,7 @@ export function stockRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
         const b = request.body as { balanceId: string; quantity?: number; reason?: string; exhausted: boolean };
         return withTransaction(pool, async (c) => {
           const bal = await lockBalance(c, b.balanceId);
+          await assertCanTake(c, request.user!, bal.containerId, 'sacar');
           const m = await getMaterial(c, bal.materialId);
           const code = await placeCode(c, bal.containerId, bal.locationId);
           const mv = await createMovement(c, { type: 'WITHDRAWAL', userId: request.user!.id, reason: b.reason });
@@ -211,11 +243,12 @@ export function stockRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
         const b = request.body as { balanceId: string; quantity?: number; toContainerId?: string; toLocationId?: string; reason?: string };
         return withTransaction(pool, async (c) => {
           const bal = await lockBalance(c, b.balanceId);
+          await assertCanTake(c, request.user!, bal.containerId, 'trasladar');
           const m = await getMaterial(c, bal.materialId);
           const from = await placeCode(c, bal.containerId, bal.locationId);
           const to = await resolvePlace(c, { containerId: b.toContainerId, locationId: b.toLocationId });
           if (to.containerId === bal.containerId && to.locationId === bal.locationId) {
-            throw conflict(`El material ya está en ${to.code}`, 'MISMO_LUGAR');
+            throw conflict(`El contenido ya está en ${to.code}`, 'MISMO_LUGAR');
           }
           const quantity = m.tracking === 'NOT_TRACKED' ? null : checkQuantity(m, b.quantity ?? bal.quantity)!;
           if (quantity !== null) {
@@ -310,7 +343,7 @@ export function stockRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
           if (done.rowCount) throw conflict(`Ya se revirtió con el movimiento ${done.rows[0].n}`, 'YA_REVERTIDO');
           const lines = (await c.query(`SELECT * FROM stock_movement_line WHERE movement_id = $1 ORDER BY line_no`, [id])).rows;
           if (lines.some((l) => l.quantity_tracking === 'NOT_TRACKED')) {
-            throw conflict('Los movimientos de material sin contar no se revierten: registra una entrada o retirada nueva', 'NO_REVERSIBLE');
+            throw conflict('Los movimientos de contenido sin contar no se revierten: registra una entrada o retirada nueva', 'NO_REVERSIBLE');
           }
           const mv = await createMovement(c, { type: 'REVERSAL', userId: request.user!.id, reason, reversesId: id });
           // Primero lo que sale, luego lo que entra, para no dejar negativos intermedios.
@@ -323,7 +356,7 @@ export function stockRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
               await applyLine(c, mv, n++, { material: m, lotId: l.lot_id, containerId: l.container_id, locationId: l.location_id, delta: -Number(l.quantity_delta) });
             } catch (e) {
               if (e instanceof AppError && e.code === 'STOCK_INSUFICIENTE') {
-                throw conflict('No se puede revertir: ese material ya se ha movido o retirado después', 'NO_REVERSIBLE');
+                throw conflict('No se puede revertir: ese contenido ya se ha movido o retirado después', 'NO_REVERSIBLE');
               }
               throw e;
             }
@@ -343,11 +376,14 @@ export function stockRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
     },
     async (request) => {
       const { all } = request.query as { all: boolean };
+      // Cada uno ve sus préstamos; solo los responsables de almacén ven los de todos.
+      const everyone = request.user!.permissions.includes('loan.read_all');
       const r = await pool.query(
-        `${LOAN_SELECT} WHERE ($1 OR t.status = 'OPEN') ORDER BY (t.status = 'OPEN') DESC, t.due_at LIMIT 1000`,
-        [all],
+        `${LOAN_SELECT} WHERE ($1 OR t.status = 'OPEN') AND ($2 OR t.borrower_id = $3)
+          ORDER BY (t.status = 'OPEN') DESC, t.due_at LIMIT 1000`,
+        [all, everyone, request.user!.id],
       );
-      return { loans: r.rows };
+      return { loans: r.rows, everyone };
     },
   );
 
@@ -373,6 +409,7 @@ export function stockRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
         }
         const out = await withTransaction(pool, async (c) => {
           const bal = await lockBalance(c, b.balanceId);
+          await assertCanTake(c, request.user!, bal.containerId, 'prestar');
           const m = await getMaterial(c, bal.materialId);
           if (!m.isLoanable) throw conflict(`${m.description} no está marcado como herramienta prestable`, 'NO_PRESTABLE');
           if (m.tracking === 'NOT_TRACKED') throw conflict('Para prestar algo hay que llevar su cantidad', 'NO_PRESTABLE');

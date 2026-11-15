@@ -28,7 +28,7 @@ no, empieza por [fase-1-instrucciones.md](fase-1-instrucciones.md).
    ```
 
    Tarda unos minutos. La base de datos se actualiza sola y no se pierde nada.
-5. Abre `https://localhost`. Si la pantalla de inicio no muestra «Escáner QR»
+5. Abre `https://localhost`. Si la pantalla de inicio no muestra «Escanear QR»
    y «Almacén» activos, recarga la página con Ctrl+F5.
 
 ## 2. Qué hay de nuevo
@@ -37,8 +37,8 @@ no, empieza por [fase-1-instrucciones.md](fase-1-instrucciones.md).
 | --- | --- | --- |
 | **Almacén** | Recorrer el árbol de ubicaciones y ver qué contenedores hay en cada una | Todos |
 | **Ficha de contenedor** | Ver dónde está, qué lleva dentro y su historial | Todos |
-| **Escáner QR** | Escanear una etiqueta y abrir su ficha | Todos |
-| **Mover** | Cambiar un contenedor de sitio escaneando el destino | Todos menos consulta |
+| **Escanear QR** | Escanear una etiqueta y abrir su ficha | Todos |
+| **Mover** | Cambiar uno o varios contenedores de sitio, eligiendo el destino en una lista o escaneándolo | Todos menos consulta |
 | **Etiquetas QR** | Descargar el PDF para imprimir | Todos menos consulta |
 | **Crear y editar** ubicaciones y contenedores | Montar y mantener el almacén | Responsable de almacén y administrador |
 | **Tipos** | Añadir tipos nuevos de ubicación y de contenedor | Administrador |
@@ -110,7 +110,14 @@ nada hasta que pulsas «Recodificar».
 **Desactivar una ubicación.** Solo lo puede hacer un administrador, desde
 «Editar». La ubicación **no desaparece**: se sigue viendo en gris y tachada,
 pero no admite contenedores ni material nuevos. Se puede volver a activar. En
-las listas, el filtro «Estado» separa las activas de las desactivadas.
+las listas, el filtro «Estado» separa las activas de las desactivadas. En las
+listas y en el árbol llevan la etiqueta amarilla **«Inactiva»**.
+
+**Eliminar una ubicación.** También solo un administrador, desde «Editar» →
+«🗑 Eliminar». Pide confirmación y no se puede deshacer: la ubicación
+desaparece y su QR deja de funcionar. Solo se puede si está vacía (sin
+ubicaciones dentro, contenedores, material ni comentarios) y sin historial de
+movimientos. Si no, el sistema lo dice y hay que desactivarla.
 
 ### Editar varias a la vez
 
@@ -149,6 +156,31 @@ código, como al crear, no se puede cambiar.
 - Puedes pulsar «Duplicar» varias veces seguidas desde el original: cada vez
   propone el siguiente código libre.
 
+### Dónde va el contenido
+
+El contenido (materiales, herramientas, equipos, consumibles) está **siempre
+dentro de un contenedor**, salvo cuando está desplegado o prestado. Hay dos
+clases de ubicación, y cada tipo de ubicación dice a cuál pertenece en
+«Tipos», columna «Qué guarda»:
+
+- **Contenido directamente:** muebles que hacen de contenedor. Por defecto,
+  Armario, Cajonera y Cajón. Se puede registrar contenido en ellos sin caja.
+- **Solo contenedores:** zonas, pasillos, estanterías, niveles, posiciones.
+  Aquí se colocan palets, cajas y bandejas, y el contenido va dentro de ellos.
+  En la ficha pone «solo contenedores» y no sale «+ Entrada». En las listas
+  desplegables salen en gris con «(solo contenedores)».
+
+Cada tipo de ubicación puede limitar también **qué contenedores admite**
+(columna «Contenedores que admite»): por ejemplo, que en un nivel solo quepan
+cajas y bandejas, no palets. Sin ninguno marcado, admite cualquiera. Si se
+intenta poner uno que no admite, el sistema lo impide y dice cuáles sí.
+
+**Contenido que ya estaba suelto.** Si una ubicación pasa a «Solo
+contenedores» y tenía contenido suelto, su ficha lo avisa en amarillo con un
+botón «Meter todo en una caja nueva»: crea una caja allí mismo y mete dentro
+todo lo suelto, con lo reservado para proyectos incluido. Después imprime la
+etiqueta de la caja.
+
 ### Contenedores: lo que se mueve
 
 1. Entra en la ubicación donde está físicamente el contenedor y pulsa «Nuevo
@@ -160,6 +192,17 @@ código, como al crear, no se puede cambiar.
 
 Las cajas son desechables por defecto y los palets y bandejas reutilizables.
 Se cambia en «Editar».
+
+**Fotos en miniatura.** Si el contenedor tiene foto, sale en pequeño junto a
+su código, en su ficha y en el árbol. En la tabla «Contenido» de cada
+contenedor o ubicación, cada línea lleva la miniatura de su foto (📦 si no
+tiene). Las herramientas y equipos que van por unidad no tienen «Recuento»:
+cada una es una sola pieza con su código.
+
+**Descripción del contenido.** Al crear o editar un contenedor se puede
+escribir qué lleva dentro («tornillería M6», «chapa aluminio 2 mm, 12
+hojas»). Sale como una nube verde 📦 en la ficha, en las listas, en el árbol y
+en el buscador, y el buscador la encuentra.
 
 **Duplicar un contenedor** crea copias iguales (tipo, descripción,
 responsable y política) en el mismo sitio, hasta 50 de una vez. Si lleva
@@ -195,6 +238,10 @@ el almacén anidado.
   su ubicación.
 - La búsqueda deja solo lo que coincide y el camino hasta ello, ya desplegado.
   Sirve para saber dónde está algo sin recorrer el almacén.
+- Junto a cada contenedor salen sus nubes: 📦 en verde, la descripción de lo
+  que lleva dentro; en violeta, 🔒 el proyecto al que está asignado y 👤 su
+  responsable y los responsables del proyecto. El tipo sale en azul en los
+  contenedores y en gris en las ubicaciones.
 - Pulsar una línea abre su ficha. La vista elegida se recuerda la próxima vez.
 - **Dentro de cada ubicación** también está el selector «Lista | Árbol»: el
   árbol muestra solo lo que cuelga de ella.
@@ -228,12 +275,22 @@ cambie de lugar o de contenido.
 
 ## 5. Escanear y mover
 
+En todos los pasos de «¿a dónde?» (mover, trasladar contenido, devolver un
+préstamo…) hay una lista desplegable con todo el almacén, así que no hace
+falta saberse el código. El escáner sigue debajo para quien prefiera la
+etiqueta.
+
 ### Con la cámara
 
-1. Pulsa «Escáner QR» y apunta a una etiqueta. Se abre la ficha de esa
-   ubicación o contenedor.
-2. Para mover un contenedor: abre su ficha, pulsa «Mover» y escanea la etiqueta
-   del destino, que puede ser una ubicación u otro contenedor.
+1. Pulsa «Escanear QR» y apunta a una etiqueta. Se abre la ficha de lo que
+   sea: ubicación, contenedor, herramienta, equipo o material.
+2. Para mover un contenedor: abre su ficha, pulsa «Mover» y **elige el destino
+   en la lista desplegable** o escanea su etiqueta. Puede ser una ubicación u
+   otro contenedor. Las ubicaciones que no admiten ese tipo de contenedor salen
+   en gris.
+   Para mover **varios a la vez**, entra en la ubicación donde están, pulsa
+   «Mover» en la sección «Contenedores», marca cuáles (o «Todos») y elige el
+   destino.
 3. Revisa el mensaje («Mover PAL-000001 a la ubicación ALM-A-P01-E02») y pulsa
    «Confirmar».
 
@@ -282,7 +339,7 @@ encontrar el sistema; pide a quien gestione la red que la reserve.
 ### 6.2. Probar primero sin instalar nada
 
 El navegador mostrará un aviso de conexión no privada. Pulsa «Avanzado» y
-«Continuar». Entra y abre «Escáner QR».
+«Continuar». Entra y abre «Escanear QR».
 
 - Si la cámara funciona, puedes dejarlo así para el piloto.
 - Si no pide permiso de cámara o dice que no está disponible, sigue con el
@@ -331,7 +388,7 @@ Se abre a pantalla completa, como una aplicación más.
 
 ## 7. Qué probar
 
-- [ ] Tras actualizar, «Escáner QR» y «Almacén» aparecen activos en el inicio.
+- [ ] Tras actualizar, «Escanear QR» y «Almacén» aparecen activos en el inicio.
 - [ ] Crear una zona, un pasillo dentro y una estantería dentro del pasillo.
 - [ ] La ruta de arriba («Almacén › ALM-A › ALM-A-P01…») permite volver atrás.
 - [ ] Crear un palet en la estantería y dos cajas dentro del palet.
@@ -359,6 +416,16 @@ Se abre a pantalla completa, como una aplicación más.
 - [ ] Filtrar contenedores escribiendo parte de una descripción y con un filtro
       por tipo; quitar los filtros con su aspa.
 - [ ] Pasar a la vista de árbol, desplegar todo y buscar el código de una caja.
+- [ ] En «Tipos», poner que los niveles solo admiten cajas y bandejas; intentar
+      crear un palet en un nivel (lo impide) y una caja (sí).
+- [ ] Intentar registrar contenido directamente en una estantería (no deja) y
+      en un armario (sí).
+- [ ] En una ubicación con contenido suelto antiguo, pulsar «Meter todo en una
+      caja nueva».
+- [ ] Mover varios contenedores a la vez desde su ubicación, eligiendo el
+      destino en la lista desplegable.
+- [ ] Asignar un palet a un proyecto y verlo en el árbol con sus nubes de
+      proyecto y responsables.
 - [ ] En el móvil, abrir `http://IP/movil` e instalar el certificado.
 
 ## 8. Si algo falla

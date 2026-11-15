@@ -79,6 +79,8 @@ beforeAll(async () => {
     `UPDATE location_type SET code_prefix = x.p FROM (VALUES ('PASILLO', 'P'), ('ESTANTERIA', 'E'), ('NIVEL', 'N'), ('POSICION', 'S')) AS x (c, p) WHERE code = x.c`,
   );
   await pool.query(`UPDATE app_user SET must_change_password = false`);
+  // Estas pruebas guardan contenido suelto en zonas: aquí la zona hace de contenedor.
+  await pool.query(`UPDATE location_type SET holds_content = true`);
   [almacen, usuario, consulta] = await Promise.all([sessionOf('demo.almacen'), sessionOf('demo.usuario'), sessionOf('demo.consulta')]);
   admin = await sessionOf('admin', config.adminPassword);
 
@@ -354,9 +356,18 @@ describe('préstamos de herramientas', () => {
   });
 
   it('al devolver vuelve a su sitio y el préstamo se cierra', async () => {
-    const loans = ok<{ loans: Array<{ id: string; materialId: string; borrowerName: string }> }>(await call('GET', '/api/loans', usuario));
-    const mine = loans.loans.find((l) => l.materialId === taladro.id && l.borrowerName === 'FICTICIO Usuario Estándar')!;
-    const other = loans.loans.find((l) => l.materialId === taladro.id && l.borrowerName !== 'FICTICIO Usuario Estándar')!;
+    type L = { loans: Array<{ id: string; materialId: string; borrowerName: string }>; everyone: boolean };
+    // El usuario solo ve los suyos; el responsable de almacén ve todos.
+    const own = ok<L>(await call('GET', '/api/loans', usuario));
+    expect(own.everyone).toBe(false);
+    expect(new Set(own.loans.map((l) => l.borrowerName))).toEqual(new Set(['FICTICIO Usuario Estándar']));
+    const all = ok<L>(await call('GET', '/api/loans', almacen));
+    expect(all.everyone).toBe(true);
+    expect(all.loans.some((l) => l.borrowerName !== 'FICTICIO Usuario Estándar')).toBe(true);
+    // Un administrador sin el rol de almacén ve solo los suyos.
+    expect(ok<L>(await call('GET', '/api/loans', admin)).everyone).toBe(false);
+    const mine = own.loans.find((l) => l.materialId === taladro.id)!;
+    const other = all.loans.find((l) => l.materialId === taladro.id && l.borrowerName !== 'FICTICIO Usuario Estándar')!;
     expect((await call('POST', `/api/loans/${other.id}/return`, usuario, {})).statusCode).toBe(403);
     ok(await call('POST', `/api/loans/${mine.id}/return`, usuario, {}));
     expect((await balanceOf(taladro.id, caja2))!.q).toBe(1);
@@ -366,7 +377,7 @@ describe('préstamos de herramientas', () => {
 
 describe('exportar a Excel', () => {
   it('materiales y stock', async () => {
-    for (const [path, sheet] of [['materiales', 'Materiales'], ['stock', 'Stock']]) {
+    for (const [path, sheet] of [['materiales', 'Contenidos'], ['stock', 'Stock']]) {
       const res = await call('GET', `/api/export/${path}.xlsx`, consulta);
       expect(res.statusCode).toBe(200);
       const wb = new ExcelJS.Workbook();
@@ -397,5 +408,114 @@ describe('buscador', () => {
     expect(lote.materials.map((m: { description: string }) => m.description)).toContain('FICTICIO Barra 6082 Ø30');
     // Todas las palabras tienen que estar.
     expect((await call('GET', '/api/search?q=tornillo%20inexistente', usuario)).json().materials).toEqual([]);
+  });
+});
+
+describe('tipos de contenido', () => {
+  const mat = async (body: Record<string, unknown>) => {
+    const r = await call('POST', '/api/materials', almacen, { description: 'FICTICIO contenido', familyId, unitCode: 'ud', ...body });
+    expect(r.statusCode, r.body).toBe(201);
+    return r.json().material as { id: string; internalRef: string; contentTypeCode: string; contentTypeName: string };
+  };
+
+  it('de partida hay Material, Herramienta, Equipo y Consumible, cada uno con su prefijo', async () => {
+    const types = (await call('GET', '/api/content-types', usuario)).json().types;
+    expect(types.map((t: { name: string; codePrefix: string }) => `${t.name}:${t.codePrefix}`)).toEqual([
+      'Material:MAT', 'Herramienta:HER', 'Equipo:EQU', 'Consumible:CSM',
+    ]);
+    expect(types.find((t: { code: string }) => t.code === 'HERRAMIENTA').defaultLoanable).toBe(true);
+  });
+
+  it('el código lleva el prefijo del tipo, y cambiar de tipo cambia el prefijo', async () => {
+    const m = await mat({});
+    expect(m.internalRef).toMatch(/^MAT-\d{6}$/);
+    expect(m.contentTypeName).toBe('Material');
+    const h = await mat({ contentTypeCode: 'HERRAMIENTA', isLoanable: true });
+    expect(h.internalRef).toMatch(/^HER-\d{6}$/);
+    // El número sale de la misma secuencia: no se repite entre tipos.
+    expect(h.internalRef.slice(4)).not.toBe(m.internalRef.slice(4));
+    const r = await call('PATCH', `/api/materials/${m.id}`, almacen, { contentTypeCode: 'EQUIPO' });
+    expect(r.statusCode, r.body).toBe(200);
+    expect(r.json().material.internalRef).toBe(`EQU-${m.internalRef.slice(4)}`);
+    // Un código puesto a mano no se toca.
+    const manual = await mat({ internalRef: 'FICT-LLAVE-17' });
+    const r2 = await call('PATCH', `/api/materials/${manual.id}`, almacen, { contentTypeCode: 'HERRAMIENTA' });
+    expect(r2.json().material.internalRef).toBe('FICT-LLAVE-17');
+    expect((await call('POST', '/api/materials', almacen, { description: 'x', familyId, unitCode: 'ud', contentTypeCode: 'NO_EXISTE' })).statusCode).toBe(400);
+  });
+
+  it('los tipos se crean y se editan; cambiar el prefijo recodifica los automáticos', async () => {
+    expect((await call('POST', '/api/content-types', almacen, { name: 'Repuesto', codePrefix: 'REP' })).statusCode).toBe(403);
+    const c = await call('POST', '/api/content-types', admin, { name: 'Repuesto', codePrefix: 'rep', defaultTracking: 'ESTIMATED' });
+    expect(c.statusCode, c.body).toBe(201);
+    const rep = await mat({ contentTypeCode: c.json().code });
+    expect(rep.internalRef).toMatch(/^REP-/);
+    // Un prefijo de contenedor o de otro tipo no se admite.
+    expect((await call('PATCH', `/api/content-types/${c.json().code}`, admin, { codePrefix: 'CAJ' })).json().error.code).toBe('TIPO_DUPLICADO');
+    expect((await call('PATCH', `/api/content-types/${c.json().code}`, admin, { codePrefix: 'HER' })).json().error.code).toBe('TIPO_DUPLICADO');
+    const r = await call('PATCH', `/api/content-types/${c.json().code}`, admin, { codePrefix: 'RPT', name: 'Repuestos' });
+    expect(r.statusCode, r.body).toBe(200);
+    expect(r.json().recoded).toBe(1);
+    const after = (await call('GET', `/api/materials/${rep.id}`, usuario)).json().material;
+    expect(after.internalRef).toBe(`RPT-${rep.internalRef.slice(4)}`);
+    expect(after.contentTypeName).toBe('Repuestos');
+    expect((await call('PATCH', '/api/content-types/MATERIAL', admin, { active: false })).json().error.code).toBe('TIPO_BASE');
+  });
+});
+
+describe('herramientas y equipos por unidad', () => {
+  it('los tipos Herramienta y Equipo se llevan por unidad; Material y Consumible, por cantidad', async () => {
+    const types = (await call('GET', '/api/content-types', usuario)).json().types;
+    expect(types.filter((t: { unitTracked: boolean }) => t.unitTracked).map((t: { code: string }) => t.code)).toEqual(['HERRAMIENTA', 'EQUIPO']);
+  });
+
+  it('si entran tres iguales, son tres contenidos con su propio código y su QR', async () => {
+    const r = await call('POST', '/api/materials', almacen, {
+      description: 'FICTICIO Llave dinamométrica 20-100 Nm', familyId, unitCode: 'ud', contentTypeCode: 'HERRAMIENTA', isLoanable: true, serialNumber: 'SN-1',
+    });
+    const llave = r.json().material;
+    expect(llave).toMatchObject({ unitTracked: true, serialNumber: 'SN-1' });
+    expect(llave.qrToken).toMatch(/^[0-9A-F]{32}$/);
+    const e = await call('POST', '/api/stock/receipt', almacen, { materialId: llave.id, containerId: caja1, quantity: 3 });
+    expect(e.statusCode, e.body).toBe(201);
+    const units = e.json().units as Array<{ id: string; internalRef: string }>;
+    expect(units).toHaveLength(3);
+    expect(units[0]!.id).toBe(llave.id);
+    expect(new Set(units.map((u) => u.internalRef)).size).toBe(3);
+    expect(units.every((u) => /^HER-\d{6}$/.test(u.internalRef))).toBe(true);
+    expect(e.json().message).toContain('3 unidades');
+    // Cada una está en el sitio con cantidad 1, y la copia lleva los datos del original pero no el número de serie.
+    for (const u of units) {
+      const d = (await call('GET', `/api/materials/${u.id}`, usuario)).json().material;
+      expect(d.quantity).toBe(1);
+      expect(d.description).toBe('FICTICIO Llave dinamométrica 20-100 Nm');
+      expect(d.serialNumber).toBe(u.id === llave.id ? 'SN-1' : null);
+    }
+    // Otra entrada del mismo contenido ya no cabe en él: crea uno nuevo.
+    const otra = await call('POST', '/api/stock/receipt', almacen, { materialId: llave.id, containerId: caja1, quantity: 1 });
+    expect(otra.json().units[0].id).not.toBe(llave.id);
+    // Y no se puede sacar ni trasladar más de una.
+    const bal = (await balanceOf(llave.id, caja1))!;
+    expect((await call('POST', '/api/stock/withdraw', almacen, { balanceId: bal.id, quantity: 2 })).json().error.code).toBe('UNIDAD_UNICA');
+    // Se escanea por su código o su QR y tiene etiqueta.
+    expect((await call('GET', `/api/scan/${llave.internalRef}`, usuario)).json()).toMatchObject({ kind: 'material', id: llave.id });
+    expect((await call('GET', `/api/scan/${llave.qrToken}`, usuario)).json()).toMatchObject({ kind: 'material', id: llave.id });
+    const pdf = await call('POST', '/api/labels', almacen, { items: units.map((u) => ({ kind: 'material', id: u.id })) });
+    expect(pdf.statusCode).toBe(200);
+    expect(pdf.headers['content-type']).toContain('pdf');
+  });
+
+  it('lo que ya tenía varias unidades con el mismo código se separa desde su ficha', async () => {
+    // Un contenido de antes: un material con 3 unidades que pasa a ser Equipo.
+    const m = await newMaterial({ description: 'FICTICIO Multímetro' });
+    ok(await call('POST', '/api/stock/receipt', almacen, { materialId: m.id, containerId: caja2, quantity: 3 }), 201);
+    ok(await call('PATCH', `/api/materials/${m.id}`, almacen, { contentTypeCode: 'EQUIPO' }));
+    // Mientras no se separe, no puede aumentar.
+    expect((await call('POST', '/api/stock/receipt', almacen, { materialId: m.id, containerId: caja2, quantity: 1 })).json().units[0].id).not.toBe(m.id);
+    const s = await call('POST', `/api/materials/${m.id}/split-units`, almacen);
+    expect(s.statusCode, s.body).toBe(200);
+    expect(s.json().units).toHaveLength(2);
+    expect((await call('GET', `/api/materials/${m.id}`, usuario)).json().material.quantity).toBe(1);
+    expect((await call('POST', `/api/materials/${m.id}/split-units`, almacen)).json().error.code).toBe('YA_ES_UNIDAD');
   });
 });

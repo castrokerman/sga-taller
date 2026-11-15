@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { api, errorMessage, type TreeContainer, type TreeLocation, type User } from '../api';
+import { api, errorMessage, photoUrl, type TreeContainer, type TreeLocation, type User } from '../api';
 import { ViewSwitch } from '../components/Common';
 import { Highlight, normalize } from '../components/ListControls';
 import { navigate } from '../router';
@@ -15,12 +15,27 @@ interface Node {
   typeName: string;
   meta: string;
   over: boolean;
+  /** Nubes extra del contenedor: proyecto y responsables. */
+  chips?: Array<{ text: string; cls: string; title: string }>;
+  photoId?: string | null;
   children: Node[];
 }
 
 const collator = new Intl.Collator('es', { numeric: true, sensitivity: 'base' });
 const byCode = (a: Node, b: Node) =>
   a.kind === b.kind ? collator.compare(a.code, b.code) : a.kind === 'location' ? -1 : 1;
+
+/** Proyecto y responsable del contenedor y, si el proyecto tiene otros, los del proyecto. */
+function containerChips(c: TreeContainer) {
+  const out: Array<{ text: string; cls: string; title: string }> = [];
+  if (c.contentDescription) out.push({ text: `📦 ${c.contentDescription}`, cls: 'tag-content', title: 'Descripción del contenido' });
+  if (c.projectCode) out.push({ text: `🔒 ${c.projectCode}`, cls: 'tag-project', title: `Proyecto ${c.projectCode}${c.projectName ? ` · ${c.projectName}` : ''}` });
+  const own = c.responsibleName;
+  const proj = (c.projectResponsibles ?? '').split(', ').filter((x) => x && x !== own);
+  if (own) out.push({ text: `👤 ${own}`, cls: 'tag-person', title: 'Responsable del contenedor' });
+  if (proj.length) out.push({ text: `👤 ${proj.join(', ')}`, cls: 'tag-person', title: `Responsable${proj.length > 1 ? 's' : ''} del proyecto` });
+  return out;
+}
 
 function buildTree(locations: TreeLocation[], containers: TreeContainer[], withContainers: boolean): Node[] {
   const nodes = new Map<string, Node>();
@@ -37,7 +52,7 @@ function buildTree(locations: TreeLocation[], containers: TreeContainer[], withC
     for (const c of containers) {
       nodes.set(`c:${c.id}`, {
         key: `c:${c.id}`, kind: 'container', id: c.id, code: c.code, label: c.description ?? '', typeName: c.typeName,
-        meta: '', over: false, children: [],
+        meta: '', over: false, children: [], chips: containerChips(c), photoId: c.photoId,
       });
     }
   }
@@ -215,10 +230,17 @@ export function WarehouseTree({ user, onList, rootId }: { user: User; onList: ()
                 {open ? '▾' : '▸'}
               </button>
               <span className="icon" aria-hidden="true">{n.kind === 'location' ? '▦' : '▣'}</span>
+              {n.photoId && <img className="tree-thumb" src={photoUrl(n.photoId)} alt="" loading="lazy" />}
               <span className="ncode"><Highlight text={n.code} query={q} /></span>
               <span className="nname"><Highlight text={n.label} query={q} /></span>
               <span className="nmeta">
-                <span className="tag">{n.typeName}</span>
+                {n.kind === 'location' && locById.get(n.id)?.active === false && <span className="tag tag-inactive">Inactiva</span>}
+                {n.chips?.map((ch) => (
+                  <span key={ch.cls + ch.text} className={`tag ${ch.cls}`} title={ch.title}>
+                    {ch.text}
+                  </span>
+                ))}
+                <span className={`tag ${n.kind === 'container' ? 'tag-ctype' : ''}`}>{n.typeName}</span>
                 {n.meta && <span className={n.over ? 'over' : undefined}>{n.meta}</span>}
               </span>
             </div>

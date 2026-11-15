@@ -196,3 +196,27 @@ describe('anotaciones', () => {
     expect(notes.map((n: { body: string }) => n.body)).toEqual(['FICTICIO Falta la tapa', 'FICTICIO La caja tiene una esquina rota']);
   });
 });
+
+describe('respuestas a comentarios', () => {
+  it('se responde a un comentario y se avisa a los de la conversación', async () => {
+    const root = (await call('POST', '/api/notes', almacen, { entityType: 'location', entityId: location, body: 'FICTICIO ¿Quién ha dejado esto aquí?' })).json().note;
+    expect(root.parentId).toBeNull();
+    const r1 = await call('POST', '/api/notes', usuario, { entityType: 'location', entityId: location, body: 'FICTICIO Fui yo, lo recojo luego', parentId: root.id });
+    expect(r1.statusCode, r1.body).toBe(201);
+    expect(r1.json().note.parentId).toBe(root.id);
+    expect(r1.json().note.recipients).toEqual(['FICTICIO Responsable de Almacén']);
+    const n = (await call('GET', '/api/notifications', almacen)).json().notifications.find((x: { noteId: string }) => x.noteId === r1.json().note.id);
+    expect(n).toMatchObject({ isReply: true, body: 'FICTICIO Fui yo, lo recojo luego' });
+    // Responder a una respuesta cuelga del original y avisa a los dos anteriores.
+    const r2 = await call('POST', '/api/notes', proyecto, { entityType: 'location', entityId: location, body: 'FICTICIO Vale', parentId: r1.json().note.id });
+    expect(r2.json().note.parentId).toBe(root.id);
+    expect(r2.json().note.recipients.sort()).toEqual(['FICTICIO Responsable de Almacén', 'FICTICIO Usuario Estándar']);
+    // Solo se responde a comentarios del mismo elemento.
+    const other = await call('POST', '/api/notes', usuario, { entityType: 'container', entityId: container, body: 'x', parentId: root.id });
+    expect(other.json().error.code).toBe('COMENTARIO_NO_EXISTE');
+    const list = (await call('GET', `/api/notes?entityType=location&entityId=${location}`, consulta)).json().notes;
+    expect(list.filter((x: { parentId: string | null }) => x.parentId === root.id)).toHaveLength(2);
+    const audit = (await pool.query(`SELECT action FROM audit_log WHERE action LIKE 'comentario.%' ORDER BY id`)).rows.map((x) => x.action);
+    expect(audit.slice(-3)).toEqual(['comentario.alta', 'comentario.respuesta', 'comentario.respuesta']);
+  });
+});

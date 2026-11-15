@@ -75,7 +75,7 @@ export function searchRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
       const containers = perms.has('container.read')
         ? (
             await pool.query(
-              `SELECT c.id, c.code, c.description, t.name AS "typeName", c.status,
+              `SELECT c.id, c.code, c.description, c.content_description AS "contentDescription", t.name AS "typeName", c.status,
                       el.code AS "locationCode", el.id AS "locationId", p.code AS "parentCode", c.parent_container_id AS "parentContainerId",
                       (SELECT ph.id FROM photo ph WHERE ph.entity_type = 'container' AND ph.entity_id = c.id ORDER BY ph.position LIMIT 1) AS "photoId"
                  FROM container c
@@ -83,7 +83,7 @@ export function searchRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
                  LEFT JOIN container p ON p.id = c.parent_container_id
                  LEFT JOIN container_effective_location e ON e.container_id = c.id
                  LEFT JOIN storage_location el ON el.id = e.location_id
-                WHERE ${allWords(`concat_ws(' ', c.code, c.description, t.name)`, words.length)}
+                WHERE ${allWords(`concat_ws(' ', c.code, c.description, c.content_description, t.name)`, words.length)}
                 ORDER BY (c.status = 'ACTIVE') DESC, c.code
                 LIMIT $1`,
               params,

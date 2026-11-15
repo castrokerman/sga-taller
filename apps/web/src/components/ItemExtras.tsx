@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { api, errorMessage, formatDateTime, newOperationKey, photoUrl, type EntityType, type Note, type Photo, type User } from '../api';
 
-/** Fotos y anotaciones de una ubicación, un contenedor o un material. */
+/** Fotos y comentarios de una ubicación, un contenedor o un contenido. */
 export function ItemExtras(props: { user: User; entityType: EntityType; entityId: string; onPhotosChanged?: () => void }) {
   return (
     <>
@@ -185,6 +185,7 @@ function Notes(props: { user: User; entityType: EntityType; entityId: string }) 
   const { user } = props;
   const [notes, setNotes] = useState<Note[] | null>(null);
   const [writing, setWriting] = useState(false);
+  const [replying, setReplying] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const canWrite = user.permissions.includes('note.add');
@@ -209,10 +210,10 @@ function Notes(props: { user: User; entityType: EntityType; entityId: string }) 
   return (
     <section>
       <div className="section-head">
-        <h3>Anotaciones {notes.length > 0 && <span className="muted small">({notes.length})</span>}</h3>
+        <h3>Comentarios {notes.length > 0 && <span className="muted small">({notes.length})</span>}</h3>
         {canWrite && !writing && (
           <button className="btn btn-small push-right" onClick={() => { setNotice(null); setWriting(true); }}>
-            + Anotación
+            + Comentario
           </button>
         )}
       </div>
@@ -230,19 +231,43 @@ function Notes(props: { user: User; entityType: EntityType; entityId: string }) 
         />
       )}
       {notes.length === 0 ? (
-        !writing && <p className="muted">Sin anotaciones.</p>
+        !writing && <p className="muted">Sin comentarios.</p>
       ) : (
         <ul className="notes">
-          {notes.map((n) => (
-            <li key={n.id}>
-              <div className="note-head">
-                <strong>{n.createdBy}</strong>
-                <span className="muted small">{formatDateTime(n.createdAt)}</span>
-                {n.notify && <span className="badge badge-warn">Avisados: {n.recipients.join(', ')}</span>}
-              </div>
-              <p className="note-body">{n.body}</p>
-            </li>
-          ))}
+          {notes.filter((n) => !n.parentId).map((n) => {
+            const replies = notes.filter((r) => r.parentId === n.id).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+            return (
+              <li key={n.id}>
+                <NoteView n={n} />
+                {replies.length > 0 && (
+                  <ul className="replies">
+                    {replies.map((r) => (
+                      <li key={r.id}>
+                        <NoteView n={r} />
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {canWrite &&
+                  (replying === n.id ? (
+                    <ReplyForm
+                      {...props}
+                      parent={n}
+                      onCancel={() => setReplying(null)}
+                      onDone={async (text) => {
+                        setReplying(null);
+                        await load();
+                        setNotice(text);
+                      }}
+                    />
+                  ) : (
+                    <button className="linkbtn reply-btn" onClick={() => { setNotice(null); setReplying(n.id); }}>
+                      ↩ Responder
+                    </button>
+                  ))}
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>
@@ -290,7 +315,7 @@ function NoteForm(props: { user: User; entityType: EntityType; entityId: string;
         { entityType: props.entityType, entityId: props.entityId, body, notify, recipientIds: notify ? [...chosen] : undefined },
         key,
       );
-      props.onDone(r.notified ? `Anotación guardada. Se ha avisado a ${r.note.recipients.join(', ')}` : 'Anotación guardada');
+      props.onDone(r.notified ? `Comentario guardado. Se ha avisado a ${r.note.recipients.join(', ')}` : 'Comentario guardado');
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -304,7 +329,7 @@ function NoteForm(props: { user: User; entityType: EntityType; entityId: string;
   return (
     <form className="card form op-form" onSubmit={submit}>
       <label className="field">
-        <span>Anotación</span>
+        <span>Comentario</span>
         <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={3} maxLength={4000} required autoFocus />
         <small className="muted">
           Quedará registrada con tu nombre ({props.user.fullName}), la fecha y la hora. No se puede modificar ni borrar después.
@@ -346,7 +371,56 @@ function NoteForm(props: { user: User; entityType: EntityType; entityId: string;
           Cancelar
         </button>
         <button className="btn btn-primary" disabled={busy || !body.trim() || (notify && chosen.size === 0)}>
-          {busy ? 'Guardando…' : notify ? `Guardar y avisar a ${chosen.size}` : 'Guardar anotación'}
+          {busy ? 'Guardando…' : notify ? `Guardar y avisar a ${chosen.size}` : 'Guardar comentario'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function NoteView({ n }: { n: Note }) {
+  return (
+    <>
+      <div className="note-head">
+        <strong>{n.createdBy}</strong>
+        <span className="muted small">{formatDateTime(n.createdAt)}</span>
+        {n.recipients.length > 0 && <span className="badge badge-warn">Avisados: {n.recipients.join(', ')}</span>}
+      </div>
+      <p className="note-body">{n.body}</p>
+    </>
+  );
+}
+
+/** Responder a un comentario: avisa a quien lo escribió y a quienes ya respondieron. */
+function ReplyForm(props: { user: User; entityType: EntityType; entityId: string; parent: Note; onCancel: () => void; onDone: (text: string) => void }) {
+  const [body, setBody] = useState('');
+  const [key] = useState(newOperationKey);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await api.addNote({ entityType: props.entityType, entityId: props.entityId, body, notify: false, parentId: props.parent.id }, key);
+      props.onDone(r.notified ? `Respuesta guardada. Se ha avisado a ${r.note.recipients.join(', ')}` : 'Respuesta guardada');
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <form className="reply-form" onSubmit={submit}>
+      <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={2} maxLength={4000} required autoFocus placeholder={`Responder a ${props.parent.createdBy}…`} />
+      <small className="muted">Le llegará un aviso a {props.parent.createdBy === props.user.fullName ? 'quienes han respondido' : props.parent.createdBy} y a los demás de la conversación.</small>
+      {error && <p className="alert alert-error">{error}</p>}
+      <div className="actions">
+        <button type="button" className="btn btn-small" onClick={props.onCancel}>
+          Cancelar
+        </button>
+        <button className="btn btn-primary btn-small" disabled={busy || !body.trim()}>
+          {busy ? 'Enviando…' : 'Responder'}
         </button>
       </div>
     </form>

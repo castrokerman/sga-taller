@@ -25,11 +25,29 @@ documentación técnica y calibración de equipos.
 - Ordenar y filtrar las listas de ubicaciones, contenedores y usuarios.
 - Editar varias ubicaciones, contenedores o materiales a la vez en una tabla.
 - Códigos de ubicación heredados: al cambiar uno, cambian los de dentro.
-- Fotos y anotaciones en ubicaciones, contenedores y materiales, con avisos a
+- Fotos y comentarios (con respuestas) en ubicaciones, contenedores y contenidos, con avisos a
   responsables en una campana dentro de la app.
 - Códigos de ubicación con prefijo por tipo (PAS01, EST03…), tipos editables y
   desactivar ubicaciones solo administradores, sin que desaparezcan.
 - Registrar entrada paso a paso, buscador general y auditoría con filtros.
+- Recepciones por identificar: foto, responsable y sitio provisional; el
+  responsable completa qué es, proyecto, uso y si se guarda o se despliega.
+- Eliminar ubicaciones vacías y sin historial (solo administradores).
+- Proyectos con varios responsables y miembros; lo que hay en sus contenedores
+  queda reservado para sus responsables.
+- Herramientas y equipos por unidad: cada una con su código, su QR y su número
+  de serie; si entran varias iguales, cada una se registra aparte.
+- Borrar usuarios conservando su historial.
+- Pre-recepciones: avisar de un pedido para que el almacén lo reconozca al recibirlo.
+- El contenido va siempre en un contenedor o en una ubicación que guarda contenido
+  (armario, cajonera, cajón); cada tipo de ubicación dice qué guarda y qué
+  contenedores admite. Lo suelto antiguo se mete en una caja nueva con un botón.
+- Mover varios contenedores a la vez y elegir cualquier destino en una lista
+  desplegable, sin saberse el código.
+- Inicio agrupado por bloques (Día a día, Inventario, Control, Administración);
+  cada persona ve los suyos según sus permisos.
+- Contenidos (antes «Materiales») con tipos editables: Material, Herramienta,
+  Equipo y Consumible, cada uno con su prefijo de código (MAT-, HER-, EQU-, CSM-).
 - Dar de alta contenedores, anidarlos y moverlos, con historial.
 - Imprimir etiquetas QR en formato 6 × 4 pulgadas o en hojas A4 de 24.
 - Escanear etiquetas con la cámara, con un lector USB o tecleando el código.
@@ -70,8 +88,13 @@ sistema obliga a cambiar su contraseña al entrar.
 | Duplicar, exportar a Excel y árbol | Sí, 17 pruebas |
 | Inventario (Fase 3) | Sí, 27 pruebas |
 | Código heredado y edición en tabla | Sí, 12 pruebas y recorrido con navegador real |
-| Fotos, anotaciones y avisos | Sí, 9 pruebas y recorrido con navegador real, también en móvil |
+| Fotos, comentarios y avisos | Sí, 9 pruebas y recorrido con navegador real, también en móvil |
 | Prefijos por tipo, buscador, auditoría y registrar entrada | Sí, 7 pruebas y recorrido con navegador real |
+| Recepciones por identificar y eliminar ubicaciones | Sí, 8 pruebas y recorrido con navegador real con tres usuarios |
+| Tipos de contenido y listas desplegables | Sí, 3 pruebas y recorrido con navegador real sobre datos antiguos |
+| Proyectos, responsables y reserva | Sí, 7 pruebas y recorrido con navegador real con tres usuarios |
+| Herramientas y equipos por unidad | Sí, 3 pruebas y recorrido con navegador real con datos antiguos |
+| Comentarios con respuestas, borrar usuarios y pre-recepciones | Sí, 4 pruebas y recorrido con navegador real |
 | Ordenar, filtrar y vista de árbol | Sí, recorrido con un navegador real |
 | Etiquetas QR legibles en los dos formatos | Sí, 4 pruebas que leen el QR del PDF |
 | Web, API y proxy HTTPS funcionando juntos | Sí, recorrido completo con un navegador real |

@@ -6,12 +6,13 @@ import {
 import { Breadcrumbs, ContainerCard, containerListConfig, LabelPanel, LocationCard, locationListConfig, ViewSwitch } from '../components/Common';
 import { useListControls } from '../components/ListControls';
 import { StockSection } from '../components/Stock';
+import { MoveContainersPanel } from '../components/MoveContainers';
 import { ItemExtras } from '../components/ItemExtras';
 import { BulkEditor, CodeInput, padSeq, SeqInput, type BulkChanges } from '../components/BulkEditor';
 import { WarehouseTree } from './Tree';
 import { navigate } from '../router';
 
-type Panel = 'none' | 'location' | 'container' | 'labels' | 'edit' | 'duplicate' | 'export' | 'bulk-loc' | 'bulk-cont';
+type Panel = 'none' | 'location' | 'container' | 'labels' | 'edit' | 'duplicate' | 'export' | 'bulk-loc' | 'bulk-cont' | 'move-cont';
 
 export function WarehousePage({ user, locationId }: { user: User; locationId?: string }) {
   const [detail, setDetail] = useState<LocationDetail | null>(null);
@@ -97,7 +98,7 @@ export function WarehousePage({ user, locationId }: { user: User; locationId?: s
           <h2>{loc ? loc.code : 'Almacén'}</h2>
           {loc && (
             <p className="muted nomargin">
-              {loc.name} · {loc.typeName}
+              {loc.name} · {loc.typeName} · {loc.holdsContent ? 'guarda contenido' : 'solo contenedores'}
               {loc.maxCapacity !== null && ` · ${loc.containerCount} de ${loc.maxCapacity} contenedores`}
             </p>
           )}
@@ -154,6 +155,7 @@ export function WarehousePage({ user, locationId }: { user: User; locationId?: s
       {panel === 'container' && loc && (
         <ContainerForm
           where={{ locationId: loc.id }}
+          allowed={loc.allowedContainerTypes}
           onCancel={() => setPanel('none')}
           onDone={(codes) => done(`Creado${codes.length > 1 ? 's' : ''}: ${codes.join(', ')}`)}
         />
@@ -207,12 +209,20 @@ export function WarehousePage({ user, locationId }: { user: User; locationId?: s
         <section>
           <div className="section-head">
             <h3>Contenedores</h3>
+            {can('container.move') && containers.length > 0 && (
+              <button className="btn btn-small push-right" onClick={() => open('move-cont')}>
+                Mover
+              </button>
+            )}
             {can('container.manage') && containers.length > 1 && (
-              <button className="btn btn-small push-right" onClick={() => open('bulk-cont')}>
+              <button className={`btn btn-small ${can('container.move') ? '' : 'push-right'}`} onClick={() => open('bulk-cont')}>
                 Editar en tabla
               </button>
             )}
           </div>
+          {panel === 'move-cont' && loc && (
+            <MoveFromHere containers={containers} from={loc.id} onCancel={() => setPanel('none')} onDone={done} />
+          )}
           {panel === 'bulk-cont' && (
             <BulkContainers rows={contList.visible} onClose={(m) => (m ? done(m) : setPanel('none'))} />
           )}
@@ -232,7 +242,7 @@ export function WarehousePage({ user, locationId }: { user: User; locationId?: s
         </section>
       )}
 
-      {loc && <StockSection user={user} place={{ locationId: loc.id }} placeCode={loc.code} active={loc.active} />}
+      {loc && <StockSection user={user} place={{ locationId: loc.id }} placeCode={loc.code} active={loc.active} holdsContent={loc.holdsContent} onChanged={() => void load()} />}
       {loc && <ItemExtras user={user} entityType="location" entityId={loc.id} />}
 
       {roots && roots.length === 0 && (
@@ -366,6 +376,21 @@ function EditLocationForm(props: { location: LocationSummary; canDeactivate: boo
   const [capacity, setCapacity] = useState(location.maxCapacity?.toString() ?? '');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const remove = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await api.deleteLocation(location.id);
+      void r;
+      props.onGone();
+    } catch (err) {
+      setError(errorMessage(err));
+      setConfirmDelete(false);
+      setBusy(false);
+    }
+  };
 
   const save = async (e: FormEvent) => {
     e.preventDefault();
@@ -394,7 +419,7 @@ function EditLocationForm(props: { location: LocationSummary; canDeactivate: boo
     const on = !location.active;
     if (!window.confirm(on
       ? `¿Volver a activar ${location.code}?`
-      : `¿Desactivar la ubicación ${location.code}? Seguirá viéndose, en gris, pero no admitirá contenedores ni material nuevos.`)) return;
+      : `¿Desactivar la ubicación ${location.code}? Seguirá viéndose, en gris, pero no admitirá contenedores ni contenido nuevos.`)) return;
     setBusy(true);
     setError(null);
     try {
@@ -445,9 +470,31 @@ function EditLocationForm(props: { location: LocationSummary; canDeactivate: boo
         </label>
       </div>
       {error && <p className="alert alert-error">{error}</p>}
-      <div className="actions">
+      {confirmDelete && (
+        <div className="danger-confirm" role="alertdialog" aria-labelledby="del-title">
+          <strong id="del-title">¿Seguro que quieres eliminar la ubicación {location.code}?</strong>
+          <p>
+            Desaparece del sistema y no se puede deshacer. Su etiqueta QR dejará de funcionar. Solo se puede si está vacía y no
+            tiene historial; si no, desactívala.
+          </p>
+          <div className="actions nomargin">
+            <button type="button" className="btn" onClick={() => setConfirmDelete(false)} disabled={busy} autoFocus>
+              No, volver
+            </button>
+            <button type="button" className="btn btn-delete" onClick={remove} disabled={busy}>
+              {busy ? 'Eliminando…' : 'Sí, eliminar'}
+            </button>
+          </div>
+        </div>
+      )}
+      <div className="actions actions-wrap">
         {props.canDeactivate && (
-          <button type="button" className={`btn ${location.active ? 'btn-danger' : ''}`} onClick={deactivate} disabled={busy}>
+          <button type="button" className="btn btn-delete-ghost" onClick={() => setConfirmDelete(true)} disabled={busy || confirmDelete}>
+            🗑 Eliminar
+          </button>
+        )}
+        {props.canDeactivate && (
+          <button type="button" className={`btn ${location.active ? 'btn-warn' : ''}`} onClick={deactivate} disabled={busy}>
             {location.active ? 'Desactivar' : 'Volver a activar'}
           </button>
         )}
@@ -465,12 +512,15 @@ function EditLocationForm(props: { location: LocationSummary; canDeactivate: boo
 /** Alta de uno o varios contenedores en una ubicación o dentro de otro contenedor. */
 export function ContainerForm(props: {
   where: { locationId?: string; parentContainerId?: string };
+  /** Tipos admitidos por la ubicación (vacío o sin dar: cualquiera). */
+  allowed?: string[];
   onCancel: () => void;
   onDone: (codes: string[]) => void;
 }) {
   const [types, setTypes] = useState<ContainerType[]>([]);
   const [typeCode, setTypeCode] = useState('');
   const [quantity, setQuantity] = useState('1');
+  const [contentDescription, setContentDescription] = useState('');
   const [description, setDescription] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
@@ -479,7 +529,8 @@ export function ContainerForm(props: {
 
   useEffect(() => {
     api.containerTypes().then((r) => {
-      const active = r.types.filter((t) => t.active);
+      const allowed = props.allowed ?? [];
+      const active = r.types.filter((t) => t.active && (allowed.length === 0 || allowed.includes(t.code)));
       setTypes(active);
       setTypeCode((current) => current || active[0]?.code || '');
     }).catch((e) => setError(errorMessage(e)));
@@ -490,7 +541,7 @@ export function ContainerForm(props: {
     setError(null);
     try {
       const r = await api.createContainers(
-        { typeCode, quantity: Number(quantity) || 1, description: description || undefined, force, ...props.where },
+        { typeCode, quantity: Number(quantity) || 1, description: description || undefined, contentDescription: contentDescription.trim() || undefined, force, ...props.where },
         operationKey,
       );
       props.onDone(r.containers.map((c) => c.code));
@@ -529,6 +580,10 @@ export function ContainerForm(props: {
       <label className="field">
         <span>Descripción (opcional)</span>
         <input value={description} onChange={(e) => setDescription(e.target.value)} maxLength={300} />
+      </label>
+      <label className="field">
+        <span>Descripción del contenido (opcional)</span>
+        <input value={contentDescription} onChange={(e) => setContentDescription(e.target.value)} maxLength={300} placeholder="Qué lleva dentro: tornillería M6, retales de chapa…" />
       </label>
 
       {warning && (
@@ -662,7 +717,7 @@ function ExportPanel(props: { onClose: () => void }) {
           Contenedores
         </a>
         <a className="btn" href="/api/export/materiales.xlsx" download>
-          Materiales
+          Contenidos
         </a>
         <a className="btn" href="/api/export/stock.xlsx" download>
           Stock por sitio
@@ -851,6 +906,55 @@ function RecodeNotice(props: { onDone: (text: string) => void }) {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+/** Mover desde la ubicación: se marcan los contenedores y se elige el destino en la lista. */
+function MoveFromHere(props: { containers: ContainerSummary[]; from: string; onCancel: () => void; onDone: (text: string) => void }) {
+  const [picked, setPicked] = useState<string[]>(props.containers.length === 1 ? [props.containers[0]!.id] : []);
+  const [ready, setReady] = useState(props.containers.length === 1);
+  const chosen = props.containers.filter((c) => picked.includes(c.id));
+  if (ready && chosen.length) {
+    return (
+      <MoveContainersPanel
+        containers={chosen.map((c) => ({ id: c.id, code: c.code, typeCode: c.typeCode, hasInside: c.childCount > 0 }))}
+        from={props.from}
+        onCancel={props.containers.length === 1 ? props.onCancel : () => setReady(false)}
+        onDone={props.onDone}
+      />
+    );
+  }
+  const all = picked.length === props.containers.length;
+  return (
+    <div className="card form">
+      <h3>¿Qué contenedores mueves?</h3>
+      <label className="check">
+        <input type="checkbox" checked={all} onChange={() => setPicked(all ? [] : props.containers.map((c) => c.id))} />
+        <span>Todos ({props.containers.length})</span>
+      </label>
+      <div className="move-pick">
+        {props.containers.map((c) => (
+          <label key={c.id} className="check">
+            <input
+              type="checkbox"
+              checked={picked.includes(c.id)}
+              onChange={() => setPicked(picked.includes(c.id) ? picked.filter((x) => x !== c.id) : [...picked, c.id])}
+            />
+            <span>
+              <strong className="mono">{c.code}</strong> {c.description ? `· ${c.description}` : ''} <span className="muted">({c.typeName})</span>
+            </span>
+          </label>
+        ))}
+      </div>
+      <div className="actions">
+        <button className="btn" onClick={props.onCancel}>
+          Cancelar
+        </button>
+        <button className="btn btn-primary" disabled={!picked.length} onClick={() => setReady(true)}>
+          Elegir destino ({picked.length})
+        </button>
+      </div>
     </div>
   );
 }

@@ -80,7 +80,7 @@ export function SearchPage() {
 
       {res && res.materials.length > 0 && (
         <section>
-          <h3>Materiales <span className="muted small">({res.materials.length})</span></h3>
+          <h3>Contenidos <span className="muted small">({res.materials.length})</span></h3>
           <ul className="results">
             {res.materials.map((m) => (
               <li key={m.id}>
@@ -129,6 +129,11 @@ export function SearchPage() {
                       {c.description && <> · <Highlight text={c.description} query={query} /></>}
                       {c.status !== 'ACTIVE' && ' · retirado'}
                     </span>
+                    {c.contentDescription && (
+                      <span className="small">
+                        <span className="tag tag-content">📦 <Highlight text={c.contentDescription} query={query} /></span>
+                      </span>
+                    )}
                     <span className="where">
                       {c.locationCode ? (
                         <span className="where-item">
