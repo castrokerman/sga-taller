@@ -70,7 +70,8 @@ export function stockRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
   app.get(
     '/api/stock/movements',
     {
-      preHandler: requirePermission('stock.read'),
+      // Los movimientos de todo el almacén son de control: solo responsables de almacén.
+      preHandler: requirePermission('movement.read_all'),
       schema: {
         querystring: {
           type: 'object', additionalProperties: false,

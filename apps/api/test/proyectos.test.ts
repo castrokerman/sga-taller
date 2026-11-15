@@ -188,3 +188,13 @@ describe('proyectos', () => {
     expect(audit).toEqual(['proyecto.alta', 'proyecto.modificacion']);
   });
 });
+
+describe('pantalla de movimientos', () => {
+  it('solo la ven los responsables de almacén', async () => {
+    expect((await call('GET', '/api/stock/movements', usuario)).statusCode).toBe(403);
+    expect((await call('GET', '/api/stock/movements', proyecto)).statusCode).toBe(403);
+    expect((await call('GET', '/api/stock/movements', almacen)).statusCode).toBe(200);
+    // El historial de un contenido se sigue viendo en su ficha.
+    expect((await call('GET', `/api/materials/${material}`, usuario)).json().movements.length).toBeGreaterThan(0);
+  });
+});

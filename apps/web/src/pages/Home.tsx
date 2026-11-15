@@ -48,7 +48,7 @@ const GROUPS: Group[] = [
     text: 'seguimiento y trazabilidad',
     permission: 'audit.read',
     tiles: [
-      { icon: '🔁', title: 'Movimientos', text: 'Entradas, salidas, traslados y recuentos', path: 'movimientos', permission: 'stock.read' },
+      { icon: '🔁', title: 'Movimientos', text: 'Entradas, salidas, traslados y recuentos', path: 'movimientos', permission: 'movement.read_all' },
       { icon: '🕘', title: 'Auditoría', text: 'Quién hizo qué y cuándo', path: 'auditoria', permission: 'audit.read' },
     ],
   },

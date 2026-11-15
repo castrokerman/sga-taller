@@ -82,7 +82,7 @@ export function App() {
   else if (route.name === 'materiales' && can('material.read')) page = <MaterialsPage user={user} />;
   else if (route.name === 'material' && route.id && can('material.read')) page = <MaterialPage user={user} materialId={route.id} />;
   else if (route.name === 'familias' && can('material.read')) page = <FamiliesPage user={user} />;
-  else if (route.name === 'movimientos' && can('stock.read')) page = <MovementsPage user={user} />;
+  else if (route.name === 'movimientos' && can('movement.read_all')) page = <MovementsPage user={user} />;
   else if (route.name === 'prestamos' && can('stock.read')) page = <LoansPage user={user} />;
   else if (route.name === 'escaner' && can('container.read')) page = <ScannerPage />;
   else if (route.name === 'usuarios' && can('admin.users.manage')) page = <UsersPage me={user} back={home} />;

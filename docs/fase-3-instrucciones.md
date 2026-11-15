@@ -41,8 +41,8 @@ permisos:
 | Bloque | Qué tiene | Quién lo ve |
 | --- | --- | --- |
 | **Día a día** | Escáner QR, Registrar entrada, Recepciones, Buscador | Todos |
-| **Inventario** | Almacén, Contenidos, Préstamos | Todos |
-| **Control** | Movimientos, Auditoría | Responsables de almacén y administradores |
+| **Inventario** | Almacén, Contenidos, Préstamos, Proyectos | Todos |
+| **Control** | Movimientos (solo responsables de almacén), Auditoría | Responsables de almacén y administradores |
 | **Administración** | Usuarios, Tipos, Familias | Administradores |
 
 La tarjeta de Recepciones lleva el número de pendientes. Lo que llegará en
@@ -53,7 +53,7 @@ Para el inventario, estos son los accesos principales:
 | Acceso | Para qué |
 | --- | --- |
 | **Contenidos** | El catálogo: qué hay (materiales, herramientas, equipos, consumibles…), cuánto en total y dónde. |
-| **Movimientos** | Todo lo que ha entrado, salido o cambiado de sitio, con quién y cuándo. |
+| **Movimientos** | Todo lo que ha entrado, salido o cambiado de sitio, con quién y cuándo. Solo para responsables de almacén; los demás ven el historial en la ficha de cada caja o contenido. |
 | **Préstamos** | Las herramientas prestadas y hasta qué día: cada uno ve las suyas; los responsables de almacén, todas. |
 
 Y en la ficha de cada **contenedor** y de cada **ubicación** hay una sección
