@@ -58,7 +58,7 @@ export function MaterialPage({ user, materialId }: { user: User; materialId: str
   return (
     <>
       <nav className="crumbs">
-        <a href="#/materiales">Materiales</a>
+        <a href="#/contenidos">Contenidos</a>
         {d.familyPath.split(' › ').map((f) => (
           <span key={f}>
             <i>›</i>
@@ -75,7 +75,7 @@ export function MaterialPage({ user, materialId }: { user: User; materialId: str
         <div>
           <h2>{m.description}</h2>
           <p className="muted nomargin">
-            {m.internalRef} · {m.familyName} · se cuenta en {m.unitCode}, {TRACKING_NAMES[m.quantityTracking].toLowerCase()}
+            <span className="tag tag-type">{m.contentTypeName}</span> {m.internalRef} · {m.familyName} · se cuenta en {m.unitCode}, {TRACKING_NAMES[m.quantityTracking].toLowerCase()}
             {m.minStock !== null && tracked && ` · aviso si baja de ${formatQty(m.minStock, m.unitCode)}`}
             {m.lotTracked && ' · con lote'}
           </p>
@@ -112,11 +112,11 @@ export function MaterialPage({ user, materialId }: { user: User; materialId: str
       )}
       {panel === 'duplicate' && (
         <MaterialForm
-          title={`Nuevo material a partir de ${m.internalRef}`}
+          title={`Nuevo contenido a partir de ${m.internalRef}`}
           canPhoto={user.permissions.includes('photo.add')}
           initial={{ ...m, internalRef: undefined, status: undefined, description: m.description }}
           onCancel={() => setPanel('none')}
-          onDone={(n) => navigate(`material/${n.id}`)}
+          onDone={(n) => navigate(`contenido/${n.id}`)}
         />
       )}
       {op && <OpPanel op={op} user={user} lines={[]} onCancel={() => setOp(null)} onDone={done} />}
@@ -147,7 +147,7 @@ export function MaterialPage({ user, materialId }: { user: User; materialId: str
           )}
         </div>
       ) : (
-        <p className="muted">Este material no se cuenta: se ve en qué sitios hay y quién se lleva.</p>
+        <p className="muted">Este contenido no se cuenta: se ve en qué sitios hay y quién se lleva.</p>
       )}
 
       <div className="two">
@@ -244,7 +244,7 @@ export function History({ user, lines, showMaterial, onReversed }: { user: User;
               </b>
               {showMaterial && (
                 <div>
-                  <a href={`#/material/${l.materialId}`}>{l.description}</a>
+                  <a href={`#/contenido/${l.materialId}`}>{l.description}</a>
                 </div>
               )}
               <small>

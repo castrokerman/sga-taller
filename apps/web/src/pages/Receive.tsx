@@ -100,7 +100,7 @@ export function ReceivePage({ user, initial }: { user: User; initial?: string })
 
       {step === 1 && (
         <div className="card form op-form">
-          <h3>¿Qué material entra?</h3>
+          <h3>¿Qué contenido entra?</h3>
           <MaterialPicker
             user={user}
             onPick={(m) => {
@@ -138,7 +138,7 @@ export function ReceivePage({ user, initial }: { user: User; initial?: string })
                 </button>
               </div>
               <div className="actions">
-                <button className="btn" onClick={() => setStep(1)}>← Otro material</button>
+                <button className="btn" onClick={() => setStep(1)}>← Otro contenido</button>
               </div>
             </>
           )}
@@ -176,7 +176,7 @@ export function ReceivePage({ user, initial }: { user: User; initial?: string })
           </div>
           <div className="actions actions-wrap">
             <a className="linkbtn" href={`#/material/${material.id}`}>
-              Ver la ficha del material
+              Ver la ficha del contenido
             </a>
             <a className="linkbtn" href={place.ref.containerId ? `#/contenedor/${place.ref.containerId}` : `#/almacen/${place.ref.locationId}`}>
               Ver {place.code}
@@ -244,7 +244,7 @@ function QuantityStep(props: { user: User; material: Material; place: Place; onB
         {material.places > 0 && !untracked && <span className="muted"> · ya hay {formatQty(material.quantity, material.unitCode, material.quantityTracking)} en total</span>}
       </p>
       {untracked ? (
-        <p className="muted">Este material no se cuenta: solo se anota que hay en este sitio.</p>
+        <p className="muted">Este contenido no se cuenta: solo se anota que hay en este sitio.</p>
       ) : (
         <>
           <span className="field-l">Cantidad</span>
@@ -273,7 +273,7 @@ function QuantityStep(props: { user: User; material: Material; place: Place; onB
       </label>
       {canPhoto && (
         <div className="field">
-          <span className="field-l">Foto del material <span className="muted">(opcional)</span></span>
+          <span className="field-l">Foto del contenido <span className="muted">(opcional)</span></span>
           <label className="btn">
             {photo ? `📷 ${photo.name}` : '📷 Hacer o elegir foto'}
             <input ref={input} type="file" accept="image/*" hidden onChange={(e) => setPhoto(e.target.files?.[0] ?? null)} />
@@ -283,7 +283,7 @@ function QuantityStep(props: { user: User; material: Material; place: Place; onB
               Quitar
             </button>
           )}
-          <small className="muted" style={{ display: 'block' }}>Se añade a la ficha del material.</small>
+          <small className="muted" style={{ display: 'block' }}>Se añade a la ficha del contenido.</small>
         </div>
       )}
       {canReturn && (
@@ -291,7 +291,7 @@ function QuantityStep(props: { user: User; material: Material; place: Place; onB
           <input type="checkbox" checked={isReturn} onChange={(e) => setIsReturn(e.target.checked)} />
           <span>
             <strong>Es una devolución</strong>
-            <small className="muted"> — material que se sacó y vuelve sin usar</small>
+            <small className="muted"> — contenido que se sacó y vuelve sin usar</small>
           </span>
         </label>
       )}

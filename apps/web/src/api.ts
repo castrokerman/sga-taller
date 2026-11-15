@@ -232,10 +232,24 @@ export interface Material {
   lowStock: boolean;
   onLoan: number;
   photoId: string | null;
+  /** Tipo de contenido: Material, Herramienta, Equipo, Consumible… */
+  contentTypeCode: string;
+  contentTypeName: string;
 }
 
 export type MaterialInput = Partial<Omit<Material,
-  'id' | 'familyName' | 'decimals' | 'createdAt' | 'quantity' | 'quantityFree' | 'places' | 'needsRecount' | 'lowStock' | 'onLoan'>>;
+  'id' | 'familyName' | 'decimals' | 'createdAt' | 'quantity' | 'quantityFree' | 'places' | 'needsRecount' | 'lowStock' | 'onLoan' | 'contentTypeName'>>;
+
+export interface ContentType {
+  code: string;
+  name: string;
+  codePrefix: string;
+  defaultTracking: Tracking;
+  defaultLoanable: boolean;
+  active: boolean;
+  sortOrder: number;
+  contentCount: number;
+}
 
 export interface Allocation { availability: 'FREE' | 'RESTRICTED'; quantity: number; projectCode: string | null; projectName: string | null }
 
@@ -418,7 +432,7 @@ export interface Inbound {
 
 export interface InboundCompletion {
   materialId?: string;
-  newMaterial?: { description: string; familyId: string; unitCode: string; manufacturer?: string; manufacturerRef?: string };
+  newMaterial?: { contentTypeCode?: string; description: string; familyId: string; unitCode: string; manufacturer?: string; manufacturerRef?: string };
   quantity?: number;
   lotCode?: string;
   projectRef?: string;
@@ -486,6 +500,11 @@ export const api = {
     request<{ parentCode: string | null; typePrefix: string; seq: number; code: string }>(
       'GET', `/api/locations/next-code?parentId=${parentId}&typeCode=${typeCode}${exceptId ? `&exceptId=${exceptId}` : ''}`,
     ),
+  contentTypes: () => request<{ types: ContentType[] }>('GET', '/api/content-types'),
+  createContentType: (data: { name: string; codePrefix: string; defaultTracking?: Tracking; defaultLoanable?: boolean }) =>
+    request<{ code: string }>('POST', '/api/content-types', data),
+  updateContentType: (code: string, data: { name?: string; codePrefix?: string; defaultTracking?: Tracking; defaultLoanable?: boolean; active?: boolean }) =>
+    request<{ recoded: number }>('PATCH', `/api/content-types/${code}`, data),
   containerTypes: () => request<{ types: ContainerType[] }>('GET', '/api/container-types'),
   createContainerType: (data: { code?: string; name: string; codePrefix: string; defaultReusePolicy: string }) =>
     request<{ type: ContainerType }>('POST', '/api/container-types', data),

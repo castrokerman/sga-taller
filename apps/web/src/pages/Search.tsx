@@ -80,7 +80,7 @@ export function SearchPage() {
 
       {res && res.materials.length > 0 && (
         <section>
-          <h3>Materiales <span className="muted small">({res.materials.length})</span></h3>
+          <h3>Contenidos <span className="muted small">({res.materials.length})</span></h3>
           <ul className="results">
             {res.materials.map((m) => (
               <li key={m.id}>

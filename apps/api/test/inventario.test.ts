@@ -366,7 +366,7 @@ describe('préstamos de herramientas', () => {
 
 describe('exportar a Excel', () => {
   it('materiales y stock', async () => {
-    for (const [path, sheet] of [['materiales', 'Materiales'], ['stock', 'Stock']]) {
+    for (const [path, sheet] of [['materiales', 'Contenidos'], ['stock', 'Stock']]) {
       const res = await call('GET', `/api/export/${path}.xlsx`, consulta);
       expect(res.statusCode).toBe(200);
       const wb = new ExcelJS.Workbook();
@@ -397,5 +397,57 @@ describe('buscador', () => {
     expect(lote.materials.map((m: { description: string }) => m.description)).toContain('FICTICIO Barra 6082 Ø30');
     // Todas las palabras tienen que estar.
     expect((await call('GET', '/api/search?q=tornillo%20inexistente', usuario)).json().materials).toEqual([]);
+  });
+});
+
+describe('tipos de contenido', () => {
+  const mat = async (body: Record<string, unknown>) => {
+    const r = await call('POST', '/api/materials', almacen, { description: 'FICTICIO contenido', familyId, unitCode: 'ud', ...body });
+    expect(r.statusCode, r.body).toBe(201);
+    return r.json().material as { id: string; internalRef: string; contentTypeCode: string; contentTypeName: string };
+  };
+
+  it('de partida hay Material, Herramienta, Equipo y Consumible, cada uno con su prefijo', async () => {
+    const types = (await call('GET', '/api/content-types', usuario)).json().types;
+    expect(types.map((t: { name: string; codePrefix: string }) => `${t.name}:${t.codePrefix}`)).toEqual([
+      'Material:MAT', 'Herramienta:HER', 'Equipo:EQU', 'Consumible:CSM',
+    ]);
+    expect(types.find((t: { code: string }) => t.code === 'HERRAMIENTA').defaultLoanable).toBe(true);
+  });
+
+  it('el código lleva el prefijo del tipo, y cambiar de tipo cambia el prefijo', async () => {
+    const m = await mat({});
+    expect(m.internalRef).toMatch(/^MAT-\d{6}$/);
+    expect(m.contentTypeName).toBe('Material');
+    const h = await mat({ contentTypeCode: 'HERRAMIENTA', isLoanable: true });
+    expect(h.internalRef).toMatch(/^HER-\d{6}$/);
+    // El número sale de la misma secuencia: no se repite entre tipos.
+    expect(h.internalRef.slice(4)).not.toBe(m.internalRef.slice(4));
+    const r = await call('PATCH', `/api/materials/${m.id}`, almacen, { contentTypeCode: 'EQUIPO' });
+    expect(r.statusCode, r.body).toBe(200);
+    expect(r.json().material.internalRef).toBe(`EQU-${m.internalRef.slice(4)}`);
+    // Un código puesto a mano no se toca.
+    const manual = await mat({ internalRef: 'FICT-LLAVE-17' });
+    const r2 = await call('PATCH', `/api/materials/${manual.id}`, almacen, { contentTypeCode: 'HERRAMIENTA' });
+    expect(r2.json().material.internalRef).toBe('FICT-LLAVE-17');
+    expect((await call('POST', '/api/materials', almacen, { description: 'x', familyId, unitCode: 'ud', contentTypeCode: 'NO_EXISTE' })).statusCode).toBe(400);
+  });
+
+  it('los tipos se crean y se editan; cambiar el prefijo recodifica los automáticos', async () => {
+    expect((await call('POST', '/api/content-types', almacen, { name: 'Repuesto', codePrefix: 'REP' })).statusCode).toBe(403);
+    const c = await call('POST', '/api/content-types', admin, { name: 'Repuesto', codePrefix: 'rep', defaultTracking: 'ESTIMATED' });
+    expect(c.statusCode, c.body).toBe(201);
+    const rep = await mat({ contentTypeCode: c.json().code });
+    expect(rep.internalRef).toMatch(/^REP-/);
+    // Un prefijo de contenedor o de otro tipo no se admite.
+    expect((await call('PATCH', `/api/content-types/${c.json().code}`, admin, { codePrefix: 'CAJ' })).json().error.code).toBe('TIPO_DUPLICADO');
+    expect((await call('PATCH', `/api/content-types/${c.json().code}`, admin, { codePrefix: 'HER' })).json().error.code).toBe('TIPO_DUPLICADO');
+    const r = await call('PATCH', `/api/content-types/${c.json().code}`, admin, { codePrefix: 'RPT', name: 'Repuestos' });
+    expect(r.statusCode, r.body).toBe(200);
+    expect(r.json().recoded).toBe(1);
+    const after = (await call('GET', `/api/materials/${rep.id}`, usuario)).json().material;
+    expect(after.internalRef).toBe(`RPT-${rep.internalRef.slice(4)}`);
+    expect(after.contentTypeName).toBe('Repuestos');
+    expect((await call('PATCH', '/api/content-types/MATERIAL', admin, { active: false })).json().error.code).toBe('TIPO_BASE');
   });
 });

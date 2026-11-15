@@ -47,7 +47,7 @@ export function FamiliesPage({ user }: { user: User }) {
         <a href="#/inicio">Inicio</a>
         <span>
           <i>›</i>
-          <a href="#/materiales">Materiales</a>
+          <a href="#/contenidos">Contenidos</a>
         </span>
         <span>
           <i>›</i>
@@ -56,7 +56,7 @@ export function FamiliesPage({ user }: { user: User }) {
       </nav>
       <div className="page-head">
         <div>
-          <h2>Familias de material</h2>
+          <h2>Familias de contenido</h2>
           <p className="muted nomargin">Las creáis y cambiáis vosotros cuando queráis. Pueden tener subfamilias.</p>
         </div>
         {manage && (
@@ -86,7 +86,7 @@ export function FamiliesPage({ user }: { user: User }) {
           <div className="famrow h">
             <span>Nombre</span>
             <span className="hide-m">Unidad habitual</span>
-            <span>Materiales</span>
+            <span>Contenidos</span>
             <span />
           </div>
           {families.map((f) => (
@@ -133,7 +133,7 @@ export function FamiliesPage({ user }: { user: User }) {
         </div>
       )}
       <p className="alert alert-info" style={{ marginTop: '1rem' }}>
-        Una familia con materiales no se borra: se desactiva y deja de ofrecerse al dar de alta. Cambiar el nombre o moverla
+        Una familia con contenidos no se borra: se desactiva y deja de ofrecerse al dar de alta. Cambiar el nombre o moverla
         no afecta al stock ni al historial.
       </p>
     </>
@@ -205,7 +205,7 @@ function FamilyForm(props: {
               </option>
             ))}
           </select>
-          <small className="muted">La que se propone al dar de alta un material de esta familia.</small>
+          <small className="muted">La que se propone al dar de alta un contenido de esta familia.</small>
         </label>
       </div>
       {error && <p className="alert alert-error">{error}</p>}

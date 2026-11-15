@@ -17,11 +17,11 @@ const TILES: Tile[] = [
   { title: 'Recepciones', text: 'Lo que ha llegado y falta por identificar', path: 'recepciones' },
   { title: 'Escáner QR', text: 'Escanear ubicaciones y contenedores', path: 'escaner', permission: 'container.read' },
   { title: 'Almacén', text: 'Ubicaciones y contenedores', path: 'almacen', permission: 'location.read' },
-  { title: 'Materiales', text: 'Catálogo, dónde está cada cosa y cuánto hay', path: 'materiales', permission: 'material.read' },
+  { title: 'Contenidos', text: 'Catálogo, dónde está cada cosa y cuánto hay', path: 'contenidos', permission: 'material.read' },
   { title: 'Movimientos', text: 'Entradas, retiradas, traslados y recuentos', path: 'movimientos', permission: 'stock.read' },
   { title: 'Préstamos', text: 'Herramientas prestadas y fechas de devolución', path: 'prestamos', permission: 'stock.read' },
   { title: 'Mapa', text: 'Plano del taller para ir a cada zona', phase: 'later' },
-  { title: 'Autorizaciones', text: 'Solicitudes de material restringido', phase: 4 },
+  { title: 'Autorizaciones', text: 'Solicitudes de contenido restringido', phase: 4 },
   { title: 'Documentación', text: 'Certificados y documentos técnicos', phase: 5 },
   { title: 'Usuarios', text: 'Altas, roles y contraseñas', path: 'usuarios', permission: 'admin.users.manage' },
   { title: 'Tipos', text: 'Tipos de ubicación y de contenedor', path: 'tipos', permission: 'admin.masterdata.manage' },
@@ -41,7 +41,7 @@ export function HomePage({ user }: { user: User }) {
   return (
     <>
       <h2>Hola, {user.fullName.split(' ')[0]}</h2>
-      <p className="muted">Escanea una caja o una ubicación para ver qué hay y sacar o meter material.</p>
+      <p className="muted">Escanea una caja o una ubicación para ver qué hay y sacar o meter contenido.</p>
       {pending && pending.mine > 0 && (
         <a className="alert alert-warn todo-banner" href="#/recepciones">
           <span>

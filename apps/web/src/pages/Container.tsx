@@ -402,7 +402,7 @@ function DuplicateContainerForm(props: { detail: ContainerDetail; onCancel: () =
       <h3>Duplicar {c.code}</h3>
       <p className="muted">
         Las copias serán {c.typeName.toLowerCase()}s iguales, en el mismo sitio, cada una con su propio código y QR. El
-        material no se copia.
+        contenido no se copia.
       </p>
       <label className="field">
         <span>Cuántas copias</span>

@@ -37,7 +37,7 @@ export async function getMaterial(c: pg.PoolClient, id: string): Promise<Materia
        FROM material m JOIN unit_of_measure u ON u.code = m.unit_code WHERE m.id = $1`,
     [id],
   );
-  if (!r.rows[0]) throw notFound('El material no existe');
+  if (!r.rows[0]) throw notFound('El contenido no existe');
   return r.rows[0];
 }
 
@@ -106,7 +106,7 @@ export async function lockBalance(c: pg.PoolClient, id: string): Promise<Balance
     [id],
   );
   const b = r.rows[0];
-  if (!b) throw notFound('Ese material ya no está en ese sitio. Actualiza la pantalla');
+  if (!b) throw notFound('Ese contenido ya no está en ese sitio. Actualiza la pantalla');
   const a = await c.query(
     `SELECT coalesce(sum(quantity) FILTER (WHERE availability = 'RESTRICTED'), 0)::float AS restricted
        FROM stock_allocation WHERE stock_balance_id = $1`,
@@ -217,7 +217,7 @@ export async function applyLine(
 async function deleteBalance(c: pg.PoolClient, id: string) {
   const a = await c.query(`SELECT 1 FROM stock_allocation WHERE stock_balance_id = $1 AND quantity > 0 LIMIT 1`, [id]);
   if (a.rowCount) {
-    throw conflict('Ese material tiene cantidad asignada a un proyecto y no puede vaciarse así', 'STOCK_ASIGNADO');
+    throw conflict('Ese contenido tiene cantidad asignada a un proyecto y no puede vaciarse así', 'STOCK_ASIGNADO');
   }
   await c.query(`DELETE FROM stock_allocation WHERE stock_balance_id = $1`, [id]);
   await c.query(`DELETE FROM stock_balance WHERE id = $1`, [id]);

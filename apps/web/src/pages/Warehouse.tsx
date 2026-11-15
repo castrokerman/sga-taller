@@ -409,7 +409,7 @@ function EditLocationForm(props: { location: LocationSummary; canDeactivate: boo
     const on = !location.active;
     if (!window.confirm(on
       ? `¿Volver a activar ${location.code}?`
-      : `¿Desactivar la ubicación ${location.code}? Seguirá viéndose, en gris, pero no admitirá contenedores ni material nuevos.`)) return;
+      : `¿Desactivar la ubicación ${location.code}? Seguirá viéndose, en gris, pero no admitirá contenedores ni contenido nuevos.`)) return;
     setBusy(true);
     setError(null);
     try {
@@ -699,7 +699,7 @@ function ExportPanel(props: { onClose: () => void }) {
           Contenedores
         </a>
         <a className="btn" href="/api/export/materiales.xlsx" download>
-          Materiales
+          Contenidos
         </a>
         <a className="btn" href="/api/export/stock.xlsx" download>
           Stock por sitio

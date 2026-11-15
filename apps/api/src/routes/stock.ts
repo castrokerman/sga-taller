@@ -113,7 +113,7 @@ export function stockRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
         if (b.isReturn && !request.user!.permissions.includes('stock.return')) throw forbidden();
         const out = await withTransaction(pool, async (c) => {
           const m = await getMaterial(c, b.materialId);
-          if (m.status !== 'ACTIVE') throw conflict('El material está dado de baja', 'MATERIAL_OBSOLETO');
+          if (m.status !== 'ACTIVE') throw conflict('El contenido está dado de baja', 'MATERIAL_OBSOLETO');
           const place = await resolvePlace(c, b);
           const quantity = checkQuantity(m, b.quantity);
           if (m.lotTracked && !b.lotCode?.trim()) throw badRequest(`${m.description} exige indicar el lote`, 'FALTA_LOTE');
@@ -215,7 +215,7 @@ export function stockRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
           const from = await placeCode(c, bal.containerId, bal.locationId);
           const to = await resolvePlace(c, { containerId: b.toContainerId, locationId: b.toLocationId });
           if (to.containerId === bal.containerId && to.locationId === bal.locationId) {
-            throw conflict(`El material ya está en ${to.code}`, 'MISMO_LUGAR');
+            throw conflict(`El contenido ya está en ${to.code}`, 'MISMO_LUGAR');
           }
           const quantity = m.tracking === 'NOT_TRACKED' ? null : checkQuantity(m, b.quantity ?? bal.quantity)!;
           if (quantity !== null) {
@@ -310,7 +310,7 @@ export function stockRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
           if (done.rowCount) throw conflict(`Ya se revirtió con el movimiento ${done.rows[0].n}`, 'YA_REVERTIDO');
           const lines = (await c.query(`SELECT * FROM stock_movement_line WHERE movement_id = $1 ORDER BY line_no`, [id])).rows;
           if (lines.some((l) => l.quantity_tracking === 'NOT_TRACKED')) {
-            throw conflict('Los movimientos de material sin contar no se revierten: registra una entrada o retirada nueva', 'NO_REVERSIBLE');
+            throw conflict('Los movimientos de contenido sin contar no se revierten: registra una entrada o retirada nueva', 'NO_REVERSIBLE');
           }
           const mv = await createMovement(c, { type: 'REVERSAL', userId: request.user!.id, reason, reversesId: id });
           // Primero lo que sale, luego lo que entra, para no dejar negativos intermedios.
@@ -323,7 +323,7 @@ export function stockRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
               await applyLine(c, mv, n++, { material: m, lotId: l.lot_id, containerId: l.container_id, locationId: l.location_id, delta: -Number(l.quantity_delta) });
             } catch (e) {
               if (e instanceof AppError && e.code === 'STOCK_INSUFICIENTE') {
-                throw conflict('No se puede revertir: ese material ya se ha movido o retirado después', 'NO_REVERSIBLE');
+                throw conflict('No se puede revertir: ese contenido ya se ha movido o retirado después', 'NO_REVERSIBLE');
               }
               throw e;
             }

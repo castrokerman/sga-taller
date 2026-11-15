@@ -9,6 +9,7 @@ import {
   applyLine, checkQuantity, createMovement, findOrCreateLot, getMaterial, resolvePlace, type MaterialInfo, type Place,
 } from '../inventory/stock.js';
 import { canSeeInbound, imageType } from './extras.js';
+import { AUTO_REF, contentType } from './materials.js';
 
 /**
  * Recepciones pendientes de identificar.
@@ -118,6 +119,7 @@ async function insertPhotos(
 }
 
 interface NewMaterial {
+  contentTypeCode?: string;
   description: string;
   familyId: string;
   unitCode: string;
@@ -128,16 +130,20 @@ interface NewMaterial {
 /** Alta de material desde la recepción: la hace el responsable, que es quien sabe qué es. */
 async function createMaterial(c: pg.PoolClient, request: FastifyRequest, nm: NewMaterial): Promise<string> {
   const description = nm.description.trim();
-  if (!description) throw badRequest('Escribe qué es el material', 'FALTA_DESCRIPCION');
+  if (!description) throw badRequest('Escribe qué es el contenido', 'FALTA_DESCRIPCION');
   const fam = await c.query(`SELECT 1 FROM material_family WHERE id = $1`, [nm.familyId]);
   if (!fam.rowCount) throw badRequest('La familia no existe', 'FAMILIA_NO_EXISTE');
   const unit = await c.query(`SELECT 1 FROM unit_of_measure WHERE code = $1`, [nm.unitCode]);
   if (!unit.rowCount) throw badRequest('La unidad no existe', 'UNIDAD_NO_EXISTE');
+  const type = (await contentType(c, nm.contentTypeCode)) as { code: string; prefix: string };
+  const defaults = (await c.query(`SELECT default_tracking, default_loanable FROM content_type WHERE code = $1`, [type.code])).rows[0];
   const r = await c.query(
-    `INSERT INTO material (internal_ref, description, family_id, manufacturer, manufacturer_ref, unit_code)
-     VALUES ('MAT-' || lpad(nextval('material_ref_seq')::text, 6, '0'), $1, $2, $3, $4, $5)
+    `INSERT INTO material (internal_ref, description, family_id, manufacturer, manufacturer_ref, unit_code,
+                           content_type_code, quantity_tracking, is_loanable)
+     VALUES (${AUTO_REF('$6::text')}, $1, $2, $3, $4, $5, $7, $8, $9)
      RETURNING id, internal_ref`,
-    [description, nm.familyId, nm.manufacturer?.trim() || null, nm.manufacturerRef?.trim() || null, nm.unitCode],
+    [description, nm.familyId, nm.manufacturer?.trim() || null, nm.manufacturerRef?.trim() || null, nm.unitCode,
+      type.prefix, type.code, defaults.default_tracking, defaults.default_loanable],
   );
   await writeAudit(c, {
     userId: request.user!.id, action: 'material.alta', entityType: 'material', entityId: r.rows[0].id,
@@ -285,6 +291,7 @@ export function inboundRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
             newMaterial: {
               type: 'object', required: ['description', 'familyId', 'unitCode'], additionalProperties: false,
               properties: {
+                contentTypeCode: text(30),
                 description: { type: 'string', minLength: 1, maxLength: 300 }, familyId: uuid,
                 unitCode: text(20), manufacturer: text(120), manufacturerRef: text(120),
               },
@@ -310,7 +317,7 @@ export function inboundRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
           usePhotoForMaterial: boolean; note?: string;
         };
         if (Boolean(b.materialId) === Boolean(b.newMaterial)) {
-          throw badRequest('Indica qué es: un material del catálogo o uno nuevo', 'FALTA_MATERIAL');
+          throw badRequest('Indica qué es: un contenido del catálogo o uno nuevo', 'FALTA_MATERIAL');
         }
         return withTransaction(pool, async (c) => {
           const item = await lockPending(c, id);
@@ -319,13 +326,13 @@ export function inboundRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
           }
           const materialId = b.materialId ?? (await createMaterial(c, request, b.newMaterial!));
           const m: MaterialInfo = await getMaterial(c, materialId);
-          if (m.status !== 'ACTIVE') throw conflict('El material está dado de baja', 'MATERIAL_OBSOLETO');
+          if (m.status !== 'ACTIVE') throw conflict('El contenido está dado de baja', 'MATERIAL_OBSOLETO');
           const quantity = checkQuantity(m, b.quantity);
           if (m.lotTracked && !b.lotCode?.trim()) throw badRequest(`${m.description} exige indicar el lote`, 'FALTA_LOTE');
           const lotId = await findOrCreateLot(c, m.id, b.lotCode);
           const provisional: Place = await resolvePlace(c, { containerId: item.containerId, locationId: item.locationId })
             .catch(() => {
-              throw conflict(`El sitio provisional ${item.placeCode} ya no admite material`, 'SITIO_NO_VALIDO');
+              throw conflict(`El sitio provisional ${item.placeCode} ya no admite contenido`, 'SITIO_NO_VALIDO');
             });
           const project = b.projectRef?.trim() || null;
           const usage = b.usagePlace?.trim() || null;

@@ -604,3 +604,4 @@ tr.clickable:hover td { background: #f7f9fb; }
 .field > .actions.nomargin { justify-content: flex-start; }
 .place-select { width: 100%; font-size: 1.02rem; padding: 0.65rem 0.7rem; }
 .place-extra { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 1.2rem; margin-top: 0.45rem; }
+.tag-type { background: var(--accent-soft); color: var(--accent); font-size: 0.72rem; padding: 0.05rem 0.45rem; vertical-align: 1px; }

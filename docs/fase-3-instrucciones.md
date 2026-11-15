@@ -39,7 +39,7 @@ En el inicio aparecen tres accesos:
 
 | Acceso | Para qué |
 | --- | --- |
-| **Materiales** | El catálogo: qué materiales existen, cuánto hay en total y dónde. |
+| **Contenidos** | El catálogo: qué hay (materiales, herramientas, equipos, consumibles…), cuánto en total y dónde. |
 | **Movimientos** | Todo lo que ha entrado, salido o cambiado de sitio, con quién y cuándo. |
 | **Préstamos** | Las herramientas prestadas, a quién y hasta qué día. |
 
@@ -50,7 +50,7 @@ nueva, **«Material»**, con lo que hay dentro y los botones para operar.
 
 ### Familias
 
-En «Materiales» → **«Gestionar familias»**. Ya vienen unas cuantas para
+En «Contenidos» → **«Gestionar familias»**. Ya vienen unas cuantas para
 empezar: barras, chapas, tornillería, herramientas, consumibles… Puedes:
 
 - **Crear** familias nuevas y **subfamilias** dentro de otras. Por ejemplo,
@@ -60,9 +60,31 @@ empezar: barras, chapas, tornillería, herramientas, consumibles… Puedes:
 - **Borrar** una familia vacía. Si tiene materiales, se **desactiva**: deja de
   ofrecerse al dar de alta, pero sus materiales siguen igual.
 
-### Materiales
+### Contenidos
 
-En «Materiales» → **«+ Nuevo material»**. Lo mínimo es la descripción, la
+Todo lo que se guarda en el almacén es un **contenido**. Cada contenido es de
+un **tipo**; de partida hay cuatro:
+
+| Tipo | Código | Por defecto |
+| --- | --- | --- |
+| Material | `MAT-000001` | Se cuenta exacto |
+| Herramienta | `HER-000002` | Se presta |
+| Equipo | `EQU-000003` | Se presta |
+| Consumible | `CSM-000004` | Sin contar |
+
+El número no se repite entre tipos. El prefijo de Consumible es `CSM` y no
+`CON` porque `CON` ya es el de los contenedores genéricos. Los tipos se ven y
+se editan en «Tipos» (solo administradores): se pueden añadir más (por
+ejemplo, Repuesto) y cambiar su prefijo. Si cambias el prefijo de un tipo, los
+contenidos con código automático se recodifican; los códigos puestos a mano
+se respetan. Lo mismo si cambias el tipo de un contenido: `MAT-000012` pasa a
+`HER-000012`.
+
+Al actualizar, lo que estaba marcado como prestable pasa a ser Herramienta y
+su código cambia de `MAT-` a `HER-`.
+
+En «Contenidos» → **«+ Nuevo contenido»**. Elige el tipo: propone cómo se
+cuenta y si se presta, y se puede cambiar. Lo mínimo es la descripción, la
 familia y la unidad. Lo más importante es **cómo se cuenta**:
 
 | Modo | Cuándo usarlo | Qué hace el sistema |
@@ -89,7 +111,7 @@ Conserva su historial.
 
 Para cambiar muchos materiales de golpe (por ejemplo, pasar varios a otra
 familia o marcarlos como prestables), usa **«Editar en tabla»** en
-«Materiales». Se explica en las instrucciones de la Fase 2, apartado «Editar
+«Contenidos». Se explica en las instrucciones de la Fase 2, apartado «Editar
 varias a la vez».
 
 ## 4. El día a día
@@ -168,7 +190,7 @@ botones.
 ### Meter material: «+ Entrada»
 
 1. Escribe parte del nombre o la referencia y elige el material. Si no
-   existe, **«+ Material nuevo»** lo crea en el momento (si tienes permiso).
+   existe, **«+ Contenido nuevo»** lo crea en el momento (si tienes permiso).
 2. Pon la cantidad con los botones − y + o tecleándola.
 3. Opcional: lote, albarán y una nota.
 4. **«Es una devolución»**: márcalo si es material que se sacó y vuelve sin
@@ -280,7 +302,7 @@ retirar lo restringido sin autorización.
 
 ## 8. Excel
 
-- **Materiales** → «Exportar a Excel»: el catálogo con el total de cada uno
+- **Contenidos** → «Exportar a Excel»: el catálogo con el total de cada uno
   y si está en stock bajo.
 - **Movimientos** → «Stock a Excel»: qué hay en cada sitio, línea a línea.
 - En «Almacén» → «Exportar a Excel» están los cuatro ficheros.

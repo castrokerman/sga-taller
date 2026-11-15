@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   api, errorMessage, formatDateTime, formatQty, newOperationKey, photoUrl,
-  type Disposition, type Family, type Inbound, type InboundStatus, type Material, type PhotoData, type PlaceRef, type Unit, type User,
+  type ContentType, type Disposition, type Family, type Inbound, type InboundStatus, type Material, type PhotoData, type PlaceRef, type Unit, type User,
 } from '../api';
 import { shrink } from '../components/ItemExtras';
 import { PhotoField, uploadMaterialPhoto } from '../components/PhotoField';
@@ -576,7 +576,8 @@ function CompleteForm(props: { user: User; item: Inbound; onDone: (message: stri
   const [projects, setProjects] = useState<string[]>([]);
   const [material, setMaterial] = useState<Material | null>(null);
   const [isNew, setIsNew] = useState(false);
-  const [nm, setNm] = useState({ description: item.description ?? '', familyId: '', unitCode: 'ud', manufacturer: '', manufacturerRef: '' });
+  const [nm, setNm] = useState({ contentTypeCode: 'MATERIAL', description: item.description ?? '', familyId: '', unitCode: 'ud', manufacturer: '', manufacturerRef: '' });
+  const [types, setTypes] = useState<ContentType[]>([]);
   const [qty, setQty] = useState('1');
   const [lot, setLot] = useState('');
   const [project, setProject] = useState('');
@@ -597,6 +598,7 @@ function CompleteForm(props: { user: User; item: Inbound; onDone: (message: stri
     api.families().then((r) => setFamilies(r.families.filter((f) => f.active))).catch(() => undefined);
     api.units().then((r) => setUnits(r.units)).catch(() => undefined);
     api.inboundProjects().then((r) => setProjects(r.projects)).catch(() => undefined);
+    api.contentTypes().then((r) => setTypes(r.types.filter((t) => t.active))).catch(() => undefined);
   }, []);
 
   // El catálogo agrupado por familia, para la lista desplegable.
@@ -610,7 +612,7 @@ function CompleteForm(props: { user: User; item: Inbound; onDone: (message: stri
 
   const decimals = isNew ? (units.find((u) => u.code === nm.unitCode)?.decimals ?? 0) : (material?.decimals ?? 0);
   const unit = isNew ? nm.unitCode : (material?.unitCode ?? 'ud');
-  const untracked = !isNew && material?.quantityTracking === 'NOT_TRACKED';
+  const untracked = isNew ? types.find((t) => t.code === nm.contentTypeCode)?.defaultTracking === 'NOT_TRACKED' : material?.quantityTracking === 'NOT_TRACKED';
   const lotRequired = !isNew && Boolean(material?.lotTracked);
   const n = parseNumber(qty);
   const hasPhotoAlready = !isNew && Boolean(material?.photoId);
@@ -625,7 +627,7 @@ function CompleteForm(props: { user: User; item: Inbound; onDone: (message: stri
     e.preventDefault();
     setError(null);
     if (!material && !isNew) return setError('Indica qué es: búscalo en el catálogo o da de alta uno nuevo');
-    if (isNew && (!nm.description.trim() || !nm.familyId)) return setError('Del material nuevo, indica al menos qué es y su familia');
+    if (isNew && (!nm.description.trim() || !nm.familyId)) return setError('Del contenido nuevo, indica al menos qué es y su familia');
     if (!untracked && !n) return setError('Indica la cantidad');
     if (!disposition) return setError('Indica si se guarda en el almacén o se despliega directamente');
     if (disposition === 'STORE' && elsewhere && !dest) return setError('Elige en qué sitio se guarda');
@@ -635,7 +637,7 @@ function CompleteForm(props: { user: User; item: Inbound; onDone: (message: stri
         item.id,
         {
           ...(isNew
-            ? { newMaterial: { description: nm.description.trim(), familyId: nm.familyId, unitCode: nm.unitCode, manufacturer: nm.manufacturer.trim() || undefined, manufacturerRef: nm.manufacturerRef.trim() || undefined } }
+            ? { newMaterial: { contentTypeCode: nm.contentTypeCode, description: nm.description.trim(), familyId: nm.familyId, unitCode: nm.unitCode, manufacturer: nm.manufacturer.trim() || undefined, manufacturerRef: nm.manufacturerRef.trim() || undefined } }
             : { materialId: material!.id }),
           quantity: untracked ? undefined : n!,
           lotCode: lot.trim() || undefined,
@@ -651,7 +653,7 @@ function CompleteForm(props: { user: User; item: Inbound; onDone: (message: stri
       let msg = r.message;
       if (isNew && ownPhoto) {
         const up = await uploadMaterialPhoto(r.materialId, ownPhoto);
-        if (up.error) msg += ` La foto del material no se ha podido subir (${up.error}); puedes añadirla desde su ficha.`;
+        if (up.error) msg += ` La foto del contenido no se ha podido subir (${up.error}); puedes añadirla desde su ficha.`;
       }
       props.onDone(msg);
     } catch (err) {
@@ -694,6 +696,16 @@ function CompleteForm(props: { user: User; item: Inbound; onDone: (message: stri
           </p>
         ) : isNew ? (
           <div className="subcard">
+            <div className="field">
+              <span className="field-l">Tipo</span>
+              <div className="pchips">
+                {types.map((t) => (
+                  <button type="button" key={t.code} className={`pchip ${nm.contentTypeCode === t.code ? 'on' : ''}`} onClick={() => setNm({ ...nm, contentTypeCode: t.code })}>
+                    {t.name}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="grid-2">
               <label className="field">
                 <span>Descripción</span>
@@ -729,7 +741,7 @@ function CompleteForm(props: { user: User; item: Inbound; onDone: (message: stri
               </label>
             </div>
             {props.user.permissions.includes('photo.add') && (
-              <PhotoField label="Foto del material" file={ownPhoto} onChange={setOwnPhoto} hint="Una foto propia del material, además de las de la recepción." />
+              <PhotoField label="Foto del contenido" file={ownPhoto} onChange={setOwnPhoto} hint="Una foto propia del contenido, además de las de la recepción." />
             )}
             <button type="button" className="linkbtn" onClick={() => setIsNew(false)}>
               ← Elegir del catálogo
@@ -760,7 +772,7 @@ function CompleteForm(props: { user: User; item: Inbound; onDone: (message: stri
             <div className="place-extra">
               <span className="muted small">¿No está en la lista?</span>
               <button type="button" className="btn" onClick={() => { setIsNew(true); setUsePhoto(true); }}>
-                + Es un material nuevo
+                + Es un contenido nuevo
               </button>
             </div>
           </>
@@ -770,7 +782,7 @@ function CompleteForm(props: { user: User; item: Inbound; onDone: (message: stri
       {(material || isNew) && (
         <>
           {untracked ? (
-            <p className="muted">Este material no se cuenta: solo se anota que ha llegado.</p>
+            <p className="muted">Este contenido no se cuenta: solo se anota que ha llegado.</p>
           ) : (
             <div className="field">
               <span className="field-l">Cantidad</span>
@@ -842,8 +854,8 @@ function CompleteForm(props: { user: User; item: Inbound; onDone: (message: stri
           <label className="check">
             <input type="checkbox" checked={usePhoto} onChange={(e) => setUsePhoto(e.target.checked)} />
             <span>
-              Usar la foto como foto del material
-              {hasPhotoAlready && <small className="muted"> — el material ya tiene foto; se añadiría otra</small>}
+              Usar la foto como foto del contenido
+              {hasPhotoAlready && <small className="muted"> — ya tiene foto; se añadiría otra</small>}
             </span>
           </label>
           <label className="field">

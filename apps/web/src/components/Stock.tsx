@@ -84,7 +84,7 @@ export function StockSection(props: { user: User; place: PlaceRef; placeCode: st
   return (
     <section>
       <div className="section-head">
-        <h3>Material</h3>
+        <h3>Contenido</h3>
         {props.active && (
           <div className="row-actions">
             {can(user, 'stock.withdraw') && lines && lines.length > 0 && (
@@ -119,13 +119,13 @@ export function StockSection(props: { user: User; place: PlaceRef; placeCode: st
       {lines === null ? (
         <p className="muted">Cargando…</p>
       ) : lines.length === 0 ? (
-        <p className="muted">No hay material registrado aquí.</p>
+        <p className="muted">No hay contenido registrado aquí.</p>
       ) : (
         <div className="table-wrap card">
           <table className="stock-table">
             <thead>
               <tr>
-                <th>Material</th>
+                <th>Contenido</th>
                 <th>Tipo de stock</th>
                 <th className="num">Cantidad</th>
                 {props.active && <th />}
@@ -309,7 +309,7 @@ function WithdrawForm(props: { user: User; lines: StockLine[]; initial: StockLin
 
   return (
     <form className="card form op-form" onSubmit={submit}>
-      <h3>Retirar material de {line.placeCode}</h3>
+      <h3>Retirar contenido de {line.placeCode}</h3>
       {props.lines.length > 1 && (
         <>
           <span className="field-l">¿Qué te llevas?</span>
@@ -348,7 +348,7 @@ function WithdrawForm(props: { user: User; lines: StockLine[]; initial: StockLin
         <>
           <span className="field-l">Cantidad</span>
           <QtyStepper value={qty} onChange={setQty} decimals={line.decimals} unit={line.unitCode} />
-          {line.quantityTracking === 'ESTIMATED' && <p className="muted small">La cantidad de este material es aproximada.</p>}
+          {line.quantityTracking === 'ESTIMATED' && <p className="muted small">La cantidad de este contenido es aproximada.</p>}
         </>
       )}
 
@@ -440,7 +440,7 @@ function ReceiptForm(props: {
         )}
       </p>
       {untracked ? (
-        <p className="muted">Este material no se cuenta: solo se anota que hay en este sitio.</p>
+        <p className="muted">Este contenido no se cuenta: solo se anota que hay en este sitio.</p>
       ) : (
         <>
           <span className="field-l">Cantidad</span>
@@ -472,7 +472,7 @@ function ReceiptForm(props: {
           <input type="checkbox" checked={isReturn} onChange={(e) => setIsReturn(e.target.checked)} />
           <span>
             <strong>Es una devolución</strong>
-            <small className="muted"> — material que se sacó y vuelve sin usar</small>
+            <small className="muted"> — contenido que se sacó y vuelve sin usar</small>
           </span>
         </label>
       )}
@@ -514,7 +514,7 @@ export function MaterialPicker(props: { user: User; onPick: (m: Material) => voi
   if (creating) {
     return (
       <MaterialForm
-        title="Material nuevo"
+        title="Contenido nuevo"
         canPhoto={props.user.permissions.includes('photo.add')}
         onCancel={() => setCreating(false)}
         onDone={(m) => props.onPick(m)}
@@ -526,7 +526,7 @@ export function MaterialPicker(props: { user: User; onPick: (m: Material) => voi
   return (
     <>
       <label className="field">
-        <span>¿Qué material?</span>
+        <span>¿Qué contenido?</span>
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Escribe parte del nombre o la referencia" autoFocus />
       </label>
       {error && <p className="alert alert-error">{error}</p>}
@@ -545,7 +545,7 @@ export function MaterialPicker(props: { user: User; onPick: (m: Material) => voi
               <span className="r">{formatQty(m.quantity, m.unitCode, m.quantityTracking)}</span>
             </button>
           ))}
-          {hits.length === 0 && <p className="muted">{all.length === 0 ? 'El catálogo está vacío.' : 'Ningún material coincide.'}</p>}
+          {hits.length === 0 && <p className="muted">{all.length === 0 ? 'El catálogo está vacío.' : 'Ningún contenido coincide.'}</p>}
         </div>
       )}
       <div className="actions">
@@ -554,7 +554,7 @@ export function MaterialPicker(props: { user: User; onPick: (m: Material) => voi
         </button>
         {can(props.user, 'material.manage') && (
           <button type="button" className="btn" onClick={() => setCreating(true)}>
-            + Material nuevo
+            + Contenido nuevo
           </button>
         )}
       </div>

@@ -24,7 +24,9 @@ export function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [unread, setUnread] = useState(0);
-  const route = useRoute();
+  const raw = useRoute();
+  // «Contenidos» es el nombre nuevo de «Materiales»: las dos direcciones llevan al mismo sitio.
+  const route = raw.name === 'contenidos' ? { ...raw, name: 'materiales' } : raw.name === 'contenido' ? { ...raw, name: 'material' } : raw;
 
   // Avisos sin leer: al cambiar de pantalla y cada minuto.
   const refreshUnread = useCallback(() => {

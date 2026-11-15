@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { api, errorMessage, type ContainerType, type LocationType } from '../api';
+import { api, errorMessage, TRACKING_NAMES, type ContainerType, type ContentType, type LocationType, type Tracking } from '../api';
 
 const letters = (v: string, max: number) => v.toUpperCase().replace(/[^A-Z]/g, '').slice(0, max);
 
@@ -10,15 +10,17 @@ const letters = (v: string, max: number) => v.toUpperCase().replace(/[^A-Z]/g, '
 export function TypesPage() {
   const [locationTypes, setLocationTypes] = useState<LocationType[]>([]);
   const [containerTypes, setContainerTypes] = useState<ContainerType[]>([]);
+  const [contentTypes, setContentTypes] = useState<ContentType[]>([]);
   const [editing, setEditing] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const [l, c] = await Promise.all([api.locationTypes(), api.containerTypes()]);
+      const [l, c, k] = await Promise.all([api.locationTypes(), api.containerTypes(), api.contentTypes()]);
       setLocationTypes(l.types);
       setContainerTypes(c.types);
+      setContentTypes(k.types);
     } catch (e) {
       setError(errorMessage(e));
     }
@@ -54,7 +56,7 @@ export function TypesPage() {
       <div className="page-head">
         <div>
           <h2>Tipos</h2>
-          <p className="muted nomargin">Cada tipo tiene un prefijo con el que se codifica todo lo de ese tipo.</p>
+          <p className="muted nomargin">Ubicaciones, contenedores y contenidos: cada tipo tiene un prefijo con el que se codifica todo lo de ese tipo.</p>
         </div>
       </div>
       {notice && <p className="alert alert-ok">{notice}</p>}
@@ -187,17 +189,91 @@ export function TypesPage() {
           })}
         />
       </section>
+
+      <section>
+        <h3>Tipos de contenido</h3>
+        <p className="muted">
+          Lo que se guarda en el almacén. Cada contenido recibe el prefijo de su tipo y un número: <span className="mono">HER-000012</span>. Al
+          dar de alta uno, el tipo propone cómo se cuenta y si se presta.
+        </p>
+        <div className="table-wrap card">
+          <table className="types-table">
+            <thead>
+              <tr>
+                <th>Nombre</th>
+                <th>Prefijo</th>
+                <th>Se cuenta</th>
+                <th>Se presta</th>
+                <th className="num">Contenidos</th>
+                <th>Estado</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {contentTypes.map((t) =>
+                editing === `k:${t.code}` ? (
+                  <TypeEditRow
+                    key={t.code}
+                    kind="content"
+                    name={t.name}
+                    prefix={t.codePrefix}
+                    tracking={t.defaultTracking}
+                    loanable={t.defaultLoanable}
+                    active={t.active}
+                    count={t.contentCount}
+                    onCancel={() => setEditing(null)}
+                    onSave={(v) =>
+                      run(async () => {
+                        const r = await api.updateContentType(t.code, {
+                          name: v.name, codePrefix: v.codePrefix, active: v.active, defaultTracking: v.defaultTracking, defaultLoanable: v.defaultLoanable,
+                        });
+                        return r.recoded ? `Tipo guardado. Se han recodificado ${r.recoded} contenidos.` : 'Tipo guardado';
+                      })
+                    }
+                  />
+                ) : (
+                  <tr key={t.code} className={t.active ? undefined : 'row-off'}>
+                    <td>{t.name}</td>
+                    <td className="mono">{t.codePrefix}-000001</td>
+                    <td>{TRACKING_NAMES[t.defaultTracking]}</td>
+                    <td>{t.defaultLoanable ? 'Sí' : 'No'}</td>
+                    <td className="num">{t.contentCount}</td>
+                    <td>{t.active ? <span className="badge badge-ok">Activo</span> : <span className="badge badge-off">Desactivado</span>}</td>
+                    <td className="row-actions">
+                      <button className="btn btn-small" onClick={() => { setNotice(null); setEditing(`k:${t.code}`); }}>
+                        Editar
+                      </button>
+                    </td>
+                  </tr>
+                ),
+              )}
+            </tbody>
+          </table>
+        </div>
+        <NewType
+          kind="content"
+          onCreate={(v) => run(async () => {
+            await api.createContentType({ name: v.name, codePrefix: v.prefix, defaultTracking: v.tracking, defaultLoanable: v.loanable });
+            return `Tipo de contenido creado: ${v.name} (${v.prefix}-000001…)`;
+          })}
+        />
+      </section>
     </>
   );
 }
 
-type TypeValues = { name: string; codePrefix: string; active: boolean; defaultReusePolicy?: string };
+type TypeValues = {
+  name: string; codePrefix: string; active: boolean; defaultReusePolicy?: string; defaultTracking?: Tracking; defaultLoanable?: boolean;
+};
+type Kind = 'location' | 'container' | 'content';
 
 function TypeEditRow(props: {
-  kind: 'location' | 'container';
+  kind: Kind;
   name: string;
   prefix: string;
   policy?: string;
+  tracking?: Tracking;
+  loanable?: boolean;
   active: boolean;
   count: number;
   onCancel: () => void;
@@ -206,12 +282,14 @@ function TypeEditRow(props: {
   const [name, setName] = useState(props.name);
   const [prefix, setPrefix] = useState(props.prefix);
   const [policy, setPolicy] = useState(props.policy ?? 'REUSABLE');
+  const [tracking, setTracking] = useState<Tracking>(props.tracking ?? 'EXACT');
+  const [loanable, setLoanable] = useState(props.loanable ?? false);
   const [active, setActive] = useState(props.active);
   const [busy, setBusy] = useState(false);
   const max = props.kind === 'location' ? 6 : 5;
   const min = props.kind === 'location' ? 1 : 2;
   const changedPrefix = prefix !== props.prefix;
-  const noun = props.kind === 'location' ? 'ubicaciones' : 'contenedores';
+  const noun = props.kind === 'location' ? 'ubicaciones' : props.kind === 'container' ? 'contenedores' : 'contenidos con código automático';
 
   const save = async () => {
     if (changedPrefix && props.count > 0 &&
@@ -219,7 +297,11 @@ function TypeEditRow(props: {
       return;
     }
     setBusy(true);
-    await props.onSave({ name: name.trim(), codePrefix: prefix, active, ...(props.kind === 'container' ? { defaultReusePolicy: policy } : {}) });
+    await props.onSave({
+      name: name.trim(), codePrefix: prefix, active,
+      ...(props.kind === 'container' ? { defaultReusePolicy: policy } : {}),
+      ...(props.kind === 'content' ? { defaultTracking: tracking, defaultLoanable: loanable } : {}),
+    });
     setBusy(false);
   };
 
@@ -240,6 +322,21 @@ function TypeEditRow(props: {
           </select>
         </td>
       )}
+      {props.kind === 'content' && (
+        <>
+          <td>
+            <select value={tracking} onChange={(e) => setTracking(e.target.value as Tracking)} aria-label="Cómo se cuenta">
+              {(Object.keys(TRACKING_NAMES) as Tracking[]).map((k) => <option key={k} value={k}>{TRACKING_NAMES[k]}</option>)}
+            </select>
+          </td>
+          <td>
+            <label className="check nomargin">
+              <input type="checkbox" checked={loanable} onChange={(e) => setLoanable(e.target.checked)} />
+              <span>Se presta</span>
+            </label>
+          </td>
+        </>
+      )}
       <td className="num">{props.count}</td>
       <td>
         <label className="check nomargin">
@@ -259,15 +356,20 @@ function TypeEditRow(props: {
   );
 }
 
-function NewType(props: { kind: 'location' | 'container'; onCreate: (v: { name: string; prefix: string; policy?: string }) => Promise<boolean> }) {
+function NewType(props: {
+  kind: Kind;
+  onCreate: (v: { name: string; prefix: string; policy?: string; tracking?: Tracking; loanable?: boolean }) => Promise<boolean>;
+}) {
   const [name, setName] = useState('');
   const [prefix, setPrefix] = useState('');
   const [policy, setPolicy] = useState('REUSABLE');
+  const [tracking, setTracking] = useState<Tracking>('EXACT');
+  const [loanable, setLoanable] = useState(false);
   const max = props.kind === 'location' ? 6 : 5;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (await props.onCreate({ name: name.trim(), prefix, policy })) {
+    if (await props.onCreate({ name: name.trim(), prefix, policy, tracking, loanable })) {
       setName('');
       setPrefix('');
     }
@@ -275,11 +377,11 @@ function NewType(props: { kind: 'location' | 'container'; onCreate: (v: { name: 
 
   return (
     <form className="card form" onSubmit={submit}>
-      <h4 className="nomargin">Nuevo tipo de {props.kind === 'location' ? 'ubicación' : 'contenedor'}</h4>
+      <h4 className="nomargin">Nuevo tipo de {props.kind === 'location' ? 'ubicación' : props.kind === 'container' ? 'contenedor' : 'contenido'}</h4>
       <div className="grid-2">
         <label className="field">
           <span>Nombre</span>
-          <input value={name} onChange={(e) => setName(e.target.value)} required maxLength={60} placeholder={props.kind === 'location' ? 'Balda' : 'Jaula'} />
+          <input value={name} onChange={(e) => setName(e.target.value)} required maxLength={60} placeholder={props.kind === 'location' ? 'Balda' : props.kind === 'container' ? 'Jaula' : 'Repuesto'} />
         </label>
         <label className="field">
           <span>Prefijo</span>
@@ -289,12 +391,14 @@ function NewType(props: { kind: 'location' | 'container'; onCreate: (v: { name: 
             onChange={(e) => setPrefix(letters(e.target.value, max))}
             required
             minLength={props.kind === 'location' ? 1 : 2}
-            placeholder={props.kind === 'location' ? 'BAL' : 'JAU'}
+            placeholder={props.kind === 'location' ? 'BAL' : props.kind === 'container' ? 'JAU' : 'REP'}
           />
           <small className="muted">
             {props.kind === 'location'
               ? `Letras, hasta 6. Con BAL, las ubicaciones de este tipo serán BAL01, BAL02…`
-              : `De 2 a 5 letras. Con JAU, los contenedores serán JAU-000001, JAU-000002…`}
+              : props.kind === 'container'
+                ? `De 2 a 5 letras. Con JAU, los contenedores serán JAU-000001, JAU-000002…`
+                : `De 2 a 5 letras, distinto de los de contenedor. Con REP, serán REP-000001, REP-000002…`}
           </small>
         </label>
         {props.kind === 'container' && (
@@ -305,6 +409,20 @@ function NewType(props: { kind: 'location' | 'container'; onCreate: (v: { name: 
               <option value="DISPOSABLE">Desechable</option>
             </select>
           </label>
+        )}
+        {props.kind === 'content' && (
+          <>
+            <label className="field">
+              <span>Cómo se cuenta, por defecto</span>
+              <select value={tracking} onChange={(e) => setTracking(e.target.value as Tracking)}>
+                {(Object.keys(TRACKING_NAMES) as Tracking[]).map((k) => <option key={k} value={k}>{TRACKING_NAMES[k]}</option>)}
+              </select>
+            </label>
+            <label className="check">
+              <input type="checkbox" checked={loanable} onChange={(e) => setLoanable(e.target.checked)} />
+              <span>Se presta (herramientas y equipos)</span>
+            </label>
+          </>
         )}
       </div>
       <div className="actions">

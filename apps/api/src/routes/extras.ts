@@ -23,7 +23,7 @@ const READ_PERMISSION: Record<Exclude<EntityType, 'inbound'>, string> = {
 const NOT_FOUND: Record<EntityType, string> = {
   location: 'La ubicación no existe',
   container: 'El contenedor no existe',
-  material: 'El material no existe',
+  material: 'El contenido no existe',
   inbound: 'La recepción no existe',
 };
 

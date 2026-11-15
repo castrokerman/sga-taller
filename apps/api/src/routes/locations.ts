@@ -603,7 +603,7 @@ export function locationRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
       const why = [
         counts.children && `tiene ${counts.children} ${counts.children === 1 ? 'ubicación' : 'ubicaciones'} dentro`,
         counts.containers && `tiene ${counts.containers} contenedor${counts.containers === 1 ? '' : 'es'} (también los retirados cuentan)`,
-        counts.stock && 'tiene material',
+        counts.stock && 'tiene contenido',
         counts.notes && 'tiene anotaciones',
       ].filter(Boolean);
       if (why.length) {
