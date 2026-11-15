@@ -47,6 +47,11 @@ const ACTIONS: Record<string, string> = {
   'foto.alta': 'Foto añadida',
   'foto.baja': 'Foto quitada',
   'anotacion.alta': 'Anotación',
+  'recepcion.alta': 'Recepción registrada',
+  'recepcion.identificada': 'Recepción identificada',
+  'recepcion.reasignada': 'Recepción pasada a otra persona',
+  'recepcion.anulada': 'Recepción anulada',
+  'ubicacion.baja': 'Ubicación eliminada',
 };
 
 /** Grupos para filtrar varias operaciones a la vez. */
@@ -57,6 +62,7 @@ const GROUPS: Array<[string, string]> = [
   ['contenedor.', 'Contenedores'],
   ['material.', 'Materiales'],
   ['stock.', 'Movimientos de material'],
+  ['recepcion.', 'Recepciones'],
   ['prestamo.', 'Préstamos'],
   ['exportacion.', 'Exportaciones a Excel'],
 ];

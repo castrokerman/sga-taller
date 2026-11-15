@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { api, errorMessage, formatDateTime, type AppNotification } from '../api';
 import { navigate } from '../router';
 
-const LINK: Record<AppNotification['entityType'], string> = { location: 'almacen', container: 'contenedor', material: 'material' };
-const KIND: Record<AppNotification['entityType'], string> = { location: 'Ubicación', container: 'Contenedor', material: 'Material' };
+const LINK: Record<AppNotification['entityType'], string> = { location: 'almacen', container: 'contenedor', material: 'material', inbound: 'recepcion' };
+const KIND: Record<AppNotification['entityType'], string> = { location: 'Ubicación', container: 'Contenedor', material: 'Material', inbound: 'Recepción' };
 
 /** Avisos recibidos: anotaciones en las que alguien pidió avisarte. */
 export function NotificationsPage({ onChanged }: { onChanged: () => void }) {
@@ -49,7 +49,7 @@ export function NotificationsPage({ onChanged }: { onChanged: () => void }) {
       <div className="page-head">
         <div>
           <h2>Avisos</h2>
-          <p className="muted nomargin">Anotaciones en las que alguien ha pedido avisarte.</p>
+          <p className="muted nomargin">Anotaciones en las que alguien ha pedido avisarte y recepciones a tu nombre.</p>
         </div>
         {unread > 0 && (
           <button
@@ -83,7 +83,7 @@ export function NotificationsPage({ onChanged }: { onChanged: () => void }) {
       ) : (
         <ul className="notes notif-list">
           {items.map((n) => (
-            <li key={n.id} className={n.readAt ? 'read' : 'unread'}>
+            <li key={n.id} className={`${n.readAt ? 'read' : 'unread'} ${n.actionNeeded ? 'todo' : ''}`}>
               <div className="note-head">
                 <span className="tag">{KIND[n.entityType]}</span>
                 <a href={`#/${LINK[n.entityType]}/${n.entityId}`} onClick={(e) => { e.preventDefault(); void read(n, true); }}>
@@ -91,6 +91,11 @@ export function NotificationsPage({ onChanged }: { onChanged: () => void }) {
                 </a>
               </div>
               <p className="note-body">{n.body}</p>
+              {n.actionNeeded && (
+                <button className="btn btn-primary" onClick={() => navigate(`recepcion/${n.entityId}`)}>
+                  Completar el registro
+                </button>
+              )}
               <div className="note-head">
                 <span className="muted small">
                   {n.createdBy} · {formatDateTime(n.createdAt)}

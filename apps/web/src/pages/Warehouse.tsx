@@ -366,6 +366,21 @@ function EditLocationForm(props: { location: LocationSummary; canDeactivate: boo
   const [capacity, setCapacity] = useState(location.maxCapacity?.toString() ?? '');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const remove = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await api.deleteLocation(location.id);
+      void r;
+      props.onGone();
+    } catch (err) {
+      setError(errorMessage(err));
+      setConfirmDelete(false);
+      setBusy(false);
+    }
+  };
 
   const save = async (e: FormEvent) => {
     e.preventDefault();
@@ -445,9 +460,31 @@ function EditLocationForm(props: { location: LocationSummary; canDeactivate: boo
         </label>
       </div>
       {error && <p className="alert alert-error">{error}</p>}
-      <div className="actions">
+      {confirmDelete && (
+        <div className="danger-confirm" role="alertdialog" aria-labelledby="del-title">
+          <strong id="del-title">¿Seguro que quieres eliminar la ubicación {location.code}?</strong>
+          <p>
+            Desaparece del sistema y no se puede deshacer. Su etiqueta QR dejará de funcionar. Solo se puede si está vacía y no
+            tiene historial; si no, desactívala.
+          </p>
+          <div className="actions nomargin">
+            <button type="button" className="btn" onClick={() => setConfirmDelete(false)} disabled={busy} autoFocus>
+              No, volver
+            </button>
+            <button type="button" className="btn btn-delete" onClick={remove} disabled={busy}>
+              {busy ? 'Eliminando…' : 'Sí, eliminar'}
+            </button>
+          </div>
+        </div>
+      )}
+      <div className="actions actions-wrap">
         {props.canDeactivate && (
-          <button type="button" className={`btn ${location.active ? 'btn-danger' : ''}`} onClick={deactivate} disabled={busy}>
+          <button type="button" className="btn btn-delete-ghost" onClick={() => setConfirmDelete(true)} disabled={busy || confirmDelete}>
+            🗑 Eliminar
+          </button>
+        )}
+        {props.canDeactivate && (
+          <button type="button" className={`btn ${location.active ? 'btn-warn' : ''}`} onClick={deactivate} disabled={busy}>
             {location.active ? 'Desactivar' : 'Volver a activar'}
           </button>
         )}

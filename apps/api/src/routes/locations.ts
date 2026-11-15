@@ -583,6 +583,52 @@ export function locationRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
     },
   );
 
+  // ---- Eliminar -------------------------------------------------------------
+  // Solo administradores y solo si no deja huella: sin nada dentro, sin
+  // material, sin anotaciones y sin movimientos en su historial. Si tiene algo
+  // de eso, se desactiva en su lugar.
+  app.delete('/api/locations/:id', { preHandler: requirePermission('location.deactivate'), schema: { params: idParams } }, async (request) => {
+    const { id } = request.params as { id: string };
+    return withTransaction(pool, async (c) => {
+      const r = await c.query(`SELECT code, name FROM storage_location WHERE id = $1 FOR UPDATE`, [id]);
+      const loc = r.rows[0] as { code: string; name: string } | undefined;
+      if (!loc) throw notFound('La ubicación no existe');
+      const counts = (await c.query(
+        `SELECT (SELECT count(*) FROM storage_location WHERE parent_id = $1)::int AS children,
+                (SELECT count(*) FROM container WHERE location_id = $1)::int AS containers,
+                (SELECT count(*) FROM stock_balance WHERE location_id = $1)::int AS stock,
+                (SELECT count(*) FROM note WHERE entity_type = 'location' AND entity_id = $1)::int AS notes`,
+        [id],
+      )).rows[0];
+      const why = [
+        counts.children && `tiene ${counts.children} ${counts.children === 1 ? 'ubicación' : 'ubicaciones'} dentro`,
+        counts.containers && `tiene ${counts.containers} contenedor${counts.containers === 1 ? '' : 'es'} (también los retirados cuentan)`,
+        counts.stock && 'tiene material',
+        counts.notes && 'tiene anotaciones',
+      ].filter(Boolean);
+      if (why.length) {
+        throw conflict(`No se puede eliminar ${loc.code}: ${why.join(', ')}. Vacíala antes o desactívala`, 'UBICACION_EN_USO');
+      }
+      await c.query(`DELETE FROM photo WHERE entity_type = 'location' AND entity_id = $1`, [id]);
+      await c.query('SAVEPOINT borrar');
+      try {
+        await c.query(`DELETE FROM storage_location WHERE id = $1`, [id]);
+      } catch (e) {
+        if ((e as { code?: string }).code !== '23503') throw e;
+        await c.query('ROLLBACK TO SAVEPOINT borrar');
+        throw conflict(
+          `No se puede eliminar ${loc.code}: tiene historial (movimientos, préstamos o recepciones). Desactívala para que no se use más`,
+          'UBICACION_CON_HISTORIAL',
+        );
+      }
+      await writeAudit(c, {
+        userId: request.user!.id, action: 'ubicacion.baja', entityType: 'storage_location', entityId: id,
+        before: { codigo: loc.code, nombre: loc.name }, ip: request.ip, requestId: request.id,
+      });
+      return { ok: true, code: loc.code };
+    });
+  });
+
   // ---- Edición de varias a la vez ------------------------------------------
   // Todo o nada: si una fila falla, no se guarda ninguna y se dice cuál.
   app.patch(

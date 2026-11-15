@@ -218,6 +218,7 @@ export function WarehouseTree({ user, onList, rootId }: { user: User; onList: ()
               <span className="ncode"><Highlight text={n.code} query={q} /></span>
               <span className="nname"><Highlight text={n.label} query={q} /></span>
               <span className="nmeta">
+                {n.kind === 'location' && locById.get(n.id)?.active === false && <span className="tag tag-inactive">Inactiva</span>}
                 <span className="tag">{n.typeName}</span>
                 {n.meta && <span className={n.over ? 'over' : undefined}>{n.meta}</span>}
               </span>

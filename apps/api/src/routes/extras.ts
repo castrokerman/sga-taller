@@ -11,9 +11,11 @@ import { idempotent } from '../idempotency.js';
  * que generan las anotaciones marcadas para notificar a responsables.
  */
 
-export type EntityType = 'location' | 'container' | 'material';
+export type EntityType = 'location' | 'container' | 'material' | 'inbound';
 const ENTITY_TYPES = ['location', 'container', 'material'] as const;
-const READ_PERMISSION: Record<EntityType, string> = {
+/** Las fotos también pueden ser de una recepción pendiente de identificar. */
+const PHOTO_ENTITY_TYPES = ['location', 'container', 'material', 'inbound'] as const;
+const READ_PERMISSION: Record<Exclude<EntityType, 'inbound'>, string> = {
   location: 'location.read',
   container: 'container.read',
   material: 'material.read',
@@ -22,6 +24,7 @@ const NOT_FOUND: Record<EntityType, string> = {
   location: 'La ubicación no existe',
   container: 'El contenedor no existe',
   material: 'El material no existe',
+  inbound: 'La recepción no existe',
 };
 
 const uuid = { type: 'string', format: 'uuid' } as const;
@@ -30,6 +33,20 @@ const entityQuery = {
   type: 'object', required: ['entityType', 'entityId'], additionalProperties: false,
   properties: { entityType: { type: 'string', enum: ENTITY_TYPES }, entityId: uuid },
 } as const;
+const photoQuery = {
+  type: 'object', required: ['entityType', 'entityId'], additionalProperties: false,
+  properties: { entityType: { type: 'string', enum: PHOTO_ENTITY_TYPES }, entityId: uuid },
+} as const;
+
+/**
+ * Una recepción la ven quien la registró, su responsable y quien gestiona
+ * las recepciones.
+ */
+export async function canSeeInbound(db: pg.Pool | pg.PoolClient, request: FastifyRequest, id: string): Promise<boolean> {
+  if (request.user!.permissions.includes('inbound.manage')) return true;
+  const r = await db.query(`SELECT 1 FROM inbound_item WHERE id = $1 AND $2 IN (received_by, responsible_user_id)`, [id, request.user!.id]);
+  return Boolean(r.rowCount);
+}
 
 interface Entity {
   type: EntityType;
@@ -41,6 +58,12 @@ interface Entity {
 
 /** Comprueba que existe y que el usuario puede verla. */
 async function getEntity(db: pg.Pool | pg.PoolClient, request: FastifyRequest, type: EntityType, id: string): Promise<Entity> {
+  if (type === 'inbound') {
+    const r = await db.query(`SELECT 'REC-' || lpad(number::text, 6, '0') AS code, description FROM inbound_item WHERE id = $1`, [id]);
+    if (!r.rows[0]) throw notFound(NOT_FOUND.inbound);
+    if (!(await canSeeInbound(db, request, id))) throw forbidden();
+    return { type, id, code: r.rows[0].code, name: r.rows[0].description, responsibleUserId: null };
+  }
   if (!request.user!.permissions.includes(READ_PERMISSION[type])) throw forbidden();
   const sql = {
     location: `SELECT code, name, NULL::uuid AS responsible FROM storage_location WHERE id = $1`,
@@ -65,7 +88,7 @@ async function suggestedRecipients(db: pg.Pool | pg.PoolClient, e: Entity): Prom
 }
 
 /** Comprueba que lo recibido es de verdad una imagen JPEG, PNG o WebP. */
-function imageType(buf: Buffer): string | null {
+export function imageType(buf: Buffer): string | null {
   if (buf.length > 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
   if (buf.length > 8 && buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
   if (buf.length > 12 && buf.subarray(0, 4).toString('ascii') === 'RIFF' && buf.subarray(8, 12).toString('ascii') === 'WEBP') return 'image/webp';
@@ -102,7 +125,7 @@ export function extrasRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
   const { pool } = deps;
 
   // ---- Fotos --------------------------------------------------------------
-  app.get('/api/photos', { preHandler: requireAuth(), schema: { querystring: entityQuery } }, async (request) => {
+  app.get('/api/photos', { preHandler: requireAuth(), schema: { querystring: photoQuery } }, async (request) => {
     const q = request.query as { entityType: EntityType; entityId: string };
     await getEntity(pool, request, q.entityType, q.entityId);
     const r = await pool.query(`${PHOTO_SELECT} WHERE p.entity_type = $1 AND p.entity_id = $2 ORDER BY p.position, p.uploaded_at`, [q.entityType, q.entityId]);
@@ -119,7 +142,7 @@ export function extrasRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
         body: {
           type: 'object', required: ['entityType', 'entityId', 'image', 'thumbnail', 'width', 'height'], additionalProperties: false,
           properties: {
-            entityType: { type: 'string', enum: ENTITY_TYPES },
+            entityType: { type: 'string', enum: PHOTO_ENTITY_TYPES },
             entityId: uuid,
             image: { type: 'string', maxLength: 7_500_000 },
             thumbnail: { type: 'string', maxLength: 700_000 },
@@ -169,7 +192,10 @@ export function extrasRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
       ]);
       const p = r.rows[0];
       if (!p) throw notFound('La foto no existe');
-      if (!request.user!.permissions.includes(READ_PERMISSION[p.entity_type as EntityType])) throw forbidden();
+      const allowed = p.entity_type === 'inbound'
+        ? await canSeeInbound(pool, request, p.entity_id)
+        : request.user!.permissions.includes(READ_PERMISSION[p.entity_type as Exclude<EntityType, 'inbound'>]);
+      if (!allowed) throw forbidden();
       // El contenido de una foto no cambia nunca: el navegador puede guardarla.
       return reply
         .header('content-type', p.mime_type)
@@ -304,11 +330,18 @@ export function extrasRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
       const { all } = request.query as { all: boolean };
       const r = await pool.query(
         `SELECT nf.id, nf.created_at AS "createdAt", nf.read_at AS "readAt",
-                n.id AS "noteId", n.body, n.entity_type AS "entityType", n.entity_id AS "entityId",
-                u.full_name AS "createdBy", ${ENTITY_LABEL} AS "entityCode", ${ENTITY_NAME} AS "entityName"
+                CASE WHEN nf.inbound_id IS NULL THEN 'note' ELSE 'inbound' END AS kind,
+                n.id AS "noteId", coalesce(n.body, nf.message) AS body,
+                coalesce(n.entity_type, 'inbound') AS "entityType", coalesce(n.entity_id, nf.inbound_id) AS "entityId",
+                u.full_name AS "createdBy",
+                CASE WHEN nf.inbound_id IS NULL THEN ${ENTITY_LABEL} ELSE 'REC-' || lpad(i.number::text, 6, '0') END AS "entityCode",
+                CASE WHEN nf.inbound_id IS NULL THEN ${ENTITY_NAME} ELSE i.description END AS "entityName",
+                i.status AS "inboundStatus",
+                (i.status = 'PENDING' AND i.responsible_user_id = nf.user_id) AS "actionNeeded"
            FROM notification nf
-           JOIN note n ON n.id = nf.note_id
-           JOIN app_user u ON u.id = n.created_by
+           LEFT JOIN note n ON n.id = nf.note_id
+           LEFT JOIN inbound_item i ON i.id = nf.inbound_id
+           JOIN app_user u ON u.id = coalesce(n.created_by, nf.created_by)
           WHERE nf.user_id = $1 AND ($2 OR nf.read_at IS NULL)
           ORDER BY (nf.read_at IS NULL) DESC, nf.created_at DESC
           LIMIT 300`,

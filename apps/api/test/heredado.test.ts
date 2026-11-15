@@ -34,7 +34,7 @@ async function sessionOf(username: string): Promise<Cookie> {
   return { sga_session: res.cookies.find((c) => c.name === 'sga_session')!.value };
 }
 
-const call = (method: 'GET' | 'POST' | 'PATCH', path: string, cookies: Cookie, payload?: unknown) =>
+const call = (method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: string, cookies: Cookie, payload?: unknown) =>
   app.inject({
     method, url: path, cookies, payload: payload as never,
     headers: { 'x-sga-client': 'web', ...(method === 'POST' ? { 'idempotency-key': randomUUID() } : {}) },
@@ -249,6 +249,32 @@ describe('prefijo por tipo de ubicación', () => {
       payload: { username: 'admin', password: config.adminPassword },
     });
     admin = { sga_session: res.cookies.find((c) => c.name === 'sga_session')!.value };
+  });
+
+  it('eliminar: solo administradores y solo si no deja huella; si no, se desactiva', async () => {
+    const z = await loc('BORRA', 'ZONA');
+    const e = await loc('E1', 'ESTANTERIA', z.id);
+    expect((await call('DELETE', `/api/locations/${e.id}`, almacen)).statusCode).toBe(403);
+    // Con algo dentro, no.
+    const full = await call('DELETE', `/api/locations/${z.id}`, admin);
+    expect(full.statusCode).toBe(409);
+    expect(full.json().error.message).toContain('tiene 1 ubicación dentro');
+    // Vacía y sin historial, sí; desaparece y queda en la auditoría.
+    const ok = await call('DELETE', `/api/locations/${e.id}`, admin);
+    expect(ok.statusCode, ok.body).toBe(200);
+    expect((await call('GET', `/api/locations/${e.id}`, almacen)).statusCode).toBe(404);
+    const a = (await pool.query(`SELECT before_data AS before FROM audit_log WHERE action = 'ubicacion.baja' AND entity_id = $1`, [e.id])).rows[0];
+    expect(a.before.codigo).toBe('BORRA-E01');
+    // Con movimientos en su historial, no: hay que desactivarla.
+    const fam = (await call('GET', '/api/material-families', almacen)).json().families[0].id;
+    const mat = (await call('POST', '/api/materials', almacen, { description: 'FICTICIO Tornillo', familyId: fam, unitCode: 'ud' })).json().material.id;
+    expect((await call('POST', '/api/stock/receipt', almacen, { materialId: mat, locationId: z.id, quantity: 2 })).statusCode).toBe(201);
+    const bal = (await pool.query(`SELECT id FROM stock_balance WHERE material_id = $1`, [mat])).rows[0].id;
+    expect((await call('POST', '/api/stock/withdraw', almacen, { balanceId: bal, quantity: 2 })).statusCode).toBe(200);
+    const hist = await call('DELETE', `/api/locations/${z.id}`, admin);
+    expect(hist.statusCode).toBe(409);
+    expect(hist.json().error.code).toBe('UBICACION_CON_HISTORIAL');
+    expect((await call('GET', `/api/locations/${z.id}`, almacen)).statusCode).toBe(200);
   });
 
   it('cambiar el prefijo de un tipo recodifica sus ubicaciones y las de dentro', async () => {

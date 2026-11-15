@@ -15,6 +15,7 @@ import { materialRoutes } from './routes/materials.js';
 import { stockRoutes } from './routes/stock.js';
 import { extrasRoutes } from './routes/extras.js';
 import { searchRoutes } from './routes/search.js';
+import { inboundRoutes } from './routes/inbound.js';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
@@ -94,6 +95,7 @@ export async function buildApp(deps: { pool: pg.Pool; config: Config }): Promise
   stockRoutes(app, { pool });
   extrasRoutes(app, { pool });
   searchRoutes(app, { pool });
+  inboundRoutes(app, { pool });
 
   return app;
 }

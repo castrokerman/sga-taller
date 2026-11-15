@@ -30,6 +30,9 @@ documentación técnica y calibración de equipos.
 - Códigos de ubicación con prefijo por tipo (PAS01, EST03…), tipos editables y
   desactivar ubicaciones solo administradores, sin que desaparezcan.
 - Registrar entrada paso a paso, buscador general y auditoría con filtros.
+- Recepciones por identificar: foto, responsable y sitio provisional; el
+  responsable completa qué es, proyecto, uso y si se guarda o se despliega.
+- Eliminar ubicaciones vacías y sin historial (solo administradores).
 - Dar de alta contenedores, anidarlos y moverlos, con historial.
 - Imprimir etiquetas QR en formato 6 × 4 pulgadas o en hojas A4 de 24.
 - Escanear etiquetas con la cámara, con un lector USB o tecleando el código.
@@ -72,6 +75,7 @@ sistema obliga a cambiar su contraseña al entrar.
 | Código heredado y edición en tabla | Sí, 12 pruebas y recorrido con navegador real |
 | Fotos, anotaciones y avisos | Sí, 9 pruebas y recorrido con navegador real, también en móvil |
 | Prefijos por tipo, buscador, auditoría y registrar entrada | Sí, 7 pruebas y recorrido con navegador real |
+| Recepciones por identificar y eliminar ubicaciones | Sí, 8 pruebas y recorrido con navegador real con tres usuarios |
 | Ordenar, filtrar y vista de árbol | Sí, recorrido con un navegador real |
 | Etiquetas QR legibles en los dos formatos | Sí, 4 pruebas que leen el QR del PDF |
 | Web, API y proxy HTTPS funcionando juntos | Sí, recorrido completo con un navegador real |

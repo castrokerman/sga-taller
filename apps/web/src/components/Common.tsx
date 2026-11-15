@@ -35,7 +35,7 @@ export function LocationCard({ l, q = '' }: { l: LocationSummary; q?: string }) 
         <span><Highlight text={l.name} query={q} /></span>
       </span>
       <span className="item-meta">
-        {!l.active && <span className="badge badge-off">Desactivada</span>}
+        {!l.active && <span className="tag tag-inactive">Inactiva</span>}
         <span className="tag">{l.typeName}</span>
         <span className={over ? 'over' : undefined}>
           {l.childCount > 0 && `${l.childCount} ubic. `}

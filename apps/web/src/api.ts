@@ -359,13 +359,75 @@ export interface AppNotification {
   id: string;
   createdAt: string;
   readAt: string | null;
-  noteId: string;
+  /** De una anotación o de una recepción pendiente de identificar. */
+  kind: 'note' | 'inbound';
+  noteId: string | null;
   body: string;
-  entityType: EntityType;
+  entityType: EntityType | 'inbound';
+  inboundStatus: InboundStatus | null;
+  /** Una recepción que me toca identificar y sigue pendiente. */
+  actionNeeded: boolean | null;
   entityId: string;
   entityCode: string | null;
   entityName: string | null;
   createdBy: string;
+}
+
+export type InboundStatus = 'PENDING' | 'DONE' | 'CANCELLED';
+export type Disposition = 'STORE' | 'DEPLOY';
+export interface PhotoData { image: string; thumbnail: string; width: number; height: number }
+
+/** Algo recibido que identifica su responsable. */
+export interface Inbound {
+  id: string;
+  number: number;
+  code: string;
+  status: InboundStatus;
+  description: string | null;
+  packages: number | null;
+  externalReference: string | null;
+  receivedAt: string;
+  receivedById: string;
+  receivedBy: string;
+  responsibleId: string;
+  responsible: string;
+  containerId: string | null;
+  locationId: string | null;
+  placeCode: string;
+  photoId: string | null;
+  photoCount: number;
+  materialId: string | null;
+  materialRef: string | null;
+  materialDescription: string | null;
+  unitCode: string | null;
+  quantity: number | null;
+  lotCode: string | null;
+  projectRef: string | null;
+  usagePlace: string | null;
+  disposition: Disposition | null;
+  finalContainerId: string | null;
+  finalLocationId: string | null;
+  finalPlaceCode: string | null;
+  completionNote: string | null;
+  completedAt: string | null;
+  completedBy: string | null;
+  cancelReason: string | null;
+  cancelledAt: string | null;
+  cancelledBy: string | null;
+}
+
+export interface InboundCompletion {
+  materialId?: string;
+  newMaterial?: { description: string; familyId: string; unitCode: string; manufacturer?: string; manufacturerRef?: string };
+  quantity?: number;
+  lotCode?: string;
+  projectRef?: string;
+  usagePlace?: string;
+  disposition: Disposition;
+  containerId?: string;
+  locationId?: string;
+  usePhotoForMaterial: boolean;
+  note?: string;
 }
 
 export interface SearchResult {
@@ -428,6 +490,7 @@ export const api = {
   createContainerType: (data: { code?: string; name: string; codePrefix: string; defaultReusePolicy: string }) =>
     request<{ type: ContainerType }>('POST', '/api/container-types', data),
 
+  deleteLocation: (id: string) => request<{ ok: true; code: string }>('DELETE', `/api/locations/${id}`),
   rootLocations: () => request<{ locations: LocationSummary[] }>('GET', '/api/locations'),
   location: (id: string) => request<LocationDetail>('GET', `/api/locations/${id}`),
   createLocation: (data: { segment?: string; seq?: number; name: string; typeCode: string; parentId?: string; maxCapacity?: number }) =>
@@ -502,7 +565,7 @@ export const api = {
     request<OpResult>('POST', `/api/loans/${id}/return`, data, key),
 
 
-  photos: (entityType: EntityType, entityId: string) =>
+  photos: (entityType: EntityType | 'inbound', entityId: string) =>
     request<{ photos: Photo[] }>('GET', `/api/photos?entityType=${entityType}&entityId=${entityId}`),
   addPhoto: (data: { entityType: EntityType; entityId: string; image: string; thumbnail: string; width: number; height: number }, key: string) =>
     request<{ photo: Photo }>('POST', '/api/photos', data, key),
@@ -520,6 +583,22 @@ export const api = {
   unreadCount: () => request<{ unread: number }>('GET', '/api/notifications/count'),
   markRead: (id: string) => request<{ ok: true }>('POST', `/api/notifications/${id}/read`, {}),
   markAllRead: () => request<{ marked: number }>('POST', '/api/notifications/read-all', {}),
+
+  inbound: (status: InboundStatus | 'ALL' = 'PENDING', scope: 'mine' | 'all' = 'mine') =>
+    request<{ items: Inbound[] }>('GET', `/api/inbound?status=${status}&scope=${scope}`),
+  inboundCount: () => request<{ mine: number; received: number; total: number | null }>('GET', '/api/inbound/count'),
+  inboundItem: (id: string) => request<{ item: Inbound; canComplete: boolean; canCancel: boolean }>('GET', `/api/inbound/${id}`),
+  inboundProjects: () => request<{ projects: string[] }>('GET', '/api/inbound/projects'),
+  createInbound: (
+    data: { responsibleUserId: string; containerId?: string; locationId?: string; description?: string; packages?: number; externalReference?: string; photos: PhotoData[] },
+    key: string,
+  ) => request<{ id: string; code: string; responsible: string; notified: boolean; placeCode: string }>('POST', '/api/inbound', data, key),
+  completeInbound: (id: string, data: InboundCompletion, key: string) =>
+    request<{ message: string; materialId: string; finalPlaceCode: string | null }>('POST', `/api/inbound/${id}/complete`, data, key),
+  reassignInbound: (id: string, data: { responsibleUserId: string; note?: string }, key: string) =>
+    request<{ ok: true; responsible: string }>('POST', `/api/inbound/${id}/reassign`, data, key),
+  cancelInbound: (id: string, reason: string, key: string) =>
+    request<{ ok: true }>('POST', `/api/inbound/${id}/cancel`, { reason }, key),
 
   search: (q: string) => request<SearchResult>('GET', `/api/search?q=${encodeURIComponent(q)}`),
   tree: () => request<{ locations: TreeLocation[]; containers: TreeContainer[] }>('GET', '/api/tree'),

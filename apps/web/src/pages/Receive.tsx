@@ -3,6 +3,7 @@ import { api, errorMessage, formatQty, newOperationKey, type Material, type OpRe
 import { shrink } from '../components/ItemExtras';
 import { MaterialPicker, parseNumber, PlacePicker, QtyStepper } from '../components/Stock';
 import { navigate } from '../router';
+import { PendingReceive } from './Inbound';
 
 type Place = { ref: PlaceRef; code: string };
 const LAST_PLACE = 'sga.entrada-ultimo-sitio';
@@ -19,7 +20,8 @@ const readLast = (): Place | null => {
  * Registrar entrada, paso a paso: qué material (o crearlo con su foto),
  * dónde se guarda (escaneando) y cuánto entra.
  */
-export function ReceivePage({ user }: { user: User }) {
+export function ReceivePage({ user, initial }: { user: User; initial?: string }) {
+  const [mode, setMode] = useState<'choose' | 'direct' | 'pending'>(initial === 'pendiente' ? 'pending' : initial === 'directa' ? 'direct' : 'choose');
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [material, setMaterial] = useState<Material | null>(null);
   const [place, setPlace] = useState<Place | null>(null);
@@ -56,10 +58,28 @@ export function ReceivePage({ user }: { user: User }) {
       <div className="page-head">
         <div>
           <h2>Registrar entrada</h2>
-          <p className="muted nomargin">Material que llega al almacén o que vuelve a él.</p>
+          <p className="muted nomargin">Lo que llega al almacén o vuelve a él.</p>
         </div>
       </div>
 
+      {mode === 'choose' && (
+        <div className="mode-choice">
+          <button className="mode-card" onClick={() => setMode('pending')}>
+            <span className="mode-icon" aria-hidden="true">📷</span>
+            <b>Lo identifica el responsable</b>
+            <span>No sabes qué es: haz una foto, di de quién es y dónde lo dejas. Le llega un aviso para completar el registro.</span>
+          </button>
+          <button className="mode-card" onClick={() => setMode('direct')}>
+            <span className="mode-icon" aria-hidden="true">✓</span>
+            <b>Sé lo que es</b>
+            <span>Lo eliges del catálogo (o lo das de alta), escaneas dónde lo guardas y la cantidad.</span>
+          </button>
+        </div>
+      )}
+
+      {mode === 'pending' && <PendingReceive user={user} onBack={() => setMode('choose')} />}
+
+      {mode === 'direct' && (<>
       <ol className="steps">
         <li className={step === 1 ? 'on' : step > 1 ? 'done' : undefined}>
           <button disabled={step === 4} onClick={() => setStep(1)}>
@@ -85,7 +105,7 @@ export function ReceivePage({ user }: { user: User }) {
               setMaterial(m);
               setStep(place ? 3 : 2);
             }}
-            onCancel={() => navigate('inicio')}
+            onCancel={() => setMode('choose')}
           />
         </div>
       )}
@@ -144,6 +164,7 @@ export function ReceivePage({ user }: { user: User }) {
           </div>
         </div>
       )}
+      </>)}
     </>
   );
 }

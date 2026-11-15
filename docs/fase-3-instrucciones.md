@@ -107,6 +107,47 @@ entrada»** te lleva en tres pasos:
 Al terminar puedes seguir con **otra entrada en el mismo sitio**, con **más
 del mismo material en otro sitio**, o empezar de cero.
 
+### Cuando no sabes qué es: «Lo identifica el responsable»
+
+Mucho de lo que llega lo ha pedido otra persona y quien lo recibe no sabe qué
+es. En «Registrar entrada», elige **«Lo identifica el responsable»**:
+
+1. **Foto**: se abre la cámara. Hasta 4 fotos; que se vea la etiqueta o el
+   albarán si lo tiene.
+2. **De quién es**: busca a la persona. Las últimas que has elegido salen como
+   botones.
+3. **Dónde lo dejas de momento**: escanea el sitio o pulsa «En el mismo sitio
+   que la última vez».
+4. Opcional: qué parece o de dónde viene, bultos y albarán.
+
+Al pulsar «Registrar y avisar» se crea una recepción (`REC-000012`) y al
+responsable le llega un aviso. En su inicio verá «Tienes una recepción por
+identificar». En la recepción completa:
+
+- **Qué es**: un material del catálogo o, si no está, uno nuevo (descripción,
+  familia, unidad y, si quiere, fabricante y referencia). No hace falta ser
+  responsable de almacén para darlo de alta desde aquí.
+- **Cantidad** y, si hace falta, **lote**.
+- **Proyecto** (por ahora texto libre; propone los ya usados) y **dónde se va
+  a usar**.
+- **Qué se hace con ello**:
+  - **Se guarda en el almacén**: donde está ahora o en otro sitio. Si es otro
+    sitio, a quien lo recibió le llega el aviso «Hay que llevarlo de X a Y».
+  - **Se despliega directamente**: queda registrado que entró y que salió,
+    pero no queda en el inventario.
+- Si quiere, usa la foto como **foto del material**.
+
+Quien lo recibió recibe un aviso con lo identificado y lo que hay que hacer.
+
+Si no es suyo, el responsable pulsa **«No es mío: pasárselo a otra
+persona»** y le llega el aviso a la nueva. Quien la registró o un responsable
+de almacén puede **anularla** con un motivo (por ejemplo, si se registró dos
+veces).
+
+**«Recepciones»**, en el inicio, muestra las pendientes con su foto, para
+quién son y desde cuándo, y también las identificadas y las anuladas. Los
+responsables de almacén ven todas; cada persona ve las suyas.
+
 ### Buscador (desde el inicio)
 
 **«Buscador»** encuentra cualquier cosa escribiendo palabras, en cualquier

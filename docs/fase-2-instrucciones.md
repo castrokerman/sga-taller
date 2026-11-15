@@ -110,7 +110,14 @@ nada hasta que pulsas «Recodificar».
 **Desactivar una ubicación.** Solo lo puede hacer un administrador, desde
 «Editar». La ubicación **no desaparece**: se sigue viendo en gris y tachada,
 pero no admite contenedores ni material nuevos. Se puede volver a activar. En
-las listas, el filtro «Estado» separa las activas de las desactivadas.
+las listas, el filtro «Estado» separa las activas de las desactivadas. En las
+listas y en el árbol llevan la etiqueta amarilla **«Inactiva»**.
+
+**Eliminar una ubicación.** También solo un administrador, desde «Editar» →
+«🗑 Eliminar». Pide confirmación y no se puede deshacer: la ubicación
+desaparece y su QR deja de funcionar. Solo se puede si está vacía (sin
+ubicaciones dentro, contenedores, material ni anotaciones) y sin historial de
+movimientos. Si no, el sistema lo dice y hay que desactivarla.
 
 ### Editar varias a la vez
 
