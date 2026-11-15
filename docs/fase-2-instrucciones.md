@@ -193,8 +193,11 @@ etiqueta de la caja.
 Las cajas son desechables por defecto y los palets y bandejas reutilizables.
 Se cambia en «Editar».
 
-**Fotos en miniatura.** Si el contenedor tiene foto, sale en pequeño junto a
-su código, en su ficha y en el árbol. En la tabla «Contenido» de cada
+**Fotos en miniatura.** Si el contenedor o el contenido tiene foto, sale en
+pequeño junto a su código o su título, en su ficha y en el árbol. Al pasar el
+cursor por encima de cualquier miniatura se ve en grande al lado; al pulsarla
+(o tocarla en el móvil) se abre ampliada sobre la página, sin abrir la ficha.
+Se cierra pulsando fuera, con la ✕ o con Esc. En la tabla «Contenido» de cada
 contenedor o ubicación, cada línea lleva la miniatura de su foto (📦 si no
 tiene). Las herramientas y equipos que van por unidad no tienen «Recuento»:
 cada una es una sola pieza con su código.

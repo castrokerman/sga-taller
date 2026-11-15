@@ -4,6 +4,7 @@ import { ViewSwitch } from '../components/Common';
 import { Highlight, normalize } from '../components/ListControls';
 import { navigate } from '../router';
 import { BulkContainers, BulkLocations } from './Warehouse';
+import { Thumb } from '../components/Thumb';
 
 /** Un elemento del árbol: una ubicación o un contenedor. */
 interface Node {
@@ -230,7 +231,7 @@ export function WarehouseTree({ user, onList, rootId }: { user: User; onList: ()
                 {open ? '▾' : '▸'}
               </button>
               <span className="icon" aria-hidden="true">{n.kind === 'location' ? '▦' : '▣'}</span>
-              {n.photoId && <img className="tree-thumb" src={photoUrl(n.photoId)} alt="" loading="lazy" />}
+              {n.photoId && <Thumb className="tree-thumb" photoId={n.photoId} />}
               <span className="ncode"><Highlight text={n.code} query={q} /></span>
               <span className="nname"><Highlight text={n.label} query={q} /></span>
               <span className="nmeta">

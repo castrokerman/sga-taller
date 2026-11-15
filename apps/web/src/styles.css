@@ -662,3 +662,10 @@ ul.replies > li { padding: 0.4rem 0; }
 .head-thumb { flex: none; width: 64px; height: 64px; border-radius: 10px; overflow: hidden; border: 1px solid var(--line, #d9dde3); margin-right: 0.9rem; }
 .head-thumb img { width: 100%; height: 100%; object-fit: cover; }
 .tree-thumb { width: 22px; height: 22px; border-radius: 4px; object-fit: cover; vertical-align: middle; margin-right: 0.35rem; }
+.thumb-zoom { cursor: zoom-in; }
+.stock-thumb .thumb-zoom, .head-thumb .thumb-zoom { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumb-preview { position: fixed; z-index: 900; width: 300px; height: 300px; background: #fff; border-radius: 12px; box-shadow: 0 12px 36px rgba(15, 20, 40, 0.28); padding: 6px; pointer-events: none; }
+.thumb-preview img { width: 100%; height: 100%; object-fit: contain; border-radius: 8px; }
+.thumb-lightbox { position: fixed; inset: 0; z-index: 1000; background: rgba(10, 14, 28, 0.82); display: grid; place-items: center; padding: 1.5rem; cursor: zoom-out; }
+.thumb-lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 10px; box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4); }
+.thumb-close { position: fixed; top: 1rem; right: 1rem; width: 2.6rem; height: 2.6rem; border-radius: 50%; border: none; background: #fff; font-size: 1.1rem; cursor: pointer; }

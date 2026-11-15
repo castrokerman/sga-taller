@@ -7,6 +7,7 @@ import {
 import { can, LineActions, OpNotice, OpPanel, StockKind, UnitLabels } from '../components/Stock';
 import { LabelPanel } from '../components/Common';
 import { ItemExtras } from '../components/ItemExtras';
+import { Thumb } from '../components/Thumb';
 import { MaterialForm } from './Materials';
 import { navigate } from '../router';
 import { ReverseButton } from './Movements';
@@ -76,6 +77,11 @@ export function MaterialPage({ user, materialId }: { user: User; materialId: str
       </nav>
 
       <div className="page-head">
+        {m.photoId && (
+          <span className="head-thumb">
+            <Thumb photoId={m.photoId} />
+          </span>
+        )}
         <div>
           <h2>{m.description}</h2>
           <p className="muted nomargin">

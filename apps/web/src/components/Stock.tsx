@@ -9,6 +9,7 @@ import { navigate } from '../router';
 import { normalize } from './ListControls';
 import { Scanner } from './Scanner';
 import { PlaceSelect } from './PlaceSelect';
+import { Thumb } from './Thumb';
 
 /**
  * Material de un sitio (contenedor o ubicación) y todas las operaciones de
@@ -181,9 +182,9 @@ export function StockSection(props: {
                 <tr key={l.id}>
                   <td>
                     <div className="stock-name">
-                      <a href={`#/material/${l.materialId}`} className="stock-thumb" aria-hidden="true" tabIndex={-1}>
-                        {l.photoId ? <img src={photoUrl(l.photoId)} alt="" loading="lazy" /> : <span>📦</span>}
-                      </a>
+                      <span className="stock-thumb">
+                        {l.photoId ? <Thumb photoId={l.photoId} /> : <span aria-hidden="true">📦</span>}
+                      </span>
                       <div>
                         <a href={`#/material/${l.materialId}`}>
                           <strong>{l.description}</strong>

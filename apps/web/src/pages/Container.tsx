@@ -4,6 +4,7 @@ import { Breadcrumbs, ContainerCard, containerListConfig, LabelPanel } from '../
 import { useListControls } from '../components/ListControls';
 import { Scanner } from '../components/Scanner';
 import { MoveContainersPanel } from '../components/MoveContainers';
+import { Thumb } from '../components/Thumb';
 import { StockSection } from '../components/Stock';
 import { ItemExtras } from '../components/ItemExtras';
 import { BulkContainers, ContainerForm } from './Warehouse';
@@ -84,9 +85,9 @@ export function ContainerPage({ user, containerId }: { user: User; containerId: 
 
       <div className="page-head">
         {c.photoId && (
-          <a className="head-thumb" href={photoUrl(c.photoId, 'image')} target="_blank" rel="noreferrer" title="Ver la foto">
-            <img src={photoUrl(c.photoId)} alt="" />
-          </a>
+          <span className="head-thumb">
+            <Thumb photoId={c.photoId} />
+          </span>
         )}
         <div>
           <h2>{c.code}</h2>
