@@ -9,7 +9,8 @@ import { badRequest, conflict, forbidden, notFound } from '../errors.js';
 
 export type Tracking = 'EXACT' | 'ESTIMATED' | 'NOT_TRACKED';
 export type MovementType =
-  | 'RECEIPT' | 'WITHDRAWAL' | 'RETURN' | 'TRANSFER' | 'COUNT' | 'ADJUSTMENT' | 'LOAN_OUT' | 'LOAN_RETURN' | 'REVERSAL';
+  | 'RECEIPT' | 'WITHDRAWAL' | 'RETURN' | 'TRANSFER' | 'COUNT' | 'ADJUSTMENT' | 'LOAN_OUT' | 'LOAN_RETURN' | 'REVERSAL'
+  | 'EXIT' | 'EXIT_OUT' | 'EXIT_RETURN';
 
 export interface Place {
   containerId: string | null;
@@ -55,6 +56,7 @@ export async function resolvePlace(
   if (p.containerId) {
     const r = await c.query(`SELECT code, status FROM container WHERE id = $1`, [p.containerId]);
     if (!r.rows[0]) throw badRequest('El contenedor no existe', 'CONTENEDOR_NO_EXISTE');
+    if (r.rows[0].status === 'OUT') throw conflict(`${r.rows[0].code} está fuera del taller`, 'FUERA_DEL_TALLER');
     if (r.rows[0].status !== 'ACTIVE') throw conflict('El contenedor está retirado', 'CONTENEDOR_RETIRADO');
     return { containerId: p.containerId, locationId: null, code: r.rows[0].code };
   }
@@ -211,6 +213,15 @@ export async function applyLine(
   },
 ): Promise<number | null> {
   const m = l.material;
+  if (l.containerId) {
+    // Un contenedor (o el que lo lleva) que está fuera del taller no se toca hasta que vuelva.
+    const out = await c.query(
+      `SELECT r.code FROM container_effective_location e JOIN container r ON r.id = e.root_container_id
+        WHERE e.container_id = $1 AND r.status = 'OUT'`,
+      [l.containerId],
+    );
+    if (out.rowCount) throw conflict(`${out.rows[0].code} está fuera del taller: registra su vuelta antes`, 'FUERA_DEL_TALLER');
+  }
   const existing = await c.query(
     `SELECT id, quantity::float AS quantity FROM stock_balance
       WHERE material_id = $1 AND lot_id IS NOT DISTINCT FROM $2
