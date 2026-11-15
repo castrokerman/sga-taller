@@ -16,6 +16,7 @@ export function ScannerPage() {
       const hit = await api.scan(code);
       if (hit.kind === 'location') navigate(`almacen/${hit.id}`);
       else if (hit.kind === 'container') navigate(`contenedor/${hit.id}`);
+      else if (hit.kind === 'material') navigate(`contenido/${hit.id}`);
       else setError(`${hit.code} es un equipo. Las fichas de equipos llegan en la Fase 5`);
     } catch (e) {
       setError(errorMessage(e));

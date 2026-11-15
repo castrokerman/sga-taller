@@ -96,6 +96,25 @@ se respetan. Lo mismo si cambias el tipo de un contenido: `MAT-000012` pasa a
 Al actualizar, lo que estaba marcado como prestable pasa a ser Herramienta y
 su código cambia de `MAT-` a `HER-`.
 
+**Por cantidad o por unidad.** Material y Consumible se llevan **por
+cantidad**, como hasta ahora. Herramienta y Equipo se llevan **por unidad**:
+cada contenido es **una sola unidad física**, con su propio código, su
+**etiqueta QR** y, si se quiere, su **número de serie**. Nunca hay dos
+unidades con el mismo código:
+
+- Si entran **tres taladros iguales**, se registran tres contenidos con
+  códigos seguidos (`HER-000124`, `HER-000125`, `HER-000126`), con los mismos
+  datos y fotos. Al terminar sale el botón **«Etiquetas QR»** para imprimir
+  la de cada uno y pegársela.
+- Para prestar, sacar o trasladar una, se escanea su QR o se busca su código:
+  la cantidad es siempre 1.
+- En la ficha de cada unidad está **«Etiqueta QR»** para volver a imprimirla.
+- Si un contenido de antes tiene varias unidades con el mismo código, su
+  ficha lo avisa y ofrece **«Separar en unidades»**: se queda con una y crea
+  un contenido nuevo, con su código, por cada una de las demás.
+
+Cómo se lleva cada tipo se cambia en «Tipos» (columna «Se lleva»).
+
 En «Contenidos» → **«+ Nuevo contenido»**. Elige el tipo: propone cómo se
 cuenta y si se presta, y se puede cambiar. Lo mínimo es la descripción, la
 familia y la unidad. Lo más importante es **cómo se cuenta**:

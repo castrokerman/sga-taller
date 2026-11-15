@@ -6,7 +6,7 @@ import { withTransaction } from '../db/tx.js';
 import { AppError, badRequest, conflict, forbidden, notFound } from '../errors.js';
 import { idempotent } from '../idempotency.js';
 import {
-  applyLine, assertCanTake, checkQuantity, createMovement, emptyDisposable, findOrCreateLot, getMaterial, lockBalance, placeCode, resolvePlace,
+  applyLine, assertCanTake, checkQuantity, unitTargets, createMovement, emptyDisposable, findOrCreateLot, getMaterial, lockBalance, placeCode, resolvePlace,
   type Balance, type MaterialInfo,
 } from '../inventory/stock.js';
 import { getParameter } from '../warehouse/queries.js';
@@ -37,6 +37,8 @@ interface OpResult {
   movementNumber: number;
   message: string;
   remaining: number | null;
+  /** Herramientas y equipos: las unidades que han entrado, cada una con su código (para sacar sus etiquetas). */
+  units?: Array<{ id: string; internalRef: string }>;
   needsRecount?: boolean;
   emptyDisposable?: string | null;
 }
@@ -116,6 +118,34 @@ export function stockRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
           const m = await getMaterial(c, b.materialId);
           if (m.status !== 'ACTIVE') throw conflict('El contenido está dado de baja', 'MATERIAL_OBSOLETO');
           const place = await resolvePlace(c, b);
+          if (m.unitTracked) {
+            // Herramientas y equipos: cada unidad es un contenido con su propio código.
+            const units = await unitTargets(c, m, b.quantity, request.user!.id);
+            const mv = await createMovement(c, {
+              type: b.isReturn ? 'RETURN' : 'RECEIPT', userId: request.user!.id, reason: b.reason, externalReference: b.externalReference,
+            });
+            for (const [i, u] of units.entries()) {
+              await applyLine(c, mv, i + 1, { material: u, lotId: null, containerId: place.containerId, locationId: place.locationId, delta: 1, presence: true });
+              if (u.id !== m.id) {
+                await writeAudit(c, {
+                  userId: request.user!.id, action: 'material.alta', entityType: 'material', entityId: u.id,
+                  after: { ref: u.internalRef, unidad_de: m.internalRef, descripcion: u.description }, ip: request.ip, requestId: request.id,
+                });
+              }
+            }
+            const refs = units.map((u) => u.internalRef);
+            await audit(c, request, b.isReturn ? 'stock.devolucion' : 'stock.entrada', mv.id, {
+              movimiento: mv.number, unidades: refs, sitio: place.code,
+            });
+            return {
+              movementNumber: mv.number,
+              remaining: 1,
+              units: units.map((u) => ({ id: u.id, internalRef: u.internalRef })),
+              message: units.length === 1
+                ? `${b.isReturn ? 'Devolución' : 'Entrada'} registrada: ${m.description} (${refs[0]}) en ${place.code}`
+                : `Entrada registrada: ${units.length} unidades de ${m.description} en ${place.code}, cada una con su código: ${refs.join(', ')}`,
+            };
+          }
           const quantity = checkQuantity(m, b.quantity);
           if (m.lotTracked && !b.lotCode?.trim()) throw badRequest(`${m.description} exige indicar el lote`, 'FALTA_LOTE');
           const lotId = await findOrCreateLot(c, m.id, b.lotCode);

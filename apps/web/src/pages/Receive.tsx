@@ -1,7 +1,7 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { api, errorMessage, formatQty, newOperationKey, type Material, type OpResult, type PlaceRef, type User } from '../api';
 import { shrink } from '../components/ItemExtras';
-import { MaterialPicker, parseNumber, PlacePicker, QtyStepper } from '../components/Stock';
+import { MaterialPicker, parseNumber, PlacePicker, QtyStepper, UnitLabels } from '../components/Stock';
 import { navigate } from '../router';
 import { PendingReceive } from './Inbound';
 import { PlaceSelect } from '../components/PlaceSelect';
@@ -85,7 +85,7 @@ export function ReceivePage({ user, initial }: { user: User; initial?: string })
       <ol className="steps">
         <li className={step === 1 ? 'on' : step > 1 ? 'done' : undefined}>
           <button disabled={step === 4} onClick={() => setStep(1)}>
-            1. Material{material && step > 1 ? `: ${material.description}` : ''}
+            1. Contenido{material && step > 1 ? `: ${material.description}` : ''}
           </button>
         </li>
         <li className={step === 2 ? 'on' : step > 2 ? 'done' : undefined}>
@@ -163,6 +163,12 @@ export function ReceivePage({ user, initial }: { user: User; initial?: string })
           <h3>Entrada registrada</h3>
           <p>{result.message}.</p>
           <p className="muted small">Movimiento n.º {result.movementNumber}, a nombre de {user.fullName}.</p>
+          {result.units && result.units.length > 0 && (
+            <>
+              <p className="small nomargin">Pega a cada unidad su etiqueta, para que se pueda escanear al prestarla o moverla.</p>
+              <UnitLabels units={result.units} />
+            </>
+          )}
           <div className="actions actions-wrap">
             <button className="btn btn-primary" onClick={() => restart('place')}>
               Otra entrada en {place.code}
@@ -175,7 +181,7 @@ export function ReceivePage({ user, initial }: { user: User; initial?: string })
             </button>
           </div>
           <div className="actions actions-wrap">
-            <a className="linkbtn" href={`#/material/${material.id}`}>
+            <a className="linkbtn" href={`#/contenido/${material.id}`}>
               Ver la ficha del contenido
             </a>
             <a className="linkbtn" href={place.ref.containerId ? `#/contenedor/${place.ref.containerId}` : `#/almacen/${place.ref.locationId}`}>
@@ -245,6 +251,15 @@ function QuantityStep(props: { user: User; material: Material; place: Place; onB
       </p>
       {untracked ? (
         <p className="muted">Este contenido no se cuenta: solo se anota que hay en este sitio.</p>
+      ) : material.unitTracked ? (
+        <>
+          <span className="field-l">¿Cuántas unidades?</span>
+          <QtyStepper value={qty} onChange={setQty} decimals={0} unit="unidades" autoFocus />
+          <small className="muted">
+            {material.contentTypeName} se lleva por unidad: cada una tendrá su propio código y su etiqueta QR
+            {material.places > 0 || (material.onLoan ?? 0) > 0 ? ` (esta ya está registrada, así que se crearán unidades nuevas con los mismos datos)` : ''}.
+          </small>
+        </>
       ) : (
         <>
           <span className="field-l">Cantidad</span>
@@ -252,12 +267,14 @@ function QuantityStep(props: { user: User; material: Material; place: Place; onB
         </>
       )}
       <div className="grid-2" style={{ marginTop: '1rem' }}>
+        {!material.unitTracked && (
         <label className="field">
           <span>
             Lote {material.lotTracked ? '' : <span className="muted">(opcional)</span>}
           </span>
           <input value={lot} onChange={(e) => setLot(e.target.value)} maxLength={60} required={material.lotTracked} />
         </label>
+        )}
         <label className="field">
           <span>
             Albarán o pedido <span className="muted">(opcional)</span>
@@ -301,7 +318,12 @@ function QuantityStep(props: { user: User; material: Material; place: Place; onB
           ← Otro sitio
         </button>
         <button className="btn btn-primary btn-big-inline" disabled={Boolean(busy) || (!untracked && !n)}>
-          {busy ?? (untracked ? 'Registrar entrada' : `Registrar ${n ? formatQty(n, material.unitCode) : ''}`)}
+          {busy ??
+            (untracked
+              ? 'Registrar entrada'
+              : material.unitTracked
+                ? `Registrar ${n ?? ''} ${n === 1 ? 'unidad' : 'unidades'}`
+                : `Registrar ${n ? formatQty(n, material.unitCode) : ''}`)}
         </button>
       </div>
     </form>

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import {
   api, ApiError, errorMessage, formatDateTime, formatQty, newOperationKey,
-  type Material, type OpResult, type PlaceRef, type ScanHit, type StockLine, type User,
+  type Material, type OpResult, type PlaceRef, type ScanHit, type StockLine, type UnitRef, type User,
 } from '../api';
 import { MaterialForm } from '../pages/Materials';
+import { LabelPanel } from './Common';
 import { navigate } from '../router';
 import { normalize } from './ListControls';
 import { Scanner } from './Scanner';
@@ -199,6 +200,7 @@ export function OpNotice({ r }: { r: OpResult }) {
       <p className="nomargin">
         {r.message}. <span className="muted small">Movimiento n.º {r.movementNumber}</span>
       </p>
+      {r.units && r.units.length > 0 && <UnitLabels units={r.units} />}
       {r.emptyDisposable && (
         <p className="nomargin small" style={{ marginTop: '0.4rem' }}>
           {r.emptyDisposable} es desechable y se ha quedado vacía: si ya no se usa, retírala con el botón «Retirar» de su ficha.
@@ -572,7 +574,7 @@ export function PlacePicker(props: { hint: string; exclude?: string | null; onPi
     setError(null);
     try {
       const hit: ScanHit = await api.scan(code);
-      if (hit.kind === 'equipment') setError('Eso es un equipo. Escanea un contenedor o una ubicación');
+      if (hit.kind === 'equipment' || hit.kind === 'material') setError(`${hit.code} es un contenido. Escanea un contenedor o una ubicación`);
       else if (hit.id === props.exclude) setError('Es el mismo sitio en el que ya está');
       else props.onPick({ ref: hit.kind === 'container' ? { containerId: hit.id } : { locationId: hit.id }, code: hit.code });
     } catch (e) {
@@ -788,3 +790,22 @@ function LendForm(props: { user: User; line: StockLine; onCancel: () => void; on
 }
 
 export const goMaterial = (id: string) => navigate(`material/${id}`);
+
+/** Etiquetas QR de las unidades que acaban de entrar (herramientas y equipos). */
+export function UnitLabels({ units }: { units: UnitRef[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="unit-labels">
+      {!open ? (
+        <button type="button" className="btn btn-small" onClick={() => setOpen(true)}>
+          🏷️ Etiqueta{units.length === 1 ? '' : 's'} QR de {units.length === 1 ? units[0]!.internalRef : `las ${units.length} unidades`}
+        </button>
+      ) : (
+        <LabelPanel
+          groups={[{ label: units.length === 1 ? units[0]!.internalRef : `${units.length} unidades`, items: units.map((u) => ({ kind: 'material' as const, id: u.id })) }]}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </div>
+  );
+}

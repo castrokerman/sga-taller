@@ -271,10 +271,14 @@ export interface Material {
   /** Tipo de contenido: Material, Herramienta, Equipo, Consumible… */
   contentTypeCode: string;
   contentTypeName: string;
+  /** Su tipo se lleva por unidad: es una sola unidad física, con su código y su QR. */
+  unitTracked: boolean;
+  serialNumber: string | null;
+  qrToken: string;
 }
 
 export type MaterialInput = Partial<Omit<Material,
-  'id' | 'familyName' | 'decimals' | 'createdAt' | 'quantity' | 'quantityFree' | 'places' | 'needsRecount' | 'lowStock' | 'onLoan' | 'contentTypeName'>>;
+  'id' | 'familyName' | 'decimals' | 'createdAt' | 'quantity' | 'quantityFree' | 'places' | 'needsRecount' | 'lowStock' | 'onLoan' | 'contentTypeName' | 'unitTracked' | 'qrToken'>>;
 
 export interface ContentType {
   code: string;
@@ -282,6 +286,7 @@ export interface ContentType {
   codePrefix: string;
   defaultTracking: Tracking;
   defaultLoanable: boolean;
+  unitTracked: boolean;
   active: boolean;
   sortOrder: number;
   contentCount: number;
@@ -373,7 +378,10 @@ export interface OpResult {
   remaining: number | null;
   needsRecount?: boolean;
   emptyDisposable?: string | null;
+  /** Herramientas y equipos: las unidades que han entrado, cada una con su código. */
+  units?: UnitRef[];
 }
+export interface UnitRef { id: string; internalRef: string }
 
 export interface PlaceRef { containerId?: string; locationId?: string }
 
@@ -499,9 +507,9 @@ export const photoUrl = (id: string, size: 'thumb' | 'image' = 'thumb') => `/api
 
 export interface LocationType { code: string; name: string; active: boolean; codePrefix: string; sortOrder: number; locationCount: number }
 export interface ContainerType { code: string; name: string; codePrefix: string; defaultReusePolicy: string; active: boolean; containerCount: number }
-export interface ScanHit { kind: 'container' | 'location' | 'equipment'; id: string; code: string; name: string | null }
+export interface ScanHit { kind: 'container' | 'location' | 'equipment' | 'material'; id: string; code: string; name: string | null }
 export type LabelFormat = '4x6' | 'a4-24';
-export interface LabelRef { kind: 'location' | 'container'; id: string }
+export interface LabelRef { kind: 'location' | 'container' | 'material'; id: string }
 
 export const api = {
   me: () => request<{ user: User }>('GET', '/api/auth/me'),
@@ -539,9 +547,9 @@ export const api = {
       'GET', `/api/locations/next-code?parentId=${parentId}&typeCode=${typeCode}${exceptId ? `&exceptId=${exceptId}` : ''}`,
     ),
   contentTypes: () => request<{ types: ContentType[] }>('GET', '/api/content-types'),
-  createContentType: (data: { name: string; codePrefix: string; defaultTracking?: Tracking; defaultLoanable?: boolean }) =>
+  createContentType: (data: { name: string; codePrefix: string; defaultTracking?: Tracking; defaultLoanable?: boolean; unitTracked?: boolean }) =>
     request<{ code: string }>('POST', '/api/content-types', data),
-  updateContentType: (code: string, data: { name?: string; codePrefix?: string; defaultTracking?: Tracking; defaultLoanable?: boolean; active?: boolean }) =>
+  updateContentType: (code: string, data: { name?: string; codePrefix?: string; defaultTracking?: Tracking; defaultLoanable?: boolean; unitTracked?: boolean; active?: boolean }) =>
     request<{ recoded: number }>('PATCH', `/api/content-types/${code}`, data),
   containerTypes: () => request<{ types: ContainerType[] }>('GET', '/api/container-types'),
   createContainerType: (data: { code?: string; name: string; codePrefix: string; defaultReusePolicy: string }) =>
@@ -651,7 +659,8 @@ export const api = {
     key: string,
   ) => request<{ id: string; code: string; responsible: string; notified: boolean; placeCode: string }>('POST', '/api/inbound', data, key),
   completeInbound: (id: string, data: InboundCompletion, key: string) =>
-    request<{ message: string; materialId: string; finalPlaceCode: string | null }>('POST', `/api/inbound/${id}/complete`, data, key),
+    request<{ message: string; materialId: string; finalPlaceCode: string | null; units?: UnitRef[] }>('POST', `/api/inbound/${id}/complete`, data, key),
+  splitUnits: (id: string) => request<{ units: UnitRef[] }>('POST', `/api/materials/${id}/split-units`),
   reassignInbound: (id: string, data: { responsibleUserId: string; note?: string }, key: string) =>
     request<{ ok: true; responsible: string }>('POST', `/api/inbound/${id}/reassign`, data, key),
   cancelInbound: (id: string, reason: string, key: string) =>

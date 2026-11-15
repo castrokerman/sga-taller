@@ -6,7 +6,7 @@ import { withTransaction } from '../db/tx.js';
 import { badRequest, conflict, forbidden, notFound } from '../errors.js';
 import { idempotent } from '../idempotency.js';
 import {
-  applyLine, checkQuantity, createMovement, findOrCreateLot, getMaterial, resolvePlace, type MaterialInfo, type Place,
+  applyLine, checkQuantity, createMovement, findOrCreateLot, getMaterial, resolvePlace, unitTargets, type MaterialInfo, type Place,
 } from '../inventory/stock.js';
 import { canSeeInbound, imageType } from './extras.js';
 import { AUTO_REF, contentType } from './materials.js';
@@ -358,9 +358,28 @@ export function inboundRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
           const materialId = b.materialId ?? (await createMaterial(c, request, b.newMaterial!));
           const m: MaterialInfo = await getMaterial(c, materialId);
           if (m.status !== 'ACTIVE') throw conflict('El contenido está dado de baja', 'MATERIAL_OBSOLETO');
-          const quantity = checkQuantity(m, b.quantity);
-          if (m.lotTracked && !b.lotCode?.trim()) throw badRequest(`${m.description} exige indicar el lote`, 'FALTA_LOTE');
-          const lotId = await findOrCreateLot(c, m.id, b.lotCode);
+          if (b.usePhotoForMaterial) {
+            await c.query(
+              `INSERT INTO photo (entity_type, entity_id, position, mime_type, width, height, image, thumbnail, caption, uploaded_by)
+               SELECT 'material', $1,
+                      coalesce((SELECT max(position) + 1 FROM photo WHERE entity_type = 'material' AND entity_id = $1), 0) + p.position,
+                      p.mime_type, p.width, p.height, p.image, p.thumbnail, $3, $4
+                 FROM photo p WHERE p.entity_type = 'inbound' AND p.entity_id = $2`,
+              [m.id, id, `Recepción ${item.code}`, request.user!.id],
+            );
+          }
+          // Herramientas y equipos: cada unidad es un contenido con su propio código (las copias se llevan la foto).
+          const units = m.unitTracked ? await unitTargets(c, m, b.quantity, request.user!.id) : [m];
+          for (const u of units.filter((x) => x.id !== m.id)) {
+            await writeAudit(c, {
+              userId: request.user!.id, action: 'material.alta', entityType: 'material', entityId: u.id,
+              after: { ref: u.internalRef, unidad_de: m.internalRef, desde: item.code }, ip: request.ip, requestId: request.id,
+            });
+          }
+          const quantity = m.unitTracked ? units.length : checkQuantity(m, b.quantity);
+          const perLine = m.unitTracked ? 1 : quantity;
+          if (m.lotTracked && !m.unitTracked && !b.lotCode?.trim()) throw badRequest(`${m.description} exige indicar el lote`, 'FALTA_LOTE');
+          const lotId = m.unitTracked ? null : await findOrCreateLot(c, m.id, b.lotCode);
           const provisional: Place = await resolvePlace(c, { containerId: item.containerId, locationId: item.locationId })
             .catch(() => {
               throw conflict(`El sitio provisional ${item.placeCode} ya no admite contenido`, 'SITIO_NO_VALIDO');
@@ -372,7 +391,9 @@ export function inboundRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
           const project = pj?.label ?? (b.projectRef?.trim() || null);
           const usage = b.usagePlace?.trim() || null;
           const extra = [project && `proyecto ${project}`, usage && `uso: ${usage}`].filter(Boolean).join(' · ');
-          const what = quantity === null ? m.description : `${fmt(quantity, m.unitCode)} de ${m.description}`;
+          const what = m.unitTracked
+            ? `${units.length === 1 ? m.description : `${units.length} unidades de ${m.description}`} (${units.map((u) => u.internalRef).join(', ')})`
+            : quantity === null ? m.description : `${fmt(quantity, m.unitCode)} de ${m.description}`;
 
           let final: Place | null = null;
           let receiptId: string;
@@ -382,7 +403,9 @@ export function inboundRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
             const mv = await createMovement(c, {
               type: 'RECEIPT', userId: request.user!.id, reason: `Recepción ${item.code}${extra ? ` · ${extra}` : ''}`,
             });
-            await applyLine(c, mv, 1, { material: m, lotId, containerId: final.containerId, locationId: final.locationId, delta: quantity, presence: true });
+            for (const [n, u] of units.entries()) {
+              await applyLine(c, mv, n + 1, { material: u, lotId, containerId: final.containerId, locationId: final.locationId, delta: perLine, presence: true });
+            }
             receiptId = mv.id;
           } else {
             // Se despliega del tirón: entra y sale, para que quede la huella de que llegó y adónde fue.
@@ -392,28 +415,22 @@ export function inboundRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
               [m.id, lotId, provisional.containerId, provisional.locationId],
             );
             const mv = await createMovement(c, { type: 'RECEIPT', userId: request.user!.id, reason: `Recepción ${item.code}${extra ? ` · ${extra}` : ''}` });
-            await applyLine(c, mv, 1, { material: m, lotId, containerId: provisional.containerId, locationId: provisional.locationId, delta: quantity, presence: true });
+            for (const [n, u] of units.entries()) {
+              await applyLine(c, mv, n + 1, { material: u, lotId, containerId: provisional.containerId, locationId: provisional.locationId, delta: perLine, presence: true });
+            }
             const out = await createMovement(c, {
               type: 'WITHDRAWAL', userId: request.user!.id, reason: `Desplegado directamente (recepción ${item.code})${usage ? ` en ${usage}` : ''}`,
             });
-            await applyLine(c, out, 1, {
-              material: m, lotId, containerId: provisional.containerId, locationId: provisional.locationId,
-              delta: quantity === null ? null : -quantity, presence: Boolean(before.rowCount),
-            });
+            for (const [n, u] of units.entries()) {
+              await applyLine(c, out, n + 1, {
+                material: u, lotId, containerId: provisional.containerId, locationId: provisional.locationId,
+                delta: perLine === null ? null : -perLine, presence: m.unitTracked ? false : Boolean(before.rowCount),
+              });
+            }
             receiptId = mv.id;
             withdrawalId = out.id;
           }
 
-          if (b.usePhotoForMaterial) {
-            await c.query(
-              `INSERT INTO photo (entity_type, entity_id, position, mime_type, width, height, image, thumbnail, caption, uploaded_by)
-               SELECT 'material', $1,
-                      coalesce((SELECT max(position) + 1 FROM photo WHERE entity_type = 'material' AND entity_id = $1), 0) + p.position,
-                      p.mime_type, p.width, p.height, p.image, p.thumbnail, $3, $4
-                 FROM photo p WHERE p.entity_type = 'inbound' AND p.entity_id = $2`,
-              [m.id, id, `Recepción ${item.code}`, request.user!.id],
-            );
-          }
 
           await c.query(
             `UPDATE inbound_item
@@ -446,7 +463,7 @@ export function inboundRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
             uso: usage, destino: b.disposition === 'DEPLOY' ? 'despliegue directo' : final!.code, foto_al_material: b.usePhotoForMaterial,
           });
           reply.code(201);
-          return { message, materialId: m.id, finalPlaceCode: final?.code ?? null };
+          return { message, materialId: m.id, finalPlaceCode: final?.code ?? null, units: m.unitTracked ? units.map((u) => ({ id: u.id, internalRef: u.internalRef })) : undefined };
         });
       }),
   );

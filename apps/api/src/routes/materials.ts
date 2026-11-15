@@ -4,6 +4,7 @@ import { writeAudit } from '../audit.js';
 import { requirePermission } from '../auth/guard.js';
 import { withTransaction } from '../db/tx.js';
 import { AppError, badRequest, conflict, notFound } from '../errors.js';
+import { applyLine, copyUnit, createMovement, getMaterial } from '../inventory/stock.js';
 
 const uuid = { type: 'string', format: 'uuid' } as const;
 const idParams = { type: 'object', required: ['id'], properties: { id: uuid } } as const;
@@ -31,6 +32,7 @@ export const MATERIAL_SELECT = `
          m.quantity_tracking AS "quantityTracking", m.lot_tracked AS "lotTracked", m.is_loanable AS "isLoanable",
          m.min_stock::float AS "minStock", m.notes, m.status, m.created_at AS "createdAt",
          m.content_type_code AS "contentTypeCode", ct.name AS "contentTypeName",
+         ct.unit_tracked AS "unitTracked", m.serial_number AS "serialNumber", m.qr_token AS "qrToken",
          (SELECT ph.id FROM photo ph WHERE ph.entity_type = 'material' AND ph.entity_id = m.id ORDER BY ph.position LIMIT 1) AS "photoId",
          s.quantity::float AS quantity, s.quantity_free::float AS "quantityFree", s.places::int AS places,
          coalesce(s.needs_recount, false) AS "needsRecount",
@@ -66,6 +68,7 @@ const materialBody = {
   isLoanable: { type: 'boolean' },
   minStock: { anyOf: [{ type: 'null' }, { type: 'number', minimum: 0, maximum: 1e12 }] },
   notes: nullableText(1000),
+  serialNumber: nullableText(80),
   status: { type: 'string', enum: ['ACTIVE', 'OBSOLETE'] },
   contentTypeCode: { type: 'string', maxLength: 30 },
 } as const;
@@ -74,7 +77,7 @@ type MaterialInput = Partial<{
   description: string; familyId: string; internalRef: string; manufacturer: string | null; manufacturerRef: string | null;
   materialSpec: string | null; qualityGrade: string | null; dimensions: string | null; unitCode: string;
   quantityTracking: string; lotTracked: boolean; isLoanable: boolean; minStock: number | null; notes: string | null; status: string;
-  contentTypeCode: string;
+  contentTypeCode: string; serialNumber: string | null;
 }>;
 
 /** Tipo de contenido activo, o error. */
@@ -105,7 +108,7 @@ export function materialRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
   app.get('/api/content-types', { preHandler: requirePermission('material.read') }, async () => {
     const r = await pool.query(
       `SELECT t.code, t.name, t.code_prefix AS "codePrefix", t.default_tracking AS "defaultTracking",
-              t.default_loanable AS "defaultLoanable", t.active, t.sort_order AS "sortOrder",
+              t.default_loanable AS "defaultLoanable", t.unit_tracked AS "unitTracked", t.active, t.sort_order AS "sortOrder",
               (SELECT count(*)::int FROM material m WHERE m.content_type_code = t.code) AS "contentCount"
          FROM content_type t ORDER BY t.sort_order, t.name`,
     );
@@ -117,6 +120,7 @@ export function materialRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
     codePrefix: { type: 'string', pattern: '^[A-Za-z]{2,5}$' },
     defaultTracking: { type: 'string', enum: ['EXACT', 'ESTIMATED', 'NOT_TRACKED'] },
     defaultLoanable: { type: 'boolean' },
+    unitTracked: { type: 'boolean' },
     active: { type: 'boolean' },
   } as const;
 
@@ -137,7 +141,7 @@ export function materialRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
       schema: { body: { type: 'object', required: ['name', 'codePrefix'], additionalProperties: false, properties: typeProps } },
     },
     async (request, reply) => {
-      const b = request.body as { name: string; codePrefix: string; defaultTracking?: string; defaultLoanable?: boolean };
+      const b = request.body as { name: string; codePrefix: string; defaultTracking?: string; defaultLoanable?: boolean; unitTracked?: boolean };
       const prefix = b.codePrefix.toUpperCase();
       const code = await withTransaction(pool, async (c) => {
         await prefixFree(c, prefix, null);
@@ -146,9 +150,9 @@ export function materialRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
         const dup = await c.query(`SELECT 1 FROM content_type WHERE lower(name) = lower($1)`, [b.name.trim()]);
         if (dup.rowCount) throw conflict(`Ya existe el tipo «${b.name.trim()}»`, 'TIPO_DUPLICADO');
         await c.query(
-          `INSERT INTO content_type (code, name, code_prefix, default_tracking, default_loanable, sort_order)
-           VALUES ($1, $2, $3, $4, $5, (SELECT coalesce(max(sort_order), 0) + 1 FROM content_type))`,
-          [code, b.name.trim(), prefix, b.defaultTracking ?? 'EXACT', b.defaultLoanable ?? false],
+          `INSERT INTO content_type (code, name, code_prefix, default_tracking, default_loanable, unit_tracked, sort_order)
+           VALUES ($1, $2, $3, $4, $5, $6, (SELECT coalesce(max(sort_order), 0) + 1 FROM content_type))`,
+          [code, b.name.trim(), prefix, b.unitTracked ? 'EXACT' : (b.defaultTracking ?? 'EXACT'), b.defaultLoanable ?? false, b.unitTracked ?? false],
         );
         await writeAudit(c, {
           userId: request.user!.id, action: 'tipo_contenido.alta', entityType: 'content_type', entityId: code,
@@ -172,7 +176,7 @@ export function materialRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
     },
     async (request) => {
       const { code } = request.params as { code: string };
-      const b = request.body as { name?: string; codePrefix?: string; defaultTracking?: string; defaultLoanable?: boolean; active?: boolean };
+      const b = request.body as { name?: string; codePrefix?: string; defaultTracking?: string; defaultLoanable?: boolean; unitTracked?: boolean; active?: boolean };
       return withTransaction(pool, async (c) => {
         const before = (await c.query(`SELECT * FROM content_type WHERE code = $1 FOR UPDATE`, [code])).rows[0];
         if (!before) throw notFound('El tipo de contenido no existe');
@@ -204,9 +208,9 @@ export function materialRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
         await c.query(
           `UPDATE content_type SET name = coalesce($2, name), code_prefix = coalesce($3, code_prefix),
                   default_tracking = coalesce($4, default_tracking), default_loanable = coalesce($5, default_loanable),
-                  active = coalesce($6, active)
+                  active = coalesce($6, active), unit_tracked = coalesce($7, unit_tracked)
             WHERE code = $1`,
-          [code, b.name?.trim() ?? null, prefix ?? null, b.defaultTracking ?? null, b.defaultLoanable ?? null, b.active ?? null],
+          [code, b.name?.trim() ?? null, prefix ?? null, b.defaultTracking ?? null, b.defaultLoanable ?? null, b.active ?? null, b.unitTracked ?? null],
         );
         await writeAudit(c, {
           userId: request.user!.id, action: 'tipo_contenido.modificacion', entityType: 'content_type', entityId: code,
@@ -352,6 +356,43 @@ export function materialRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
     },
   );
 
+  // ---- Separar en unidades ------------------------------------------------
+  // Para contenidos de un tipo por unidad que ya tenían varias unidades con el
+  // mismo código (de antes de este cambio): deja una en el contenido y crea un
+  // contenido nuevo por cada una de las demás, en el mismo sitio.
+  app.post('/api/materials/:id/split-units', { preHandler: requirePermission('material.manage'), schema: { params: idParams } }, async (request) => {
+    const { id } = request.params as { id: string };
+    return withTransaction(pool, async (c) => {
+      const m = await getMaterial(c, id);
+      if (!m.unitTracked) throw badRequest('Solo se separan los contenidos de un tipo por unidad', 'NO_ES_POR_UNIDAD');
+      const balances = (await c.query(
+        `SELECT id, quantity::float AS q, container_id, location_id, lot_id FROM stock_balance WHERE material_id = $1 ORDER BY created_at, id FOR UPDATE`,
+        [id],
+      )).rows as Array<{ id: string; q: number | null; container_id: string | null; location_id: string | null; lot_id: string | null }>;
+      const onLoan = Number((await c.query(`SELECT coalesce(sum(quantity), 0) AS n FROM tool_loan WHERE material_id = $1 AND status = 'OPEN'`, [id])).rows[0].n);
+      let keep = onLoan > 0 ? 0 : 1;
+      const created: Array<{ id: string; internalRef: string }> = [];
+      let mv: { id: string; number: number } | null = null;
+      let line = 1;
+      for (const b of balances) {
+        for (let k = 0; k < Math.floor(b.q ?? 1); k++) {
+          if (keep > 0) { keep--; continue; }
+          mv ??= await createMovement(c, { type: 'ADJUSTMENT', userId: request.user!.id, reason: `Separación en unidades de ${m.internalRef}` });
+          const u = await copyUnit(c, m, request.user!.id);
+          await applyLine(c, mv, line++, { material: m, lotId: b.lot_id, containerId: b.container_id, locationId: b.location_id, delta: -1, presence: true });
+          await applyLine(c, mv, line++, { material: u, lotId: null, containerId: b.container_id, locationId: b.location_id, delta: 1, presence: true });
+          created.push({ id: u.id, internalRef: u.internalRef });
+        }
+      }
+      if (!created.length) throw badRequest('Ya es una sola unidad', 'YA_ES_UNIDAD');
+      await writeAudit(c, {
+        userId: request.user!.id, action: 'material.separacion', entityType: 'material', entityId: id,
+        after: { ref: m.internalRef, unidades_nuevas: created.map((x) => x.internalRef) }, ip: request.ip, requestId: request.id,
+      });
+      return { units: created };
+    });
+  });
+
   app.get('/api/materials/:id', { preHandler: requirePermission('material.read'), schema: { params: idParams } }, async (request) => {
     const { id } = request.params as { id: string };
     const m = (await pool.query(`${MATERIAL_SELECT} WHERE m.id = $1`, [id])).rows[0];
@@ -392,16 +433,16 @@ export function materialRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
         const r = await c.query(
           `INSERT INTO material
              (internal_ref, description, family_id, manufacturer, manufacturer_ref, material_spec, quality_grade,
-              dimensions, unit_code, quantity_tracking, lot_tracked, is_loanable, min_stock, notes, content_type_code)
+              dimensions, unit_code, quantity_tracking, lot_tracked, is_loanable, min_stock, notes, content_type_code, serial_number)
            VALUES (coalesce($1, ${AUTO_REF('$16::text')}),
-                   $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                   $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $17)
            RETURNING id, internal_ref`,
           [
             body.internalRef?.trim().toUpperCase() || null, body.description!.trim(), body.familyId,
             clean(body.manufacturer) ?? null, clean(body.manufacturerRef) ?? null, clean(body.materialSpec) ?? null,
             clean(body.qualityGrade) ?? null, clean(body.dimensions) ?? null, body.unitCode,
             body.quantityTracking ?? 'EXACT', body.lotTracked ?? false, body.isLoanable ?? false,
-            body.minStock ?? null, clean(body.notes) ?? null, type.code, type.prefix,
+            body.minStock ?? null, clean(body.notes) ?? null, type.code, type.prefix, clean(body.serialNumber) ?? null,
           ],
         );
         await writeAudit(c, {
@@ -505,6 +546,7 @@ async function updateMaterial(c: pg.PoolClient, request: FastifyRequest, id: str
   if (body.isLoanable !== undefined) col('is_loanable', body.isLoanable);
   if (body.minStock !== undefined) col('min_stock', body.minStock);
   if (body.notes !== undefined) col('notes', clean(body.notes));
+  if (body.serialNumber !== undefined) col('serial_number', clean(body.serialNumber));
   if (body.status !== undefined) col('status', body.status);
   // Cambiar de tipo cambia el prefijo del código, si era automático (MAT-000012 → HER-000012).
   if (body.contentTypeCode !== undefined && body.contentTypeCode !== before.content_type_code) {

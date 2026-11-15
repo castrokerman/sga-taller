@@ -35,6 +35,8 @@ documentación técnica y calibración de equipos.
 - Eliminar ubicaciones vacías y sin historial (solo administradores).
 - Proyectos con varios responsables y miembros; lo que hay en sus contenedores
   queda reservado para sus responsables.
+- Herramientas y equipos por unidad: cada una con su código, su QR y su número
+  de serie; si entran varias iguales, cada una se registra aparte.
 - Inicio agrupado por bloques (Día a día, Inventario, Control, Administración);
   cada persona ve los suyos según sus permisos.
 - Contenidos (antes «Materiales») con tipos editables: Material, Herramienta,
@@ -84,6 +86,7 @@ sistema obliga a cambiar su contraseña al entrar.
 | Recepciones por identificar y eliminar ubicaciones | Sí, 8 pruebas y recorrido con navegador real con tres usuarios |
 | Tipos de contenido y listas desplegables | Sí, 3 pruebas y recorrido con navegador real sobre datos antiguos |
 | Proyectos, responsables y reserva | Sí, 7 pruebas y recorrido con navegador real con tres usuarios |
+| Herramientas y equipos por unidad | Sí, 3 pruebas y recorrido con navegador real con datos antiguos |
 | Ordenar, filtrar y vista de árbol | Sí, recorrido con un navegador real |
 | Etiquetas QR legibles en los dos formatos | Sí, 4 pruebas que leen el QR del PDF |
 | Web, API y proxy HTTPS funcionando juntos | Sí, recorrido completo con un navegador real |

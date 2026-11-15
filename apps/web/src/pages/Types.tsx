@@ -202,6 +202,7 @@ export function TypesPage() {
               <tr>
                 <th>Nombre</th>
                 <th>Prefijo</th>
+                <th>Se lleva</th>
                 <th>Se cuenta</th>
                 <th>Se presta</th>
                 <th className="num">Contenidos</th>
@@ -219,13 +220,14 @@ export function TypesPage() {
                     prefix={t.codePrefix}
                     tracking={t.defaultTracking}
                     loanable={t.defaultLoanable}
+                    unitTracked={t.unitTracked}
                     active={t.active}
                     count={t.contentCount}
                     onCancel={() => setEditing(null)}
                     onSave={(v) =>
                       run(async () => {
                         const r = await api.updateContentType(t.code, {
-                          name: v.name, codePrefix: v.codePrefix, active: v.active, defaultTracking: v.defaultTracking, defaultLoanable: v.defaultLoanable,
+                          name: v.name, codePrefix: v.codePrefix, active: v.active, defaultTracking: v.defaultTracking, defaultLoanable: v.defaultLoanable, unitTracked: v.unitTracked,
                         });
                         return r.recoded ? `Tipo guardado. Se han recodificado ${r.recoded} contenidos.` : 'Tipo guardado';
                       })
@@ -235,7 +237,8 @@ export function TypesPage() {
                   <tr key={t.code} className={t.active ? undefined : 'row-off'}>
                     <td>{t.name}</td>
                     <td className="mono">{t.codePrefix}-000001</td>
-                    <td>{TRACKING_NAMES[t.defaultTracking]}</td>
+                    <td>{t.unitTracked ? <strong>Por unidad</strong> : 'Por cantidad'}</td>
+                    <td>{t.unitTracked ? '—' : TRACKING_NAMES[t.defaultTracking]}</td>
                     <td>{t.defaultLoanable ? 'Sí' : 'No'}</td>
                     <td className="num">{t.contentCount}</td>
                     <td>{t.active ? <span className="badge badge-ok">Activo</span> : <span className="badge badge-off">Desactivado</span>}</td>
@@ -253,7 +256,7 @@ export function TypesPage() {
         <NewType
           kind="content"
           onCreate={(v) => run(async () => {
-            await api.createContentType({ name: v.name, codePrefix: v.prefix, defaultTracking: v.tracking, defaultLoanable: v.loanable });
+            await api.createContentType({ name: v.name, codePrefix: v.prefix, defaultTracking: v.tracking, defaultLoanable: v.loanable, unitTracked: v.unitTracked });
             return `Tipo de contenido creado: ${v.name} (${v.prefix}-000001…)`;
           })}
         />
@@ -264,6 +267,7 @@ export function TypesPage() {
 
 type TypeValues = {
   name: string; codePrefix: string; active: boolean; defaultReusePolicy?: string; defaultTracking?: Tracking; defaultLoanable?: boolean;
+  unitTracked?: boolean;
 };
 type Kind = 'location' | 'container' | 'content';
 
@@ -274,6 +278,7 @@ function TypeEditRow(props: {
   policy?: string;
   tracking?: Tracking;
   loanable?: boolean;
+  unitTracked?: boolean;
   active: boolean;
   count: number;
   onCancel: () => void;
@@ -284,6 +289,7 @@ function TypeEditRow(props: {
   const [policy, setPolicy] = useState(props.policy ?? 'REUSABLE');
   const [tracking, setTracking] = useState<Tracking>(props.tracking ?? 'EXACT');
   const [loanable, setLoanable] = useState(props.loanable ?? false);
+  const [unitTracked, setUnitTracked] = useState(props.unitTracked ?? false);
   const [active, setActive] = useState(props.active);
   const [busy, setBusy] = useState(false);
   const max = props.kind === 'location' ? 6 : 5;
@@ -300,7 +306,7 @@ function TypeEditRow(props: {
     await props.onSave({
       name: name.trim(), codePrefix: prefix, active,
       ...(props.kind === 'container' ? { defaultReusePolicy: policy } : {}),
-      ...(props.kind === 'content' ? { defaultTracking: tracking, defaultLoanable: loanable } : {}),
+      ...(props.kind === 'content' ? { defaultTracking: tracking, defaultLoanable: loanable, unitTracked } : {}),
     });
     setBusy(false);
   };
@@ -325,7 +331,13 @@ function TypeEditRow(props: {
       {props.kind === 'content' && (
         <>
           <td>
-            <select value={tracking} onChange={(e) => setTracking(e.target.value as Tracking)} aria-label="Cómo se cuenta">
+            <select value={unitTracked ? 'unit' : 'qty'} onChange={(e) => setUnitTracked(e.target.value === 'unit')} aria-label="Cómo se lleva">
+              <option value="qty">Por cantidad</option>
+              <option value="unit">Por unidad</option>
+            </select>
+          </td>
+          <td>
+            <select value={tracking} disabled={unitTracked} onChange={(e) => setTracking(e.target.value as Tracking)} aria-label="Cómo se cuenta">
               {(Object.keys(TRACKING_NAMES) as Tracking[]).map((k) => <option key={k} value={k}>{TRACKING_NAMES[k]}</option>)}
             </select>
           </td>
@@ -358,18 +370,19 @@ function TypeEditRow(props: {
 
 function NewType(props: {
   kind: Kind;
-  onCreate: (v: { name: string; prefix: string; policy?: string; tracking?: Tracking; loanable?: boolean }) => Promise<boolean>;
+  onCreate: (v: { name: string; prefix: string; policy?: string; tracking?: Tracking; loanable?: boolean; unitTracked?: boolean }) => Promise<boolean>;
 }) {
   const [name, setName] = useState('');
   const [prefix, setPrefix] = useState('');
   const [policy, setPolicy] = useState('REUSABLE');
   const [tracking, setTracking] = useState<Tracking>('EXACT');
   const [loanable, setLoanable] = useState(false);
+  const [unitTracked, setUnitTracked] = useState(false);
   const max = props.kind === 'location' ? 6 : 5;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (await props.onCreate({ name: name.trim(), prefix, policy, tracking, loanable })) {
+    if (await props.onCreate({ name: name.trim(), prefix, policy, tracking, loanable, unitTracked })) {
       setName('');
       setPrefix('');
     }
@@ -412,6 +425,13 @@ function NewType(props: {
         )}
         {props.kind === 'content' && (
           <>
+            <label className="field">
+              <span>Cómo se lleva</span>
+              <select value={unitTracked ? 'unit' : 'qty'} onChange={(e) => setUnitTracked(e.target.value === 'unit')}>
+                <option value="qty">Por cantidad (materiales, consumibles)</option>
+                <option value="unit">Por unidad: cada una con su código y su QR</option>
+              </select>
+            </label>
             <label className="field">
               <span>Cómo se cuenta, por defecto</span>
               <select value={tracking} onChange={(e) => setTracking(e.target.value as Tracking)}>

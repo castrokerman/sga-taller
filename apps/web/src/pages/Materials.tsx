@@ -291,6 +291,7 @@ export function MaterialForm(props: {
     contentTypeCode: 'MATERIAL',
     ...init,
   });
+  const unitType = Boolean(types.find((t) => t.code === f.contentTypeCode)?.unitTracked);
   const [min, setMin] = useState(init.minStock != null ? String(init.minStock).replace('.', ',') : '');
   const [more, setMore] = useState(Boolean(init.manufacturer || init.manufacturerRef || init.materialSpec || init.qualityGrade || init.dimensions || init.notes));
   const [error, setError] = useState<string | null>(null);
@@ -322,7 +323,7 @@ export function MaterialForm(props: {
       return;
     }
     const keys = ['contentTypeCode', 'description', 'familyId', 'internalRef', 'manufacturer', 'manufacturerRef', 'materialSpec', 'qualityGrade',
-      'dimensions', 'unitCode', 'quantityTracking', 'lotTracked', 'isLoanable', 'notes', 'status'] as const;
+      'dimensions', 'unitCode', 'quantityTracking', 'lotTracked', 'isLoanable', 'notes', 'status', 'serialNumber'] as const;
     const data: MaterialInput = Object.fromEntries(keys.filter((k) => f[k] !== undefined).map((k) => [k, f[k]]));
     data.description = f.description?.trim();
     data.minStock = f.quantityTracking === 'NOT_TRACKED' ? null : minStock;
@@ -364,7 +365,8 @@ export function MaterialForm(props: {
                 // En un alta, el tipo propone cómo se cuenta y si se presta.
                 setF((x) => ({
                   ...x, contentTypeCode: t.code,
-                  ...(props.materialId ? {} : { quantityTracking: t.defaultTracking, isLoanable: t.defaultLoanable }),
+                  ...(props.materialId ? {} : { quantityTracking: t.unitTracked ? 'EXACT' : t.defaultTracking, isLoanable: t.defaultLoanable }),
+                  ...(t.unitTracked ? { quantityTracking: 'EXACT' as const, lotTracked: false } : {}),
                 }))
               }
             >
@@ -419,6 +421,20 @@ export function MaterialForm(props: {
           </select>
         </label>
       </div>
+      {unitType ? (
+        <>
+          <p className="alert alert-info small">
+            {types.find((t) => t.code === f.contentTypeCode)?.name} se lleva <strong>por unidad</strong>: este contenido es una sola unidad, con su
+            propio código y su etiqueta QR. Si entran varias iguales, cada una se registra con su código.
+          </p>
+          <label className="field narrow">
+            <span>
+              Número de serie <span className="muted">(opcional)</span>
+            </span>
+            <input value={f.serialNumber ?? ''} onChange={(e) => set('serialNumber', e.target.value)} maxLength={80} placeholder="El del fabricante" />
+          </label>
+        </>
+      ) : (
       <fieldset className="field">
         <legend>Cómo se cuenta</legend>
         <div className="seg">
@@ -433,8 +449,9 @@ export function MaterialForm(props: {
           ))}
         </div>
       </fieldset>
+      )}
       <div className="grid-2">
-        {f.quantityTracking !== 'NOT_TRACKED' && (
+        {f.quantityTracking !== 'NOT_TRACKED' && !unitType && (
           <label className="field">
             <span>
               Avisar si baja de <span className="muted">(opcional)</span>
@@ -456,6 +473,7 @@ export function MaterialForm(props: {
           <small className="muted"> — se presta y se devuelve, no se gasta</small>
         </span>
       </label>
+      {!unitType && (
       <label className="check">
         <input type="checkbox" checked={Boolean(f.lotTracked)} onChange={(e) => set('lotTracked', e.target.checked)} />
         <span>
@@ -463,6 +481,7 @@ export function MaterialForm(props: {
           <small className="muted"> — para contenido con certificado o colada</small>
         </span>
       </label>
+      )}
       {!more ? (
         <button type="button" className="linkbtn" onClick={() => setMore(true)}>
           + Fabricante, calidad, dimensiones y notas

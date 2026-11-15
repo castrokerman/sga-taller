@@ -460,3 +460,60 @@ describe('tipos de contenido', () => {
     expect((await call('PATCH', '/api/content-types/MATERIAL', admin, { active: false })).json().error.code).toBe('TIPO_BASE');
   });
 });
+
+describe('herramientas y equipos por unidad', () => {
+  it('los tipos Herramienta y Equipo se llevan por unidad; Material y Consumible, por cantidad', async () => {
+    const types = (await call('GET', '/api/content-types', usuario)).json().types;
+    expect(types.filter((t: { unitTracked: boolean }) => t.unitTracked).map((t: { code: string }) => t.code)).toEqual(['HERRAMIENTA', 'EQUIPO']);
+  });
+
+  it('si entran tres iguales, son tres contenidos con su propio código y su QR', async () => {
+    const r = await call('POST', '/api/materials', almacen, {
+      description: 'FICTICIO Llave dinamométrica 20-100 Nm', familyId, unitCode: 'ud', contentTypeCode: 'HERRAMIENTA', isLoanable: true, serialNumber: 'SN-1',
+    });
+    const llave = r.json().material;
+    expect(llave).toMatchObject({ unitTracked: true, serialNumber: 'SN-1' });
+    expect(llave.qrToken).toMatch(/^[0-9A-F]{32}$/);
+    const e = await call('POST', '/api/stock/receipt', almacen, { materialId: llave.id, containerId: caja1, quantity: 3 });
+    expect(e.statusCode, e.body).toBe(201);
+    const units = e.json().units as Array<{ id: string; internalRef: string }>;
+    expect(units).toHaveLength(3);
+    expect(units[0].id).toBe(llave.id);
+    expect(new Set(units.map((u) => u.internalRef)).size).toBe(3);
+    expect(units.every((u) => /^HER-\d{6}$/.test(u.internalRef))).toBe(true);
+    expect(e.json().message).toContain('3 unidades');
+    // Cada una está en el sitio con cantidad 1, y la copia lleva los datos del original pero no el número de serie.
+    for (const u of units) {
+      const d = (await call('GET', `/api/materials/${u.id}`, usuario)).json().material;
+      expect(d.quantity).toBe(1);
+      expect(d.description).toBe('FICTICIO Llave dinamométrica 20-100 Nm');
+      expect(d.serialNumber).toBe(u.id === llave.id ? 'SN-1' : null);
+    }
+    // Otra entrada del mismo contenido ya no cabe en él: crea uno nuevo.
+    const otra = await call('POST', '/api/stock/receipt', almacen, { materialId: llave.id, containerId: caja1, quantity: 1 });
+    expect(otra.json().units[0].id).not.toBe(llave.id);
+    // Y no se puede sacar ni trasladar más de una.
+    const bal = (await balanceOf(llave.id, caja1))!;
+    expect((await call('POST', '/api/stock/withdraw', almacen, { balanceId: bal.id, quantity: 2 })).json().error.code).toBe('UNIDAD_UNICA');
+    // Se escanea por su código o su QR y tiene etiqueta.
+    expect((await call('GET', `/api/scan/${llave.internalRef}`, usuario)).json()).toMatchObject({ kind: 'material', id: llave.id });
+    expect((await call('GET', `/api/scan/${llave.qrToken}`, usuario)).json()).toMatchObject({ kind: 'material', id: llave.id });
+    const pdf = await call('POST', '/api/labels', almacen, { items: units.map((u) => ({ kind: 'material', id: u.id })) });
+    expect(pdf.statusCode).toBe(200);
+    expect(pdf.headers['content-type']).toContain('pdf');
+  });
+
+  it('lo que ya tenía varias unidades con el mismo código se separa desde su ficha', async () => {
+    // Un contenido de antes: un material con 3 unidades que pasa a ser Equipo.
+    const m = await newMaterial({ description: 'FICTICIO Multímetro' });
+    ok(await call('POST', '/api/stock/receipt', almacen, { materialId: m.id, containerId: caja2, quantity: 3 }), 201);
+    ok(await call('PATCH', `/api/materials/${m.id}`, almacen, { contentTypeCode: 'EQUIPO' }));
+    // Mientras no se separe, no puede aumentar.
+    expect((await call('POST', '/api/stock/receipt', almacen, { materialId: m.id, containerId: caja2, quantity: 1 })).json().units[0].id).not.toBe(m.id);
+    const s = await call('POST', `/api/materials/${m.id}/split-units`, almacen);
+    expect(s.statusCode, s.body).toBe(200);
+    expect(s.json().units).toHaveLength(2);
+    expect((await call('GET', `/api/materials/${m.id}`, usuario)).json().material.quantity).toBe(1);
+    expect((await call('POST', `/api/materials/${m.id}/split-units`, almacen)).json().error.code).toBe('YA_ES_UNIDAD');
+  });
+});

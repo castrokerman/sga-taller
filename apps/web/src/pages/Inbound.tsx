@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   api, errorMessage, formatDateTime, formatQty, newOperationKey, photoUrl,
-  type ContentType, type Disposition, type Family, type Inbound, type ProjectOption, type InboundStatus, type Material, type PhotoData, type PlaceRef, type Unit, type User,
+  type ContentType, type UnitRef, type Disposition, type Family, type Inbound, type ProjectOption, type InboundStatus, type Material, type PhotoData, type PlaceRef, type Unit, type User,
 } from '../api';
 import { shrink } from '../components/ItemExtras';
 import { PhotoField, uploadMaterialPhoto } from '../components/PhotoField';
 import { PlaceSelect } from '../components/PlaceSelect';
-import { parseNumber, PlacePicker, QtyStepper } from '../components/Stock';
+import { parseNumber, PlacePicker, QtyStepper, UnitLabels } from '../components/Stock';
 import { navigate } from '../router';
 
 type Place = { ref: PlaceRef; code: string };
@@ -419,6 +419,7 @@ export function InboundPage({ user, inboundId, onChanged }: { user: User; inboun
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<'view' | 'reassign' | 'cancel'>('view');
   const [message, setMessage] = useState<string | null>(null);
+  const [newUnits, setNewUnits] = useState<UnitRef[] | null>(null);
   const [big, setBig] = useState<string | null>(null);
   const [photos, setPhotos] = useState<string[]>([]);
 
@@ -469,7 +470,12 @@ export function InboundPage({ user, inboundId, onChanged }: { user: User; inboun
           </p>
         </div>
       </div>
-      {message && <p className="alert alert-ok">{message}</p>}
+      {message && (
+        <div className="alert alert-ok">
+          <p className="nomargin">{message}</p>
+          {newUnits && <UnitLabels units={newUnits} />}
+        </div>
+      )}
 
       <div className="inbound-head card">
         <div className="shots shots-big">
@@ -539,8 +545,9 @@ export function InboundPage({ user, inboundId, onChanged }: { user: User; inboun
             <CompleteForm
               user={user}
               item={i}
-              onDone={async (msg) => {
+              onDone={async (msg, units) => {
                 setMessage(msg);
+                setNewUnits(units?.length ? units : null);
                 onChanged();
                 await load();
                 window.scrollTo(0, 0);
@@ -596,7 +603,7 @@ export function InboundPage({ user, inboundId, onChanged }: { user: User; inboun
   );
 }
 
-function CompleteForm(props: { user: User; item: Inbound; onDone: (message: string) => void }) {
+function CompleteForm(props: { user: User; item: Inbound; onDone: (message: string, units?: UnitRef[]) => void }) {
   const { item } = props;
   const [all, setAll] = useState<Material[] | null>(null);
   const [families, setFamilies] = useState<Family[]>([]);
@@ -683,7 +690,7 @@ function CompleteForm(props: { user: User; item: Inbound; onDone: (message: stri
         const up = await uploadMaterialPhoto(r.materialId, ownPhoto);
         if (up.error) msg += ` La foto del contenido no se ha podido subir (${up.error}); puedes añadirla desde su ficha.`;
       }
-      props.onDone(msg);
+      props.onDone(msg, r.units);
     } catch (err) {
       setError(errorMessage(err));
       setKey(newOperationKey());

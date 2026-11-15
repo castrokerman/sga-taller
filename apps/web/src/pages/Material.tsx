@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
+  type UnitRef,
   api, errorMessage, formatDate, formatDateTime, formatQty, MOVEMENT_NAMES, TRACKING_NAMES,
   type MaterialDetail, type MovementLine, type OpResult, type User,
 } from '../api';
-import { can, LineActions, OpNotice, OpPanel, StockKind } from '../components/Stock';
+import { can, LineActions, OpNotice, OpPanel, StockKind, UnitLabels } from '../components/Stock';
+import { LabelPanel } from '../components/Common';
 import { ItemExtras } from '../components/ItemExtras';
 import { MaterialForm } from './Materials';
 import { navigate } from '../router';
@@ -15,7 +17,9 @@ type Op = Parameters<typeof OpPanel>[0]['op'];
 export function MaterialPage({ user, materialId }: { user: User; materialId: string }) {
   const [d, setD] = useState<MaterialDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [panel, setPanel] = useState<'none' | 'edit' | 'duplicate'>('none');
+  const [panel, setPanel] = useState<'none' | 'edit' | 'duplicate' | 'labels'>('none');
+  const [splitBusy, setSplitBusy] = useState(false);
+  const [splitResult, setSplitResult] = useState<UnitRef[] | null>(null);
   const [op, setOp] = useState<Op | null>(null);
   const [notice, setNotice] = useState<OpResult | string | null>(null);
 
@@ -75,7 +79,10 @@ export function MaterialPage({ user, materialId }: { user: User; materialId: str
         <div>
           <h2>{m.description}</h2>
           <p className="muted nomargin">
-            <span className="tag tag-type">{m.contentTypeName}</span> {m.internalRef} · {m.familyName} · se cuenta en {m.unitCode}, {TRACKING_NAMES[m.quantityTracking].toLowerCase()}
+            <span className="tag tag-type">{m.contentTypeName}</span> {m.internalRef} · {m.familyName}
+            {m.unitTracked
+              ? <> · una unidad con su propio código{m.serialNumber && <> · nº de serie <strong>{m.serialNumber}</strong></>}</>
+              : <> · se cuenta en {m.unitCode}, {TRACKING_NAMES[m.quantityTracking].toLowerCase()}</>}
             {m.minStock !== null && tracked && ` · aviso si baja de ${formatQty(m.minStock, m.unitCode)}`}
             {m.lotTracked && ' · con lote'}
           </p>
@@ -94,6 +101,11 @@ export function MaterialPage({ user, materialId }: { user: User; materialId: str
             + Entrada
           </button>
         )}
+        {m.unitTracked && can(user, 'label.print') && (
+          <button className="btn" onClick={() => { setOp(null); setNotice(null); setPanel('labels'); }}>
+            Etiqueta QR
+          </button>
+        )}
         {can(user, 'material.manage') && (
           <button className="btn" onClick={() => { setOp(null); setNotice(null); setPanel('edit'); }}>
             Editar
@@ -109,6 +121,46 @@ export function MaterialPage({ user, materialId }: { user: User; materialId: str
       {notice && (typeof notice === 'string' ? <p className="alert alert-ok">{notice}</p> : <OpNotice r={notice} />)}
       {panel === 'edit' && (
         <MaterialForm title={`Editar ${m.internalRef}`} initial={m} materialId={m.id} onCancel={() => setPanel('none')} onDone={() => done('Cambios guardados')} />
+      )}
+      {panel === 'labels' && (
+        <LabelPanel groups={[{ label: m.internalRef, items: [{ kind: 'material', id: m.id }] }]} onClose={() => setPanel('none')} />
+      )}
+      {m.unitTracked && (m.quantity ?? 0) + m.onLoan > 1 && (
+        <div className="alert alert-warn">
+          <p className="nomargin">
+            Hay <strong>{(m.quantity ?? 0) + m.onLoan} unidades</strong> con el mismo código {m.internalRef}. Como {m.contentTypeName.toLowerCase()} se
+            lleva por unidad, cada una debe tener su propio código.
+          </p>
+          {can(user, 'material.manage') && (
+            <button
+              className="btn btn-primary"
+              style={{ marginTop: '0.5rem' }}
+              disabled={splitBusy}
+              onClick={async () => {
+                setSplitBusy(true);
+                try {
+                  const r = await api.splitUnits(m.id);
+                  await load();
+                  setSplitResult(r.units);
+                } catch (e) {
+                  setError(errorMessage(e));
+                } finally {
+                  setSplitBusy(false);
+                }
+              }}
+            >
+              {splitBusy ? 'Separando…' : 'Separar en unidades'}
+            </button>
+          )}
+        </div>
+      )}
+      {splitResult && (
+        <div className="alert alert-ok">
+          <p className="nomargin">
+            Separadas: {m.internalRef} se queda con una y las demás tienen ahora su propio código: {splitResult.map((u) => u.internalRef).join(', ')}.
+          </p>
+          <UnitLabels units={[{ id: m.id, internalRef: m.internalRef }, ...splitResult]} />
+        </div>
       )}
       {panel === 'duplicate' && (
         <MaterialForm
