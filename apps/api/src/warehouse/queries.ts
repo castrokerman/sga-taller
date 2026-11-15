@@ -28,7 +28,9 @@ export const CONTAINER_SELECT = `
          (SELECT string_agg(u.full_name, ', ' ORDER BY m.position, u.full_name)
             FROM project_member m JOIN app_user u ON u.id = m.user_id
            WHERE m.project_id = c.project_id AND m.role = 'RESPONSIBLE' AND u.deleted_at IS NULL) AS "projectResponsibles",
-         (SELECT ph.id FROM photo ph WHERE ph.entity_type = 'container' AND ph.entity_id = c.id ORDER BY ph.position LIMIT 1) AS "photoId",
+         (SELECT ph.id FROM photo ph WHERE ph.entity_type = 'container' AND ph.entity_id = c.id AND ph.purpose = 'GENERAL' ORDER BY ph.position LIMIT 1) AS "photoId",
+         (SELECT ph.id FROM photo ph WHERE ph.entity_type = 'container' AND ph.entity_id = c.id AND ph.purpose = 'CONTENTS' ORDER BY ph.uploaded_at DESC LIMIT 1) AS "contentsPhotoId",
+         (SELECT max(ph.uploaded_at) FROM photo ph WHERE ph.entity_type = 'container' AND ph.entity_id = c.id AND ph.purpose = 'CONTENTS') AS "contentsPhotoAt",
          (SELECT count(*)::int FROM container k WHERE k.parent_container_id = c.id AND k.status = 'ACTIVE') AS "childCount"
     FROM container c
     JOIN container_type t ON t.id = c.container_type_id

@@ -10,6 +10,7 @@ import { normalize } from './ListControls';
 import { Scanner } from './Scanner';
 import { PlaceSelect } from './PlaceSelect';
 import { Thumb } from './Thumb';
+import { ContentsPhotoPrompt } from './ContentsPhoto';
 
 /**
  * Material de un sitio (contenedor o ubicación) y todas las operaciones de
@@ -111,7 +112,7 @@ export function StockSection(props: {
         )}
       </div>
 
-      {notice && <OpNotice r={notice} />}
+      {notice && <OpNotice r={notice} user={user} />}
       {error && <p className="alert alert-error">{error}</p>}
       {!holds && lines && lines.length > 0 && props.place.locationId && (
         <div className="alert alert-warn">
@@ -246,7 +247,7 @@ export function LineActions(props: { user: User; line: StockLine; onOp: (op: Op)
   );
 }
 
-export function OpNotice({ r }: { r: OpResult }) {
+export function OpNotice({ r, user }: { r: OpResult; user?: User }) {
   return (
     <div className="alert alert-ok">
       <p className="nomargin">
@@ -258,6 +259,7 @@ export function OpNotice({ r }: { r: OpResult }) {
           {r.emptyDisposable} es desechable y se ha quedado vacía: si ya no se usa, retírala con el botón «Retirar» de su ficha.
         </p>
       )}
+      {user && r.containers && r.containers.length > 0 && <ContentsPhotoPrompt containers={r.containers} user={user} />}
     </div>
   );
 }

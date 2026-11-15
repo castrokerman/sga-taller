@@ -124,7 +124,7 @@ export function MaterialPage({ user, materialId }: { user: User; materialId: str
         )}
       </div>
 
-      {notice && (typeof notice === 'string' ? <p className="alert alert-ok">{notice}</p> : <OpNotice r={notice} />)}
+      {notice && (typeof notice === 'string' ? <p className="alert alert-ok">{notice}</p> : <OpNotice r={notice} user={user} />)}
       {panel === 'edit' && (
         <MaterialForm title={`Editar ${m.internalRef}`} initial={m} materialId={m.id} onCancel={() => setPanel('none')} onDone={() => done('Cambios guardados')} />
       )}

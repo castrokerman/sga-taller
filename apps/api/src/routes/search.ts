@@ -77,7 +77,7 @@ export function searchRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
             await pool.query(
               `SELECT c.id, c.code, c.description, c.content_description AS "contentDescription", t.name AS "typeName", c.status,
                       el.code AS "locationCode", el.id AS "locationId", p.code AS "parentCode", c.parent_container_id AS "parentContainerId",
-                      (SELECT ph.id FROM photo ph WHERE ph.entity_type = 'container' AND ph.entity_id = c.id ORDER BY ph.position LIMIT 1) AS "photoId"
+                      (SELECT ph.id FROM photo ph WHERE ph.entity_type = 'container' AND ph.entity_id = c.id AND ph.purpose = 'GENERAL' ORDER BY ph.position LIMIT 1) AS "photoId"
                  FROM container c
                  JOIN container_type t ON t.id = c.container_type_id
                  LEFT JOIN container p ON p.id = c.parent_container_id

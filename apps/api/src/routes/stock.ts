@@ -48,6 +48,24 @@ export function stockRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
   const audit = (c: pg.PoolClient, request: FastifyRequest, action: string, entityId: string, after: unknown) =>
     writeAudit(c, { userId: request.user!.id, action, entityType: 'stock_movement', entityId, after, ip: request.ip, requestId: request.id });
 
+  // Cada operación de contenido dice qué contenedores han cambiado, para que la
+  // web pregunte si se actualiza su foto del contenido.
+  app.addHook('preSerialization', async (request, _reply, payload: unknown) => {
+    if (request.method !== 'POST' || !payload || typeof payload !== 'object') return payload;
+    const p = payload as { movementNumber?: unknown; containers?: unknown };
+    if (typeof p.movementNumber !== 'number' || p.containers !== undefined) return payload;
+    const r = await pool.query(
+      `SELECT DISTINCT k.id, k.code
+         FROM stock_movement mv
+         JOIN stock_movement_line l ON l.movement_id = mv.id
+         JOIN container k ON k.id = l.container_id
+        WHERE mv.movement_number = $1 AND k.status = 'ACTIVE'
+        ORDER BY k.code`,
+      [p.movementNumber],
+    );
+    return { ...p, containers: r.rows };
+  });
+
   // ---- Consulta -----------------------------------------------------------
   // Material de un contenedor o de una ubicación.
   app.get(

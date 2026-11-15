@@ -120,6 +120,28 @@ describe('fotos', () => {
     expect((await call('GET', `/api/containers/${container}`, usuario)).json().container.photoId).toBeTruthy();
   });
 
+  it('el contenedor tiene aparte la foto de su contenido, y cada movimiento dice qué contenedores cambian', async () => {
+    const before = (await call('GET', `/api/containers/${container}`, usuario)).json().container;
+    const r = await call('POST', '/api/photos', usuario, {
+      entityType: 'container', entityId: container, image: png(30, 30, 90), thumbnail: png(10, 10, 90), width: 30, height: 30, purpose: 'CONTENTS',
+    });
+    expect(r.statusCode, r.body).toBe(201);
+    const after = (await call('GET', `/api/containers/${container}`, usuario)).json().container;
+    expect(after.photoId).toBe(before.photoId); // la principal sigue siendo la del contenedor
+    expect(after.contentsPhotoId).toBe(r.json().photo.id);
+    expect(r.json().photo.purpose).toBe('CONTENTS');
+    // No se puede hacer principal ni usar fuera de un contenedor.
+    expect((await call('POST', `/api/photos/${r.json().photo.id}/primary`, usuario)).statusCode).toBe(400);
+    const bad = await call('POST', '/api/photos', usuario, {
+      entityType: 'material', entityId: material, image: png(8, 8), thumbnail: png(4, 4), width: 8, height: 8, purpose: 'CONTENTS',
+    });
+    expect(bad.statusCode).toBe(400);
+    // Una entrada en el contenedor devuelve el contenedor cambiado.
+    const e = await call('POST', '/api/stock/receipt', almacen, { materialId: material, containerId: container, quantity: 3 });
+    expect(e.statusCode, e.body).toBe(201);
+    expect(e.json().containers).toEqual([{ id: container, code: after.code }]);
+  });
+
   it('rechaza lo que no es una imagen y no deja subir al usuario de consulta', async () => {
     const fake = Buffer.from('<script>alert(1)</script>').toString('base64');
     const r = await call('POST', '/api/photos', usuario, { entityType: 'material', entityId: material, image: fake, thumbnail: fake, width: 1, height: 1 });

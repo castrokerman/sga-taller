@@ -202,6 +202,19 @@ contenedor o ubicación, cada línea lleva la miniatura de su foto (📦 si no
 tiene). Las herramientas y equipos que van por unidad no tienen «Recuento»:
 cada una es una sola pieza con su código.
 
+**Dos clases de foto en cada contenedor.** En su ficha hay dos apartados:
+
+- **Fotos del contenedor:** para reconocer el propio contenedor. La primera es
+  la principal y es la que sale en miniatura en listas y árbol.
+- **Foto del contenido:** lo que lleva dentro. La más reciente es la actual y
+  las anteriores quedan como historial. En el móvil, «📷 Actualizar foto» abre
+  directamente la cámara.
+
+Cada vez que entra o sale contenido de un contenedor (entrada, retirada,
+traslado, préstamo, devolución o revertir), el aviso verde del resultado
+pregunta «¿Quieres actualizar la foto de los contenidos en el interior?» con
+los botones «Hacer foto» y «Ahora no».
+
 **Descripción del contenido.** Al crear o editar un contenedor se puede
 escribir qué lleva dentro («tornillería M6», «chapa aluminio 2 mm, 12
 hojas»). Sale como una nube verde 📦 en la ficha, en las listas, en el árbol y
@@ -241,6 +254,8 @@ el almacén anidado.
   su ubicación.
 - La búsqueda deja solo lo que coincide y el camino hasta ello, ya desplegado.
   Sirve para saber dónde está algo sin recorrer el almacén.
+- En el móvil, las nubes van debajo del código, una encima de otra, para que el
+  código se lea entero.
 - Junto a cada contenedor salen sus nubes: 📦 en verde, la descripción de lo
   que lleva dentro; en violeta, 🔒 el proyecto al que está asignado y 👤 su
   responsable y los responsables del proyecto. El tipo sale en azul en los
