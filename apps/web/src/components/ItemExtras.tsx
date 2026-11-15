@@ -14,7 +14,7 @@ export function ItemExtras(props: { user: User; entityType: EntityType; entityId
 // ---- Fotos ------------------------------------------------------------------
 
 /** Reduce la foto en el propio dispositivo antes de enviarla: menos datos por la wifi y menos espacio. */
-async function shrink(file: File): Promise<{ image: string; thumbnail: string; width: number; height: number }> {
+export async function shrink(file: File): Promise<{ image: string; thumbnail: string; width: number; height: number }> {
   const url = URL.createObjectURL(file);
   try {
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {

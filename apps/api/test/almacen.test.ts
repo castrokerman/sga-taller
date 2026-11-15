@@ -73,6 +73,10 @@ beforeAll(async () => {
   app = await buildApp({ pool, config });
   await ensureFirstAdmin(pool, config);
   await seedDemoUsers(pool);
+  // Las pruebas usan códigos con prefijos de una letra: P01, E01, N01, S01.
+  await pool.query(
+    `UPDATE location_type SET code_prefix = x.p FROM (VALUES ('PASILLO', 'P'), ('ESTANTERIA', 'E'), ('NIVEL', 'N'), ('POSICION', 'S')) AS x (c, p) WHERE code = x.c`,
+  );
   await pool.query(`UPDATE app_user SET must_change_password = false`);
   [almacen, usuario, consulta, admin] = await Promise.all([
     sessionOf('demo.almacen'), sessionOf('demo.usuario'), sessionOf('demo.consulta'),
@@ -86,7 +90,7 @@ beforeAll(async () => {
   s01 = await newLocation('ALM-A-P01-E01-N02-S01', 'POSICION', nivel.id);
   s02 = await newLocation('ALM-A-P01-E01-N02-S02', 'POSICION', nivel.id);
   const com = await newLocation('COM', 'ZONA');
-  armario = await newLocation('COM-ARM-01', 'ARMARIO', com.id, { allowedHazardClasses: ['LIQUIDO'] });
+  armario = await newLocation('COM-ARM01', 'ARMARIO', com.id, { allowedHazardClasses: ['LIQUIDO'] });
 });
 
 afterAll(async () => {
@@ -134,21 +138,25 @@ describe('ubicaciones', () => {
   });
 
   it('no se desactiva si contiene ubicaciones o contenedores', async () => {
-    const res = await call('PATCH', `/api/locations/${zona.id}`, almacen, { active: false });
-    expect(res.statusCode).toBe(409);
+    // Desactivar es cosa de administradores.
+    expect((await call('PATCH', `/api/locations/${zona.id}`, almacen, { active: false })).statusCode).toBe(403);
+    const res = await call('PATCH', `/api/locations/${zona.id}`, admin, { active: false });
+    expect(res.statusCode, res.body).toBe(409);
     expect(res.json().error.code).toBe('UBICACION_NO_VACIA');
 
     const empty = await newLocation('FIC-VACIA', 'AREA');
-    expect((await call('PATCH', `/api/locations/${empty.id}`, almacen, { active: false })).statusCode).toBe(200);
+    expect((await call('PATCH', `/api/locations/${empty.id}`, admin, { active: false })).statusCode).toBe(200);
     // Una ubicación desactivada no admite contenedores.
     const res2 = await call('POST', '/api/containers', almacen, { typeCode: 'CAJA', locationId: empty.id });
     expect(res2.statusCode).toBe(409);
   });
 
   it('el administrador puede añadir tipos nuevos de ubicación y de contenedor', async () => {
-    expect((await call('POST', '/api/location-types', usuario, { code: 'MURO', name: 'Muro' })).statusCode).toBe(403);
-    expect((await call('POST', '/api/location-types', admin, { code: 'MURO', name: 'Muro de herramientas' })).statusCode).toBe(201);
-    expect((await call('POST', '/api/location-types', admin, { code: 'MURO', name: 'Otra vez' })).statusCode).toBe(409);
+    expect((await call('POST', '/api/location-types', usuario, { code: 'MURO', name: 'Muro', codePrefix: 'MUR' })).statusCode).toBe(403);
+    expect((await call('POST', '/api/location-types', admin, { code: 'MURO', name: 'Muro de herramientas', codePrefix: 'MUR' })).statusCode).toBe(201);
+    expect((await call('POST', '/api/location-types', admin, { code: 'MURO', name: 'Otra vez', codePrefix: 'MRO' })).statusCode).toBe(409);
+    // El prefijo no se puede repetir entre tipos.
+    expect((await call('POST', '/api/location-types', admin, { code: 'MURO2', name: 'Otro', codePrefix: 'MUR' })).statusCode).toBe(409);
     await newLocation('FIC-MURO', 'MURO');
 
     const t = await call('POST', '/api/container-types', admin, { code: 'JAULA', name: 'Jaula', codePrefix: 'JAU' });
@@ -239,25 +247,25 @@ describe('movimientos', () => {
     const [pallet] = await newContainers('PALET', { locationId: s02.id });
     const [box] = await newContainers('CAJA', { parentContainerId: pallet!.id });
     const [tray] = await newContainers('BANDEJA', { parentContainerId: box!.id });
-    const dest = await newLocation('ALM-A-DESTINO1', 'POSICION', zona.id);
+    const dest = await newLocation('ALM-A-S01', 'POSICION', zona.id);
 
     const lines = async () => (await pool.query(`SELECT count(*)::int AS n FROM stock_movement_line`)).rows[0].n;
     const before = await lines();
 
     const res = await call('POST', `/api/containers/${pallet!.id}/move`, usuario, { toLocationId: dest.id, reason: 'FICTICIO reorganización' });
     expect(res.statusCode, res.body).toBe(200);
-    expect(res.json()).toMatchObject({ descendantsMoved: 2, destination: 'ALM-A-DESTINO1' });
+    expect(res.json()).toMatchObject({ descendantsMoved: 2, destination: 'ALM-A-S01' });
     expect(await lines()).toBe(before + 1); // una sola línea de movimiento
 
     for (const id of [pallet!.id, box!.id, tray!.id]) {
-      expect((await detail(id)).locationPath.at(-1).code).toBe('ALM-A-DESTINO1');
+      expect((await detail(id)).locationPath.at(-1).code).toBe('ALM-A-S01');
     }
     // La bandeja sigue dentro de la caja, y la caja dentro del palet.
     expect((await detail(tray!.id)).containerPath.map((c: { code: string }) => c.code)).toEqual([pallet!.code, box!.code, tray!.code]);
 
     const history = (await detail(pallet!.id)).movements;
     expect(history[0]).toMatchObject({
-      movementType: 'CONTAINER_MOVE', fromLocation: 'ALM-A-P01-E01-N02-S02', toLocation: 'ALM-A-DESTINO1',
+      movementType: 'CONTAINER_MOVE', fromLocation: 'ALM-A-P01-E01-N02-S02', toLocation: 'ALM-A-S01',
       performedBy: 'FICTICIO Usuario Estándar', reason: 'FICTICIO reorganización',
     });
     expect(history.at(-1)).toMatchObject({ fromLocation: null, toLocation: 'ALM-A-P01-E01-N02-S02', reason: 'Alta del contenedor' });
@@ -272,8 +280,8 @@ describe('movimientos', () => {
     const b = await detail(box!.id);
     expect(b.container.parentContainerId).toBeNull();
     expect(b.containerPath).toHaveLength(1);
-    expect(b.locationPath.map((l: { code: string }) => l.code)).toEqual(['COM', 'COM-ARM-01']);
-    expect(b.movements[0]).toMatchObject({ fromContainer: pallet!.code, toLocation: 'COM-ARM-01' });
+    expect(b.locationPath.map((l: { code: string }) => l.code)).toEqual(['COM', 'COM-ARM01']);
+    expect(b.movements[0]).toMatchObject({ fromContainer: pallet!.code, toLocation: 'COM-ARM01' });
     expect((await detail(pallet!.id)).children).toHaveLength(0);
 
     // Y se puede volver a meter en otro contenedor.
@@ -324,7 +332,7 @@ describe('movimientos', () => {
   });
 
   it('la capacidad superada avisa y deja continuar si se confirma', async () => {
-    const small = await newLocation('ALM-A-PEQUENA', 'POSICION', zona.id, { maxCapacity: 2 });
+    const small = await newLocation('ALM-A-S02', 'POSICION', zona.id, { maxCapacity: 2 });
     await newContainers('CAJA', { locationId: small.id }, 2);
     const [extra] = await newContainers('CAJA', { locationId: s02.id });
 
@@ -398,7 +406,7 @@ describe('escaneo', () => {
   it('también admite el código legible tecleado a mano, en mayúsculas o minúsculas', async () => {
     const [pallet] = await newContainers('PALET', { locationId: s01.id });
     expect((await call('GET', `/api/scan/${pallet!.code.toLowerCase()}`, consulta)).json().id).toBe(pallet!.id);
-    expect((await call('GET', '/api/scan/com-arm-01', consulta)).json()).toMatchObject({ kind: 'location', id: armario.id });
+    expect((await call('GET', '/api/scan/com-arm01', consulta)).json()).toMatchObject({ kind: 'location', id: armario.id });
   });
 
   it('un código desconocido devuelve un error claro, y sin sesión no se resuelve nada', async () => {
@@ -414,6 +422,6 @@ describe('escaneo', () => {
     const hit = (await call('GET', `/api/scan/${box!.qrToken}`, consulta)).json();
     expect(hit.id).toBe(box!.id);
     expect(box!.qrToken).not.toContain('COM');
-    expect((await detail(hit.id)).locationPath.at(-1).code).toBe('COM-ARM-01');
+    expect((await detail(hit.id)).locationPath.at(-1).code).toBe('COM-ARM01');
   });
 });

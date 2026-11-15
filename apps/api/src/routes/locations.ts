@@ -3,7 +3,7 @@ import type pg from 'pg';
 import { writeAudit } from '../audit.js';
 import { requirePermission } from '../auth/guard.js';
 import { withTransaction } from '../db/tx.js';
-import { AppError, badRequest, conflict, notFound } from '../errors.js';
+import { AppError, badRequest, conflict, forbidden, notFound } from '../errors.js';
 import { idempotent } from '../idempotency.js';
 import { incrementCode, incrementName } from '../warehouse/codes.js';
 import { CONTAINER_SELECT, LOCATION_SELECT, locationPath } from '../warehouse/queries.js';
@@ -90,6 +90,61 @@ async function resolveSegment(
 
 const fullCode = (prefix: string | null, segment: string) => (prefix ? `${prefix}-${segment}` : segment);
 
+/** Código interno de un tipo a partir de su nombre: «Balda alta» → BALDA_ALTA. */
+const typeCodeFrom = (name: string) =>
+  name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30) || 'TIPO';
+
+/** Parte propia de una ubicación con número: prefijo del tipo y al menos dos cifras (EST03). */
+export const seqSegment = (typePrefix: string, seq: number) => `${typePrefix}${String(seq).padStart(2, '0')}`;
+
+async function typeInfo(db: pg.Pool | pg.PoolClient, typeIdOrCode: { id?: string; code?: string }) {
+  const r = typeIdOrCode.id
+    ? await db.query(`SELECT id, code, name, code_prefix AS prefix FROM location_type WHERE id = $1`, [typeIdOrCode.id])
+    : await db.query(`SELECT id, code, name, code_prefix AS prefix FROM location_type WHERE code = $1 AND active`, [typeIdOrCode.code]);
+  if (!r.rows[0]) throw badRequest('El tipo de ubicación no existe o está desactivado', 'TIPO_NO_EXISTE');
+  return r.rows[0] as { id: string; code: string; name: string; prefix: string };
+}
+
+/** El primer número libre para ese tipo dentro de esa ubicación. */
+async function nextSeq(db: pg.Pool | pg.PoolClient, parentId: string, type: { id: string; prefix: string }, exceptId: string | null = null) {
+  const r = await db.query(
+    `SELECT coalesce(max(seq), 0)::int AS n FROM storage_location WHERE parent_id = $1 AND location_type_id = $2 AND id IS DISTINCT FROM $3`,
+    [parentId, type.id, exceptId],
+  );
+  const prefix = await parentCode(db, parentId);
+  let seq = r.rows[0].n + 1;
+  // Por si alguna ubicación antigua sin recodificar ya usa ese código.
+  while (await codeExistsExcept(db, fullCode(prefix, seqSegment(type.prefix, seq)), exceptId)) seq++;
+  return seq;
+}
+
+async function codeExistsExcept(db: pg.Pool | pg.PoolClient, code: string, exceptId: string | null) {
+  return Boolean((await db.query(`SELECT 1 FROM storage_location WHERE code = $1 AND id IS DISTINCT FROM $2`, [code, exceptId])).rowCount);
+}
+
+/**
+ * Número propio a partir de lo recibido: el número (seq) o, por compatibilidad,
+ * una parte o un código que acaben en número (P01 → 1). Sin nada, el siguiente libre.
+ */
+async function resolveSeq(
+  db: pg.Pool | pg.PoolClient,
+  body: { seq?: number; segment?: string; code?: string },
+  parentId: string,
+  type: { id: string; prefix: string },
+  exceptId: string | null = null,
+): Promise<number> {
+  if (body.seq !== undefined) return body.seq;
+  const text = body.segment ?? body.code;
+  if (text !== undefined) {
+    const m = /(\d+)$/.exec(text.trim());
+    if (!m || Number(m[1]) < 1 || Number(m[1]) > 9999) {
+      throw badRequest(`El código de una ubicación dentro de otra es ${type.prefix} y un número`, 'CODIGO_NO_VALIDO');
+    }
+    return Number(m[1]);
+  }
+  return nextSeq(db, parentId, type, exceptId);
+}
+
 async function assertCodeFree(db: pg.Pool | pg.PoolClient, code: string, exceptId: string | null = null) {
   const r = await db.query(`SELECT 1 FROM storage_location WHERE code = $1 AND id IS DISTINCT FROM $2`, [code, exceptId]);
   if (r.rowCount) throw conflict(`Ya existe una ubicación con el código ${code}`, 'CODIGO_DUPLICADO');
@@ -119,9 +174,33 @@ export function locationRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
 
   // ---- Tipos de ubicación -------------------------------------------------
   app.get('/api/location-types', { preHandler: requirePermission('location.read') }, async () => {
-    const r = await pool.query(`SELECT code, name, active FROM location_type ORDER BY name`);
+    const r = await pool.query(
+      `SELECT t.code, t.name, t.active, t.code_prefix AS "codePrefix", t.sort_order AS "sortOrder",
+              (SELECT count(*)::int FROM storage_location l WHERE l.location_type_id = t.id) AS "locationCount"
+         FROM location_type t ORDER BY t.sort_order, t.name`,
+    );
     return { types: r.rows };
   });
+
+  app.get(
+    '/api/locations/next-code',
+    {
+      preHandler: requirePermission('location.read'),
+      schema: {
+        querystring: {
+          type: 'object', required: ['parentId', 'typeCode'], additionalProperties: false,
+          properties: { parentId: uuid, typeCode: { type: 'string', maxLength: 30 }, exceptId: uuid },
+        },
+      },
+    },
+    async (request) => {
+      const q = request.query as { parentId: string; typeCode: string; exceptId?: string };
+      const type = await typeInfo(pool, { code: q.typeCode });
+      const seq = await nextSeq(pool, q.parentId, type, q.exceptId ?? null);
+      const prefix = await parentCode(pool, q.parentId);
+      return { parentCode: prefix, typePrefix: type.prefix, seq, code: fullCode(prefix, seqSegment(type.prefix, seq)) };
+    },
+  );
 
   app.post(
     '/api/location-types',
@@ -129,25 +208,80 @@ export function locationRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
       preHandler: requirePermission('admin.masterdata.manage'),
       schema: {
         body: {
-          type: 'object', required: ['code', 'name'], additionalProperties: false,
+          type: 'object', required: ['name', 'codePrefix'], additionalProperties: false,
           properties: {
             code: { type: 'string', pattern: TYPE_CODE_PATTERN },
             name: { type: 'string', minLength: 1, maxLength: 60 },
+            codePrefix: { type: 'string', pattern: '^[A-Z]{1,6}$' },
           },
         },
       },
     },
     async (request, reply) => {
-      const body = request.body as { code: string; name: string };
-      const exists = await pool.query(`SELECT 1 FROM location_type WHERE code = $1`, [body.code]);
-      if (exists.rowCount) throw conflict('Ya existe un tipo de ubicación con ese código', 'TIPO_DUPLICADO');
-      await pool.query(`INSERT INTO location_type (code, name) VALUES ($1, $2)`, [body.code, body.name.trim()]);
+      const body = request.body as { code?: string; name: string; codePrefix: string };
+      const code = body.code ?? typeCodeFrom(body.name);
+      const exists = await pool.query(`SELECT code, code_prefix FROM location_type WHERE code = $1 OR code_prefix = $2`, [code, body.codePrefix]);
+      if (exists.rowCount) {
+        throw conflict(
+          exists.rows[0].code_prefix === body.codePrefix ? `El prefijo ${body.codePrefix} ya lo usa otro tipo` : 'Ya existe un tipo de ubicación con ese nombre',
+          'TIPO_DUPLICADO',
+        );
+      }
+      await pool.query(`INSERT INTO location_type (code, name, code_prefix) VALUES ($1, $2, $3)`, [code, body.name.trim(), body.codePrefix]);
       await writeAudit(pool, {
-        userId: request.user!.id, action: 'tipo_ubicacion.alta', entityType: 'location_type', entityId: body.code,
-        after: body, ip: request.ip, requestId: request.id,
+        userId: request.user!.id, action: 'tipo_ubicacion.alta', entityType: 'location_type', entityId: code,
+        after: { ...body, code }, ip: request.ip, requestId: request.id,
       });
       reply.code(201);
-      return { type: { code: body.code, name: body.name.trim(), active: true } };
+      return { type: { code, name: body.name.trim(), codePrefix: body.codePrefix, active: true, locationCount: 0 } };
+    },
+  );
+
+  // Cambiar el prefijo recodifica las ubicaciones de ese tipo y las de dentro.
+  app.patch(
+    '/api/location-types/:code',
+    {
+      preHandler: requirePermission('admin.masterdata.manage'),
+      schema: {
+        params: { type: 'object', required: ['code'], properties: { code: { type: 'string', maxLength: 30 } } },
+        body: {
+          type: 'object', additionalProperties: false, minProperties: 1,
+          properties: {
+            name: { type: 'string', minLength: 1, maxLength: 60 },
+            codePrefix: { type: 'string', pattern: '^[A-Z]{1,6}$' },
+            active: { type: 'boolean' },
+          },
+        },
+      },
+    },
+    async (request) => {
+      const { code } = request.params as { code: string };
+      const body = request.body as { name?: string; codePrefix?: string; active?: boolean };
+      return withTransaction(pool, async (c) => {
+        const before = (await c.query(`SELECT id, name, code_prefix, active FROM location_type WHERE code = $1 FOR UPDATE`, [code])).rows[0];
+        if (!before) throw notFound('El tipo de ubicación no existe');
+        if (body.codePrefix && body.codePrefix !== before.code_prefix) {
+          const dup = await c.query(`SELECT name FROM location_type WHERE code_prefix = $1`, [body.codePrefix]);
+          if (dup.rowCount) throw conflict(`El prefijo ${body.codePrefix} ya lo usa «${dup.rows[0].name}»`, 'TIPO_DUPLICADO');
+        }
+        const affected = body.codePrefix && body.codePrefix !== before.code_prefix
+          ? (await c.query(
+              `WITH RECURSIVE down AS (
+                 SELECT id FROM storage_location WHERE location_type_id = $1 AND seq IS NOT NULL
+                 UNION SELECT l.id FROM storage_location l JOIN down ON l.parent_id = down.id)
+               SELECT count(*)::int AS n FROM down`, [before.id])).rows[0].n
+          : 0;
+        await c.query(
+          `UPDATE location_type SET name = coalesce($2, name), code_prefix = coalesce($3, code_prefix), active = coalesce($4, active) WHERE id = $1`,
+          [before.id, body.name?.trim() ?? null, body.codePrefix ?? null, body.active ?? null],
+        );
+        await writeAudit(c, {
+          userId: request.user!.id, action: 'tipo_ubicacion.modificacion', entityType: 'location_type', entityId: code,
+          before: { name: before.name, codePrefix: before.code_prefix, active: before.active },
+          after: { ...body, ubicacionesRecodificadas: affected }, ip: request.ip, requestId: request.id,
+        });
+        return { recoded: affected };
+      });
     },
   );
 
@@ -160,7 +294,7 @@ export function locationRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
       schema: {
         querystring: {
           type: 'object', additionalProperties: false,
-          properties: { parentId: uuid, includeInactive: { type: 'boolean', default: false } },
+          properties: { parentId: uuid, includeInactive: { type: 'boolean', default: true } },
         },
       },
     },
@@ -182,7 +316,7 @@ export function locationRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
     if (!location) throw notFound('La ubicación no existe');
     const [path, children, containers] = await Promise.all([
       locationPath(pool, id),
-      pool.query(`${LOCATION_SELECT} WHERE l.parent_id = $1 AND l.active ORDER BY l.code`, [id]),
+      pool.query(`${LOCATION_SELECT} WHERE l.parent_id = $1 ORDER BY l.active DESC, l.code`, [id]),
       pool.query(`${CONTAINER_SELECT} WHERE c.location_id = $1 AND c.status = 'ACTIVE' ORDER BY c.code`, [id]),
     ]);
     return { location, path, children: children.rows, containers: containers.rows };
@@ -198,6 +332,7 @@ export function locationRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
           properties: {
             code: { type: 'string', pattern: CODE_PATTERN },
             segment: { type: 'string', maxLength: 40 },
+            seq: { type: 'integer', minimum: 1, maximum: 9999 },
             name: { type: 'string', minLength: 1, maxLength: 120 },
             description: { type: 'string', maxLength: 500 },
             parentId: uuid,
@@ -211,24 +346,33 @@ export function locationRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
     },
     async (request, reply) => {
       const body = request.body as {
-        code?: string; segment?: string; name: string; description?: string; parentId?: string; typeCode: string;
+        code?: string; segment?: string; seq?: number; name: string; description?: string; parentId?: string; typeCode: string;
         maxCapacity?: number; allowedHazardClasses?: string[]; restrictionsNote?: string;
       };
-      if (body.code === undefined && body.segment === undefined) throw badRequest('Indica el código', 'CODIGO_NO_VALIDO');
+      if (!body.parentId && body.code === undefined && body.segment === undefined) throw badRequest('Indica el código', 'CODIGO_NO_VALIDO');
       const location = await withTransaction(pool, async (c) => {
         await assertParent(c, body.parentId);
-        const segment = await resolveSegment(c, body, body.parentId);
-        await assertCodeFree(c, fullCode(await parentCode(c, body.parentId), segment));
+        const type = await typeInfo(c, { code: body.typeCode });
+        const prefix = await parentCode(c, body.parentId);
+        let segment: string;
+        let seq: number | null = null;
+        if (body.parentId) {
+          seq = await resolveSeq(c, body, body.parentId, type);
+          segment = seqSegment(type.prefix, seq);
+        } else {
+          segment = await resolveSegment(c, body, null);
+        }
+        await assertCodeFree(c, fullCode(prefix, segment));
         const created = await c.query(
           `INSERT INTO storage_location
-             (qr_token, segment, name, description, parent_id, location_type_id, max_capacity,
+             (qr_token, segment, seq, name, description, parent_id, location_type_id, max_capacity,
               capacity_unit, allowed_hazard_classes, restrictions_note)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, CASE WHEN $7::numeric IS NULL THEN NULL ELSE 'contenedores' END, $8, $9)
+           VALUES ($1, $2, $10, $3, $4, $5, $6, $7, CASE WHEN $7::numeric IS NULL THEN NULL ELSE 'contenedores' END, $8, $9)
            RETURNING id`,
           [
             newQrToken(), segment, body.name.trim(), body.description?.trim() || null, body.parentId ?? null,
-            await typeId(c, body.typeCode), body.maxCapacity ?? null, body.allowedHazardClasses ?? [],
-            body.restrictionsNote?.trim() || null,
+            type.id, body.maxCapacity ?? null, body.allowedHazardClasses ?? [],
+            body.restrictionsNote?.trim() || null, seq,
           ],
         );
         const result = await getLocation(c, created.rows[0].id);
@@ -249,7 +393,8 @@ export function locationRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
   // contenedores activos, en listas planas: la web monta el árbol.
   app.get('/api/tree', { preHandler: requirePermission('location.read') }, async (request) => {
     // Con todos los datos de cada ubicación y contenedor, para poder editarlos en tabla desde el árbol.
-    const locations = await pool.query(`${LOCATION_SELECT} WHERE l.active ORDER BY l.code`);
+    // También las desactivadas: se ven en gris y no desaparecen.
+    const locations = await pool.query(`${LOCATION_SELECT} ORDER BY l.code`);
     const canSeeContainers = request.user!.permissions.includes('container.read');
     const containers = canSeeContainers
       ? (await pool.query(`${CONTAINER_SELECT} WHERE c.status = 'ACTIVE' ORDER BY c.code`)).rows
@@ -269,14 +414,27 @@ export function locationRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
       if (!original) throw notFound('La ubicación no existe');
 
       const prefix = await parentCode(pool, original.parentId);
-      let segment = incrementCode(original.segment);
-      for (let i = 0; i < 200 && (await codeExists(pool, fullCode(prefix, segment))); i++) segment = incrementCode(segment);
+      let segment: string;
+      let seq: number | null = null;
+      let typePrefix: string | null = null;
+      if (original.parentId) {
+        const type = await typeInfo(pool, { code: original.typeCode });
+        const next = await nextSeq(pool, original.parentId, type);
+        seq = next;
+        typePrefix = type.prefix;
+        segment = seqSegment(type.prefix, next);
+      } else {
+        segment = incrementCode(original.segment);
+        for (let i = 0; i < 200 && (await codeExists(pool, fullCode(prefix, segment))); i++) segment = incrementCode(segment);
+      }
 
       const descendants = await activeDescendants(pool, id);
       return {
         code: fullCode(prefix, segment),
         prefix,
         segment,
+        typePrefix,
+        seq,
         name: incrementName(original.name),
         descendantCount: descendants.length,
         // Lo de dentro hereda el código de la copia, así que siempre se puede copiar.
@@ -300,6 +458,7 @@ export function locationRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
           properties: {
             code: { type: 'string', pattern: CODE_PATTERN },
             segment: { type: 'string', maxLength: 40 },
+            seq: { type: 'integer', minimum: 1, maximum: 9999 },
             name: { type: 'string', minLength: 1, maxLength: 120 },
             includeChildren: { type: 'boolean', default: false },
           },
@@ -309,8 +468,7 @@ export function locationRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
     (request, reply) =>
       idempotent(pool, request, reply, async () => {
         const { id } = request.params as { id: string };
-        const body = request.body as { code?: string; segment?: string; name: string; includeChildren: boolean };
-        if (body.code === undefined && body.segment === undefined) throw badRequest('Indica el código', 'CODIGO_NO_VALIDO');
+        const body = request.body as { code?: string; segment?: string; seq?: number; name: string; includeChildren: boolean };
 
         const result = await withTransaction(pool, async (c) => {
           const original = await c.query(`SELECT * FROM storage_location WHERE id = $1`, [id]);
@@ -329,7 +487,16 @@ export function locationRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
 
           // Calcula y comprueba todos los códigos nuevos antes de crear nada:
           // lo de dentro conserva su parte y hereda el código de la copia.
-          const segment = await resolveSegment(c, body, src.parent_id);
+          let segment: string;
+          let seq: number | null = null;
+          if (src.parent_id) {
+            const type = await typeInfo(c, { id: src.location_type_id });
+            seq = await resolveSeq(c, body, src.parent_id, type);
+            segment = seqSegment(type.prefix, seq);
+          } else {
+            if (body.code === undefined && body.segment === undefined) throw badRequest('Indica el código', 'CODIGO_NO_VALIDO');
+            segment = await resolveSegment(c, body, null);
+          }
           const prefix = await parentCode(c, src.parent_id);
           const newCode = fullCode(prefix, segment);
           const plan = descendants.map((d) => ({ ...d, newCode: newCode + d.code.slice(src.code.length) }));
@@ -350,25 +517,25 @@ export function locationRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
             throw conflict(`Ya existe una ubicación con el código ${taken.rows[0].code}`, 'CODIGO_DUPLICADO');
           }
 
-          const copy = async (row: Record<string, unknown>, seg: string, name: string, parentId: unknown) => {
+          const copy = async (row: Record<string, unknown>, seg: string, rowSeq: unknown, name: string, parentId: unknown) => {
             const r = await c.query(
               `INSERT INTO storage_location
-                 (qr_token, segment, name, description, parent_id, location_type_id, max_capacity,
+                 (qr_token, segment, seq, name, description, parent_id, location_type_id, max_capacity,
                   capacity_unit, allowed_hazard_classes, restrictions_note)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+               VALUES ($1, $2, $11, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
               [
                 newQrToken(), seg, name, row.description, parentId, row.location_type_id, row.max_capacity,
-                row.capacity_unit, row.allowed_hazard_classes, row.restrictions_note,
+                row.capacity_unit, row.allowed_hazard_classes, row.restrictions_note, rowSeq ?? null,
               ],
             );
             return r.rows[0].id as string;
           };
 
-          const rootId = await copy(src, segment, body.name.trim(), src.parent_id);
+          const rootId = await copy(src, segment, seq, body.name.trim(), src.parent_id);
           const newIds = new Map<string, string>([[id, rootId]]);
           for (const d of plan) {
             const full = (await c.query(`SELECT * FROM storage_location WHERE id = $1`, [d.id])).rows[0];
-            newIds.set(d.id, await copy(full, full.segment, full.name, newIds.get(d.parent_id)));
+            newIds.set(d.id, await copy(full, full.segment, full.seq, full.name, newIds.get(d.parent_id)));
           }
 
           await writeAudit(c, {
@@ -395,6 +562,7 @@ export function locationRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
           properties: {
             code: { type: 'string', pattern: CODE_PATTERN },
             segment: { type: 'string', maxLength: 40 },
+            seq: { type: 'integer', minimum: 1, maximum: 9999 },
             name: { type: 'string', minLength: 1, maxLength: 120 },
             description: { type: 'string', maxLength: 500 },
             parentId: { anyOf: [{ type: 'null' }, uuid] },
@@ -432,6 +600,7 @@ export function locationRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
                 properties: {
                   id: uuid,
                   segment: { type: 'string', maxLength: 40 },
+                  seq: { type: 'integer', minimum: 1, maximum: 9999 },
                   name: { type: 'string', minLength: 1, maxLength: 120 },
                   description: { type: 'string', maxLength: 500 },
                   typeCode: { type: 'string', maxLength: 30 },
@@ -479,13 +648,23 @@ export function locationRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
     (request, reply) =>
       idempotent(pool, request, reply, async () =>
         withTransaction(pool, async (c) => {
+          await c.query(`LOCK TABLE storage_location IN SHARE ROW EXCLUSIVE MODE`);
           const plan = await recodePlan(c);
           const blocked = plan.find((p) => p.conflictWith);
           if (blocked) {
             throw conflict(`${blocked.code} pasaría a ${blocked.newCode}, que ya existe. Cambia antes una de las dos`, 'CODIGO_DUPLICADO');
           }
-          // De arriba abajo: al arreglar una, las de dentro se arreglan solas.
-          for (const p of plan) await c.query(`UPDATE storage_location SET segment = segment WHERE id = $1`, [p.id]);
+          // 1) Un código provisional único a las que van a recibir número, para que
+          //    ningún cambio intermedio choque con otra ubicación.
+          const numbered = plan.filter((p) => p.seq !== null);
+          for (const p of numbered) {
+            await c.query(`UPDATE storage_location SET seq = NULL, segment = 'TMP' || upper(left(md5(id::text), 12)) WHERE id = $1`, [p.id]);
+          }
+          // 2) De arriba abajo: su número definitivo. Las de dentro se recalculan solas.
+          for (const p of numbered) await c.query(`UPDATE storage_location SET seq = $2 WHERE id = $1`, [p.id, p.seq]);
+          for (const p of plan.filter((x) => x.seq === null)) {
+            await c.query(`UPDATE storage_location SET segment = segment WHERE id = $1`, [p.id]);
+          }
           const left = await recodePlan(c);
           if (left.length) throw conflict('No se han podido recodificar todas. Vuelve a intentarlo', 'RECODIFICACION_INCOMPLETA');
           await writeAudit(c, {
@@ -498,23 +677,57 @@ export function locationRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
   );
 }
 
-/** Lo que cambiaría al aplicar la regla del código heredado, de arriba abajo. */
+/**
+ * Lo que cambiaría al aplicar la codificación completa, de arriba abajo:
+ *   * cada ubicación lleva delante el código de la que la contiene;
+ *   * las que están dentro de otra son prefijo de su tipo + número. A las que
+ *     aún no tienen número se les da el de su código actual si está libre
+ *     (E01 → EST01), y si no, el siguiente libre.
+ * seq es el número que hay que ponerle, o null si no cambia.
+ */
 async function recodePlan(db: pg.Pool | pg.PoolClient) {
-  const r = await db.query(
-    `WITH RECURSIVE t AS (
-       SELECT id, code, segment AS computed, 0 AS depth FROM storage_location WHERE parent_id IS NULL
-       UNION ALL
-       SELECT l.id, l.code, t.computed || '-' || l.segment, t.depth + 1
-         FROM storage_location l JOIN t ON l.parent_id = t.id
-     )
-     SELECT t.id, t.code, t.computed AS "newCode", t.depth,
-            (SELECT o.code FROM storage_location o
-              WHERE o.code = t.computed AND o.id <> t.id
-                AND NOT EXISTS (SELECT 1 FROM t t2 WHERE t2.id = o.id AND t2.computed <> t2.code)) AS "conflictWith"
-       FROM t WHERE t.computed <> t.code
-      ORDER BY t.depth, t.code`,
-  );
-  return r.rows as Array<{ id: string; code: string; newCode: string; depth: number; conflictWith: string | null }>;
+  const rows = (
+    await db.query(
+      `SELECT l.id, l.parent_id AS "parentId", l.code, l.segment, l.seq, l.location_type_id AS "typeId", t.code_prefix AS prefix
+         FROM storage_location l JOIN location_type t ON t.id = l.location_type_id`,
+    )
+  ).rows as Array<{ id: string; parentId: string | null; code: string; segment: string; seq: number | null; typeId: string; prefix: string }>;
+
+  const children = new Map<string | null, typeof rows>();
+  for (const r of rows) children.set(r.parentId, [...(children.get(r.parentId) ?? []), r]);
+  const collator = new Intl.Collator('es', { numeric: true });
+
+  const plan: Array<{ id: string; code: string; newCode: string; depth: number; seq: number | null; conflictWith: string | null }> = [];
+  const visit = (parentId: string | null, parentNewCode: string | null, depth: number) => {
+    const kids = [...(children.get(parentId) ?? [])].sort((a, b) => collator.compare(a.code, b.code));
+    // Números ya ocupados por tipo dentro de esta ubicación.
+    const used = new Map<string, Set<number>>();
+    const usedOf = (typeId: string) => used.get(typeId) ?? used.set(typeId, new Set()).get(typeId)!;
+    for (const k of kids) if (k.seq !== null) usedOf(k.typeId).add(k.seq);
+    for (const k of kids) {
+      let seq: number | null = null;
+      let segment = k.segment;
+      if (parentId !== null && k.seq === null) {
+        const taken = usedOf(k.typeId);
+        const m = /(\d+)$/.exec(k.segment);
+        let n = m ? Number(m[1]) : 0;
+        if (!(n >= 1 && n <= 9999) || taken.has(n)) {
+          n = 1;
+          while (taken.has(n)) n++;
+        }
+        taken.add(n);
+        seq = n;
+        segment = seqSegment(k.prefix, n);
+      } else if (parentId !== null && k.seq !== null) {
+        segment = seqSegment(k.prefix, k.seq);
+      }
+      const newCode = fullCode(parentNewCode, segment);
+      if (newCode !== k.code || seq !== null) plan.push({ id: k.id, code: k.code, newCode, depth, seq, conflictWith: null });
+      visit(k.id, newCode, depth + 1);
+    }
+  };
+  visit(null, null, 0);
+  return plan.sort((a, b) => a.depth - b.depth || collator.compare(a.code, b.code));
 }
 
 /** Cambia una ubicación. Si cambia su código, cambian también los de las de dentro. */
@@ -527,11 +740,42 @@ async function updateLocation(c: pg.PoolClient, request: FastifyRequest, id: str
     if (body.parentId === id) throw conflict('Una ubicación no puede colgar de sí misma', 'UBICACION_CICLICA');
     await assertParent(c, body.parentId as string);
   }
+  // Activar o desactivar una ubicación es cosa del administrador.
+  if ('active' in body && body.active !== before.active && !request.user!.permissions.includes('location.deactivate')) {
+    throw forbidden('Solo un administrador puede activar o desactivar ubicaciones');
+  }
+
+  // Código: en las de primer nivel, libre; en las demás, prefijo del tipo + número.
   let segment: string | undefined;
-  if ('segment' in body || 'code' in body || 'parentId' in body) {
-    segment = 'segment' in body || 'code' in body
-      ? await resolveSegment(c, body as { code?: string; segment?: string }, parentId)
-      : before.segment;
+  let seq: number | null | undefined;
+  const codeTouched = ['segment', 'code', 'seq', 'parentId', 'typeCode'].some((k) => k in body);
+  if (codeTouched) {
+    if (!parentId) {
+      segment = 'segment' in body || 'code' in body
+        ? await resolveSegment(c, body as { code?: string; segment?: string }, null)
+        : before.segment;
+      seq = null;
+    } else {
+      const type = await typeInfo(c, 'typeCode' in body ? { code: body.typeCode as string } : { id: before.typeId });
+      const typeOrPlaceChanged = 'typeCode' in body || 'parentId' in body;
+      if ('seq' in body || 'segment' in body || 'code' in body) {
+        seq = await resolveSeq(c, body as { seq?: number; segment?: string; code?: string }, parentId, type, id);
+      } else if (before.seq !== null && before.parentId === parentId && !typeOrPlaceChanged) {
+        seq = before.seq;
+      } else if (before.seq !== null && before.parentId === parentId) {
+        // Cambia de tipo en el mismo sitio: conserva su número si está libre.
+        seq = (await codeExistsExcept(c, fullCode(await parentCode(c, parentId), seqSegment(type.prefix, before.seq)), id))
+          ? await nextSeq(c, parentId, type, id)
+          : before.seq;
+      } else {
+        // Cambia de sitio (o era antigua, sin número): conserva su número si está libre allí.
+        const keep = before.seq ?? (/(\d+)$/.exec(before.segment) ? Number(/(\d+)$/.exec(before.segment)![1]) : null);
+        seq = keep && keep <= 9999 && !(await codeExistsExcept(c, fullCode(await parentCode(c, parentId), seqSegment(type.prefix, keep)), id))
+          ? keep
+          : await nextSeq(c, parentId, type, id);
+      }
+      segment = seqSegment(type.prefix, seq!);
+    }
     await assertCodeFree(c, fullCode(await parentCode(c, parentId), segment!), id);
   }
   if (body.active === false && (before.childCount > 0 || before.containerCount > 0)) {
@@ -547,11 +791,13 @@ async function updateLocation(c: pg.PoolClient, request: FastifyRequest, id: str
     values.push(value);
     sets.push(`${column} = $${values.length}`);
   };
-  if (segment !== undefined && segment !== before.segment) set('segment', segment);
-  if ('name' in body) set('name', (body.name as string).trim());
-  if ('description' in body) set('description', (body.description as string).trim() || null);
   if ('parentId' in body) set('parent_id', body.parentId);
   if ('typeCode' in body) set('location_type_id', await typeId(c, body.typeCode as string));
+  if (seq !== undefined && seq !== before.seq) set('seq', seq);
+  // Sin número (zonas y antiguas), la parte se escribe tal cual.
+  if (segment !== undefined && seq === null && segment !== before.segment) set('segment', segment);
+  if ('name' in body) set('name', (body.name as string).trim());
+  if ('description' in body) set('description', (body.description as string).trim() || null);
   if ('maxCapacity' in body) {
     set('max_capacity', body.maxCapacity);
     set('capacity_unit', body.maxCapacity === null ? null : 'contenedores');

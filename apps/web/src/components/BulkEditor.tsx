@@ -188,7 +188,7 @@ function Editor<T>(props: { col: BulkColumn<T>; prefix?: string | null; value: C
   if (col.type === 'segment') {
     return (
       <span className="code-input">
-        {props.prefix && <span className="code-prefix">{props.prefix}-</span>}
+        {props.prefix && <span className="code-prefix">{props.prefix}</span>}
         <input
           value={String(props.value)}
           onChange={(e) => props.onChange(e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, ''))}
@@ -233,3 +233,28 @@ export function CodeInput(props: {
     </span>
   );
 }
+
+/**
+ * Número propio de una ubicación dentro de otra: el principio (código de la
+ * superior y prefijo del tipo) es fijo; solo se escribe el número.
+ */
+export function SeqInput(props: { fixed: string; value: string; onChange: (v: string) => void; autoFocus?: boolean }) {
+  return (
+    <span className="code-input code-input-big">
+      <span className="code-prefix" title="Lo ponen la ubicación que la contiene y el tipo">{props.fixed}</span>
+      <input
+        className="seq-input"
+        value={props.value}
+        onChange={(e) => props.onChange(e.target.value.replace(/\D/g, '').slice(0, 4))}
+        onFocus={(e) => e.target.select()}
+        inputMode="numeric"
+        required
+        autoFocus={props.autoFocus}
+        aria-label="Número"
+      />
+    </span>
+  );
+}
+
+/** «7» → «07», como lo guarda el sistema. */
+export const padSeq = (v: string) => (v ? v.padStart(2, '0') : '');

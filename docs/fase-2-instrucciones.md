@@ -56,29 +56,43 @@ también son ubicaciones.
 
 1. En «Almacén», pulsa «Nueva ubicación» y crea las zonas principales. Por
    ejemplo, `COM` para la zona común y `ALM-A` para el almacén principal.
-2. Entra en una zona y pulsa «Nueva ubicación dentro». El principio del
-   código lo pone la ubicación que la contiene y **no se puede cambiar**: dentro
-   de `ALM-A` aparece `ALM-A-` en gris y tú escribes solo la parte final, por
-   ejemplo `P01`. El código queda `ALM-A-P01`.
-3. Repite hasta el nivel de detalle que necesites.
+2. Entra en una zona y pulsa «Nueva ubicación dentro». Elige el **tipo**; el
+   código se forma solo con tres partes:
+   - el código de la ubicación que la contiene;
+   - el **prefijo del tipo** (Pasillo → `PAS`, Estantería → `EST`, Nivel → `NIV`…);
+   - un **número**.
+
+   Las dos primeras salen en gris y no se pueden cambiar. El número se propone
+   solo (el siguiente libre) y se puede ajustar. Dentro de `ALM-A`, un pasillo
+   queda `ALM-A-PAS01`.
+3. Repite hasta el nivel de detalle que necesites. El tipo propuesto es el que
+   ya tienen las de al lado o el que suele ir dentro.
+
+Las **zonas** de primer nivel (`ALM-A`, `COM`, `TALLER`…) tienen código libre.
+
+**Prefijos de los tipos.** Se ven y se cambian en «Tipos». Si cambias el de un
+tipo (por ejemplo, Nivel de `NIV` a `BAL`), se recodifican solas todas las
+ubicaciones de ese tipo y las que llevan dentro. Lo mismo con los tipos de
+contenedor: si Caja pasa de `CAJ` a `CJA`, `CAJ-000014` pasa a `CJA-000014`.
+Solo los administradores pueden cambiar los tipos.
 
 **El código se hereda.** Si cambias el código de una ubicación, cambian solos
 los de todas las que lleva dentro, a cualquier profundidad. Por ejemplo, si
-`ALM-A-P01` pasa a ser `ALM-A-P10`, su estantería `ALM-A-P01-E01` pasa a
-`ALM-A-P10-E01`, y así hacia abajo. Lo mismo ocurre si mueves una ubicación
-dentro de otra.
+`ALM-A-PAS01` pasa a ser `ALM-A-PAS10`, su estantería `ALM-A-PAS01-EST01`
+pasa a `ALM-A-PAS10-EST01`, y así hacia abajo. Lo mismo ocurre si cambias su
+tipo o la mueves dentro de otra (conserva su número si está libre).
 
 Un esquema de códigos que funciona bien:
 
 | Código | Qué es |
 | --- | --- |
 | `COM` | Zona común |
-| `COM-ARM-01` | Armario de líquidos |
+| `COM-ARM01` | Armario de líquidos |
 | `ALM-A` | Almacén principal |
-| `ALM-A-P01` | Pasillo 1 |
-| `ALM-A-P01-E01` | Estantería 1 |
-| `ALM-A-P01-E01-N02` | Nivel 2 |
-| `ALM-A-P01-E01-N02-S01` | Posición 1 |
+| `ALM-A-PAS01` | Pasillo 1 |
+| `ALM-A-PAS01-EST01` | Estantería 1 |
+| `ALM-A-PAS01-EST01-NIV02` | Nivel 2 |
+| `ALM-A-PAS01-EST01-NIV02-POS01` | Posición 1 |
 
 **Capacidad.** Al crear o editar una ubicación puedes indicar cuántos
 contenedores admite. Si se supera, el sistema avisa y deja continuar.
@@ -88,11 +102,15 @@ valiendo y lleva a la ubicación correcta. Lo que no cambia es el texto impreso
 en ella, así que conviene reimprimir las etiquetas de las ubicaciones
 afectadas. El sistema te dice cuántas han cambiado.
 
-**Ubicaciones creadas antes de esta regla.** Si alguna tiene un código que no
-empieza por el de la ubicación que la contiene, en «Almacén» aparece un aviso
-con la lista de cambios. Por ejemplo, `ARMARIO-QUIMICOS` dentro de `COM` pasará
-a `COM-ARMARIO-QUIMICOS`: se le pone delante el código de la superior y se
-conserva el suyo. No se aplica nada hasta que pulsas «Recodificar».
+**Ubicaciones creadas antes de esta codificación.** En «Almacén» aparece un
+aviso con la lista «ahora → pasará a». Cada una conserva su número: `ALM-A-P01`
+pasa a `ALM-A-PAS01` y `ALM-A-P01-E03` a `ALM-A-PAS01-EST03`. No se aplica
+nada hasta que pulsas «Recodificar».
+
+**Desactivar una ubicación.** Solo lo puede hacer un administrador, desde
+«Editar». La ubicación **no desaparece**: se sigue viendo en gris y tachada,
+pero no admite contenedores ni material nuevos. Se puede volver a activar. En
+las listas, el filtro «Estado» separa las activas de las desactivadas.
 
 ### Editar varias a la vez
 
@@ -178,6 +196,8 @@ el almacén anidado.
 - La búsqueda deja solo lo que coincide y el camino hasta ello, ya desplegado.
   Sirve para saber dónde está algo sin recorrer el almacén.
 - Pulsar una línea abre su ficha. La vista elegida se recuerda la próxima vez.
+- **Dentro de cada ubicación** también está el selector «Lista | Árbol»: el
+  árbol muestra solo lo que cuelga de ella.
 
 ### Exportar a Excel
 

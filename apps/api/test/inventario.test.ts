@@ -74,6 +74,10 @@ beforeAll(async () => {
   app = await buildApp({ pool, config });
   await ensureFirstAdmin(pool, config);
   await seedDemoUsers(pool);
+  // Las pruebas usan códigos con prefijos de una letra: P01, E01, N01, S01.
+  await pool.query(
+    `UPDATE location_type SET code_prefix = x.p FROM (VALUES ('PASILLO', 'P'), ('ESTANTERIA', 'E'), ('NIVEL', 'N'), ('POSICION', 'S')) AS x (c, p) WHERE code = x.c`,
+  );
   await pool.query(`UPDATE app_user SET must_change_password = false`);
   [almacen, usuario, consulta] = await Promise.all([sessionOf('demo.almacen'), sessionOf('demo.usuario'), sessionOf('demo.consulta')]);
   admin = await sessionOf('admin', config.adminPassword);
@@ -371,5 +375,27 @@ describe('exportar a Excel', () => {
       expect(ws.rowCount).toBeGreaterThan(3);
       expect(String(ws.getRow(1).getCell(1).value)).toBe('Referencia');
     }
+  });
+});
+
+describe('buscador', () => {
+  it('encuentra por varias palabras, sin tildes ni mayúsculas, y dice dónde está', async () => {
+    const r = (await call('GET', '/api/search?q=tornillo%20m8', usuario)).json();
+    const hit = r.materials.find((m: { description: string }) => m.description.includes('M8x25'));
+    expect(hit).toBeDefined();
+    expect(hit.places.length).toBeGreaterThan(0);
+    expect(hit.places[0].placeCode).toMatch(/^CAJ-/);
+    expect(hit.places[0].locationCode).toBe('ALM-Z-E01');
+    // Sin tildes: «estanteria» encuentra «Estantería».
+    const loc = (await call('GET', '/api/search?q=ficticio%20estanteria', usuario)).json();
+    expect(loc.locations.map((l: { code: string }) => l.code)).toContain('ALM-Z-E01');
+    // Por el código de un contenedor, y con la ubicación en la que está.
+    const caja = (await call('GET', `/api/search?q=${hit.places[0].placeCode.toLowerCase()}`, usuario)).json();
+    expect(caja.containers[0]).toMatchObject({ code: hit.places[0].placeCode, locationCode: 'ALM-Z-E01' });
+    // Por lote.
+    const lote = (await call('GET', '/api/search?q=colada-f1', usuario)).json();
+    expect(lote.materials.map((m: { description: string }) => m.description)).toContain('FICTICIO Barra 6082 Ø30');
+    // Todas las palabras tienen que estar.
+    expect((await call('GET', '/api/search?q=tornillo%20inexistente', usuario)).json().materials).toEqual([]);
   });
 });

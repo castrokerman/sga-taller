@@ -11,6 +11,8 @@ interface Tile {
 }
 
 const TILES: Tile[] = [
+  { title: 'Buscador', text: 'Buscar cualquier cosa por palabras y ver dónde está', path: 'buscar', permission: 'location.read' },
+  { title: 'Registrar entrada', text: 'Material que llega: elegirlo o crearlo, foto y dónde se guarda', path: 'entrada', permission: 'stock.receive' },
   { title: 'Escáner QR', text: 'Escanear ubicaciones y contenedores', path: 'escaner', permission: 'container.read' },
   { title: 'Almacén', text: 'Ubicaciones y contenedores', path: 'almacen', permission: 'location.read' },
   { title: 'Materiales', text: 'Catálogo, dónde está cada cosa y cuánto hay', path: 'materiales', permission: 'material.read' },

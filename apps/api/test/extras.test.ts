@@ -63,6 +63,10 @@ beforeAll(async () => {
   app = await buildApp({ pool, config });
   await ensureFirstAdmin(pool, config);
   await seedDemoUsers(pool);
+  // Las pruebas usan códigos con prefijos de una letra: P01, E01, N01, S01.
+  await pool.query(
+    `UPDATE location_type SET code_prefix = x.p FROM (VALUES ('PASILLO', 'P'), ('ESTANTERIA', 'E'), ('NIVEL', 'N'), ('POSICION', 'S')) AS x (c, p) WHERE code = x.c`,
+  );
   await pool.query(`UPDATE app_user SET must_change_password = false`);
   [almacen, usuario, consulta, proyecto] = (await Promise.all(
     ['demo.almacen', 'demo.usuario', 'demo.consulta', 'demo.proyecto'].map(sessionOf),

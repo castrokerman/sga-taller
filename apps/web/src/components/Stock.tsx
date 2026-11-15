@@ -251,7 +251,7 @@ function useOperation(onDone: (r: OpResult) => void) {
   return { busy, error, setError, run };
 }
 
-const parseNumber = (s: string) => {
+export const parseNumber = (s: string) => {
   const n = Number(s.replace(/\./g, '').replace(',', '.'));
   return s.trim() === '' || !Number.isFinite(n) ? undefined : n;
 };

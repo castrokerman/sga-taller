@@ -226,6 +226,7 @@ export function adminRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
     },
   );
 
+  // Registro de auditoría, del más reciente al más antiguo, por páginas y con filtros.
   app.get(
     '/api/admin/audit',
     {
@@ -235,24 +236,47 @@ export function adminRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
           type: 'object',
           additionalProperties: false,
           properties: {
-            limit: { type: 'integer', minimum: 1, maximum: 200, default: 50 },
+            limit: { type: 'integer', minimum: 1, maximum: 1000, default: 200 },
             before: { type: 'integer', minimum: 1 },
+            // Una operación concreta (stock.retirada) o un grupo (stock.)
+            action: { type: 'string', maxLength: 60 },
+            userId: { type: 'string', format: 'uuid' },
+            from: { type: 'string', format: 'date' },
+            to: { type: 'string', format: 'date' },
+            q: { type: 'string', maxLength: 100 },
           },
         },
       },
     },
     async (request) => {
-      const q = request.query as { limit: number; before?: number };
+      const q = request.query as { limit: number; before?: number; action?: string; userId?: string; from?: string; to?: string; q?: string };
       const r = await pool.query(
         `SELECT a.id::int, a.occurred_at AS "occurredAt", a.action, a.entity_type AS "entityType",
                 a.entity_id AS "entityId", a.before_data AS "before", a.after_data AS "after",
                 u.username, u.full_name AS "fullName"
            FROM audit_log a LEFT JOIN app_user u ON u.id = a.user_id
           WHERE ($2::bigint IS NULL OR a.id < $2)
+            AND ($3::text IS NULL OR (CASE WHEN right($3, 1) = '.' THEN left(a.action, length($3)) = $3 ELSE a.action = $3 END))
+            AND ($4::uuid IS NULL OR a.user_id = $4)
+            AND ($5::date IS NULL OR a.occurred_at >= $5::date)
+            AND ($6::date IS NULL OR a.occurred_at < $6::date + 1)
+            AND ($7::text IS NULL OR a.after_data::text ILIKE '%' || $7 || '%' OR a.before_data::text ILIKE '%' || $7 || '%'
+                 OR a.entity_id ILIKE '%' || $7 || '%')
           ORDER BY a.id DESC LIMIT $1`,
-        [q.limit, q.before ?? null],
+        [q.limit + 1, q.before ?? null, q.action || null, q.userId ?? null, q.from ?? null, q.to ?? null, q.q?.trim() || null],
       );
-      return { entries: r.rows };
+      // Una de más para saber si hay más páginas.
+      const more = r.rows.length > q.limit;
+      return { entries: r.rows.slice(0, q.limit), more };
     },
   );
+
+  // Operaciones que aparecen en el registro, con cuántas veces, para el filtro.
+  app.get('/api/admin/audit/actions', { preHandler: requirePermission('audit.read') }, async () => {
+    const r = await pool.query(`SELECT action, count(*)::int AS n FROM audit_log GROUP BY action ORDER BY action`);
+    const users = await pool.query(
+      `SELECT DISTINCT u.id, u.full_name AS "fullName" FROM audit_log a JOIN app_user u ON u.id = a.user_id ORDER BY 2`,
+    );
+    return { actions: r.rows, users: users.rows };
+  });
 }
