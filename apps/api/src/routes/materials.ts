@@ -21,7 +21,7 @@ export const FAMILY_SELECT = `
   )
   SELECT f.id, f.code, f.name, f.parent_id AS "parentId", f.default_unit_code AS "defaultUnitCode", f.active,
          tree.path, tree.ids AS "ancestorIds",
-         (SELECT count(*)::int FROM material m WHERE m.family_id = f.id) AS "materialCount",
+         (SELECT count(*)::int FROM material m WHERE m.family_id = f.id AND m.deleted_at IS NULL) AS "materialCount",
          (SELECT count(*)::int FROM material_family k WHERE k.parent_id = f.id) AS "childCount"
     FROM material_family f JOIN tree ON tree.id = f.id`;
 
@@ -30,7 +30,7 @@ export const MATERIAL_SELECT = `
          m.manufacturer, m.manufacturer_ref AS "manufacturerRef", m.material_spec AS "materialSpec",
          m.quality_grade AS "qualityGrade", m.dimensions, m.unit_code AS "unitCode", u.decimals,
          m.quantity_tracking AS "quantityTracking", m.lot_tracked AS "lotTracked", m.is_loanable AS "isLoanable",
-         m.min_stock::float AS "minStock", m.notes, m.status, m.created_at AS "createdAt",
+         m.min_stock::float AS "minStock", m.notes, m.status, m.created_at AS "createdAt", m.deleted_at AS "deletedAt",
          m.content_type_code AS "contentTypeCode", ct.name AS "contentTypeName",
          ct.unit_tracked AS "unitTracked", m.serial_number AS "serialNumber", m.qr_token AS "qrToken",
          (SELECT ph.id FROM photo ph WHERE ph.entity_type = 'material' AND ph.entity_id = m.id ORDER BY ph.position LIMIT 1) AS "photoId",
@@ -109,7 +109,7 @@ export function materialRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
     const r = await pool.query(
       `SELECT t.code, t.name, t.code_prefix AS "codePrefix", t.default_tracking AS "defaultTracking",
               t.default_loanable AS "defaultLoanable", t.unit_tracked AS "unitTracked", t.active, t.sort_order AS "sortOrder",
-              (SELECT count(*)::int FROM material m WHERE m.content_type_code = t.code) AS "contentCount"
+              (SELECT count(*)::int FROM material m WHERE m.content_type_code = t.code AND m.deleted_at IS NULL) AS "contentCount"
          FROM content_type t ORDER BY t.sort_order, t.name`,
     );
     return { types: r.rows };
@@ -348,7 +348,7 @@ export function materialRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
       const q = request.query as { includeObsolete: boolean; loanable?: boolean };
       const r = await pool.query(
         `${MATERIAL_SELECT}
-          WHERE (m.status = 'ACTIVE' OR $1) AND ($2::boolean IS NULL OR m.is_loanable = $2)
+          WHERE m.deleted_at IS NULL AND (m.status = 'ACTIVE' OR $1) AND ($2::boolean IS NULL OR m.is_loanable = $2)
           ORDER BY m.description LIMIT 5000`,
         [q.includeObsolete, q.loanable ?? null],
       );
@@ -390,6 +390,48 @@ export function materialRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
         after: { ref: m.internalRef, unidades_nuevas: created.map((x) => x.internalRef) }, ip: request.ip, requestId: request.id,
       });
       return { units: created };
+    });
+  });
+
+  // Eliminar: solo el administrador técnico. Sin historial se borra del todo;
+  // con historial desaparece de todas partes, pero su historial se conserva.
+  app.delete('/api/materials/:id', { preHandler: requirePermission('material.delete'), schema: { params: idParams } }, async (request) => {
+    const { id } = request.params as { id: string };
+    return withTransaction(pool, async (c) => {
+      const m = (await c.query(`SELECT internal_ref, description, deleted_at FROM material WHERE id = $1 FOR UPDATE`, [id])).rows[0];
+      if (!m || m.deleted_at) throw notFound('El contenido no existe');
+      const busy = (await c.query(
+        `SELECT (SELECT count(*) FROM stock_balance WHERE material_id = $1 AND (quantity > 0 OR quantity IS NULL))::int AS stock,
+                (SELECT count(*) FROM tool_loan WHERE material_id = $1 AND returned_at IS NULL)::int AS loans`,
+        [id],
+      )).rows[0];
+      const why = [
+        busy.stock && `aún hay en ${busy.stock} sitio${busy.stock === 1 ? '' : 's'}`,
+        busy.loans && `está prestado`,
+      ].filter(Boolean);
+      if (why.length) throw conflict(`No se puede eliminar ${m.internal_ref}: ${why.join(' y ')}. Retíralo o que lo devuelvan antes`, 'CONTENIDO_EN_USO');
+
+      // Saldos a cero que queden (estimados) no son historial.
+      await c.query(`DELETE FROM stock_allocation WHERE stock_balance_id IN (SELECT id FROM stock_balance WHERE material_id = $1)`, [id]);
+      await c.query(`DELETE FROM stock_balance WHERE material_id = $1`, [id]);
+      let how: 'borrado' | 'oculto' = 'borrado';
+      await c.query('SAVEPOINT borrar');
+      try {
+        await c.query(`DELETE FROM photo WHERE entity_type = 'material' AND entity_id = $1`, [id]);
+        await c.query(`DELETE FROM note WHERE entity_type = 'material' AND entity_id = $1`, [id]);
+        await c.query(`DELETE FROM material WHERE id = $1`, [id]);
+      } catch (e) {
+        if ((e as { code?: string }).code !== '23503') throw e;
+        await c.query('ROLLBACK TO SAVEPOINT borrar');
+        await c.query(`UPDATE material SET deleted_at = now(), deleted_by = $2, status = 'OBSOLETE', updated_at = now() WHERE id = $1`, [id, request.user!.id]);
+        how = 'oculto';
+      }
+      await writeAudit(c, {
+        userId: request.user!.id, action: 'contenido.eliminar', entityType: 'material', entityId: id,
+        before: { ref: m.internal_ref, descripcion: m.description }, after: { resultado: how === 'borrado' ? 'borrado del todo' : 'eliminado, con su historial conservado' },
+        ip: request.ip, requestId: request.id,
+      });
+      return { ok: true, ref: m.internal_ref, keptHistory: how === 'oculto' };
     });
   });
 

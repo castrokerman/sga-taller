@@ -688,7 +688,7 @@ export function containerRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
           WHERE qr_token = $1 OR upper(code) = upper($1)
          UNION ALL
          SELECT 'material', id, internal_ref, description, (qr_token = $1) FROM material
-          WHERE qr_token = $1 OR upper(internal_ref) = upper($1)
+          WHERE (qr_token = $1 OR upper(internal_ref) = upper($1)) AND deleted_at IS NULL
          ORDER BY exact DESC LIMIT 1`,
         [raw],
       );

@@ -7,6 +7,7 @@ import { Breadcrumbs, ContainerCard, containerListConfig, LabelPanel, LocationCa
 import { useListControls } from '../components/ListControls';
 import { StockSection } from '../components/Stock';
 import { MoveContainersPanel } from '../components/MoveContainers';
+import { Thumb } from '../components/Thumb';
 import { ItemExtras } from '../components/ItemExtras';
 import { BulkEditor, CodeInput, padSeq, SeqInput, type BulkChanges } from '../components/BulkEditor';
 import { WarehouseTree } from './Tree';
@@ -94,6 +95,11 @@ export function WarehousePage({ user, locationId }: { user: User; locationId?: s
       <Breadcrumbs locations={detail?.path ?? []} current={locationId} />
 
       <div className="page-head">
+        {loc?.photoId && (
+          <span className="head-thumb">
+            <Thumb photoId={loc.photoId} />
+          </span>
+        )}
         <div>
           <h2>{loc ? loc.code : 'Almacén'}</h2>
           {loc && (
@@ -243,7 +249,7 @@ export function WarehousePage({ user, locationId }: { user: User; locationId?: s
       )}
 
       {loc && <StockSection user={user} place={{ locationId: loc.id }} placeCode={loc.code} active={loc.active} holdsContent={loc.holdsContent} onChanged={() => void load()} />}
-      {loc && <ItemExtras user={user} entityType="location" entityId={loc.id} />}
+      {loc && <ItemExtras user={user} entityType="location" entityId={loc.id} onPhotosChanged={() => void load()} />}
 
       {roots && roots.length === 0 && (
         <p className="alert alert-info">

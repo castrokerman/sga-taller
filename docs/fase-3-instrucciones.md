@@ -432,3 +432,16 @@ Es una copia para consultar: lo que cambies en el Excel no vuelve al sistema.
 | Actualizar una base con datos de la Fase 2 | Comprobado: la base se actualiza sola y conserva lo anterior |
 | Uso real con varias personas en el taller | Pendiente: es el piloto |
 | Importación desde Excel | No incluida: se parte de cero. Si hace falta una carga masiva, se añade |
+
+
+## Eliminar contenidos (administrador técnico)
+
+En «Contenidos» → «Editar en tabla», el administrador técnico tiene un botón
+«Eliminar» en cada fila. Siempre pide confirmación.
+
+- Si el contenido no tiene historial, se borra del todo.
+- Si tiene historial (movimientos, préstamos, recepciones), desaparece de las
+  listas, el buscador y el escáner, pero su historial se conserva. Su ficha,
+  abierta desde un movimiento antiguo, avisa de que está eliminado.
+- Si aún queda algo guardado o prestado, no deja: primero hay que retirarlo o
+  que lo devuelvan.

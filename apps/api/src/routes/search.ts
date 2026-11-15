@@ -50,6 +50,7 @@ export function searchRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
                                   m.quality_grade, m.dimensions, m.notes, f.name,
                                   (SELECT string_agg(l.lot_code, ' ') FROM material_lot l WHERE l.material_id = m.id)) AS txt
                    FROM material m JOIN material_family f ON f.id = m.family_id
+                  WHERE m.deleted_at IS NULL
                )
                SELECT m.id, m."internalRef", m.description, m."unitCode", m."quantityTracking", m.status, m."familyName", m."photoId",
                       ${perms.has('stock.read') ? `coalesce((

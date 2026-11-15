@@ -46,7 +46,7 @@ function buildTree(locations: TreeLocation[], containers: TreeContainer[], withC
     else if (l.childCount === 0 && l.containerCount === 0) parts.push('Vacía');
     nodes.set(`l:${l.id}`, {
       key: `l:${l.id}`, kind: 'location', id: l.id, code: l.code, label: l.name, typeName: l.typeName,
-      meta: parts.join(' · '), over: l.maxCapacity !== null && l.containerCount > l.maxCapacity, children: [],
+      meta: parts.join(' · '), over: l.maxCapacity !== null && l.containerCount > l.maxCapacity, children: [], photoId: l.photoId,
     });
   }
   if (withContainers) {
