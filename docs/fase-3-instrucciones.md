@@ -78,6 +78,8 @@ Más opciones:
 - **Herramienta que se presta**: activa el botón «Prestar».
 - **Exigir lote**: para material con certificado o colada. La entrada no se
   acepta sin lote.
+- **Foto** (opcional): al crearlo se puede hacer una foto; en el móvil abre
+  la cámara. Se guarda en su ficha, donde se pueden añadir más.
 - **Referencia interna**: si la dejas vacía, se pone sola (MAT-000001…).
 - **Duplicar**: en la ficha de un material, crea otro a partir de él. Es la
   forma rápida de dar de alta «M6x30» a partir de «M6x20».
@@ -99,8 +101,8 @@ entrada»** te lleva en tres pasos:
 
 1. **Material**: búscalo por nombre o referencia, o pulsa «+ Material nuevo»
    para crearlo en ese momento.
-2. **Dónde**: escanea la caja, bandeja o ubicación, o escribe su código. Si
-   repites sitio, sale el botón «Al mismo sitio que la última vez».
+2. **Dónde**: elígelo en la lista desplegable o escanea la etiqueta. Si
+   repites sitio, sale «El mismo que la última vez».
 3. **Cantidad**: con lote, albarán, nota y, si quieres, **foto del
    material**, que se añade a su ficha.
 
@@ -116,16 +118,18 @@ es. En «Registrar entrada», elige **«Lo identifica el responsable»**:
    albarán si lo tiene.
 2. **De quién es**: busca a la persona. Las últimas que has elegido salen como
    botones.
-3. **Dónde lo dejas de momento**: escanea el sitio o pulsa «En el mismo sitio
-   que la última vez».
+3. **Dónde lo dejas de momento**: elígelo en la lista desplegable (agrupada
+   por zonas, con los contenedores de cada ubicación debajo) o escanea su
+   etiqueta. También está «El mismo que la última vez».
 4. Opcional: qué parece o de dónde viene, bultos y albarán.
 
 Al pulsar «Registrar y avisar» se crea una recepción (`REC-000012`) y al
 responsable le llega un aviso. En su inicio verá «Tienes una recepción por
 identificar». En la recepción completa:
 
-- **Qué es**: un material del catálogo o, si no está, uno nuevo (descripción,
-  familia, unidad y, si quiere, fabricante y referencia). No hace falta ser
+- **Qué es**: un material del catálogo, elegido en la lista desplegable
+  (agrupada por familias), o, si no está, uno nuevo (descripción, familia,
+  unidad y, si quiere, fabricante, referencia y una foto). No hace falta ser
   responsable de almacén para darlo de alta desde aquí.
 - **Cantidad** y, si hace falta, **lote**.
 - **Proyecto** (por ahora texto libre; propone los ya usados) y **dónde se va

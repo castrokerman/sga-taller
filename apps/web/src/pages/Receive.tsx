@@ -4,6 +4,7 @@ import { shrink } from '../components/ItemExtras';
 import { MaterialPicker, parseNumber, PlacePicker, QtyStepper } from '../components/Stock';
 import { navigate } from '../router';
 import { PendingReceive } from './Inbound';
+import { PlaceSelect } from '../components/PlaceSelect';
 
 type Place = { ref: PlaceRef; code: string };
 const LAST_PLACE = 'sga.entrada-ultimo-sitio';
@@ -27,6 +28,7 @@ export function ReceivePage({ user, initial }: { user: User; initial?: string })
   const [place, setPlace] = useState<Place | null>(null);
   const [result, setResult] = useState<OpResult | null>(null);
   const [last, setLast] = useState<Place | null>(readLast);
+  const [scanning, setScanning] = useState(false);
 
   const choosePlace = (p: Place) => {
     setPlace(p);
@@ -116,12 +118,30 @@ export function ReceivePage({ user, initial }: { user: User; initial?: string })
           <p className="confirm">
             <strong>{material.description}</strong> · {material.internalRef}
           </p>
-          {last && (
-            <button className="btn btn-big-inline last-place" onClick={() => choosePlace(last)}>
-              Al mismo sitio que la última vez: <strong className="mono">{last.code}</strong>
-            </button>
+          {scanning ? (
+            <PlacePicker
+              hint="Escanea la etiqueta de la caja, bandeja o ubicación, o escribe su código."
+              onPick={(p) => { setScanning(false); choosePlace(p); }}
+              onCancel={() => setScanning(false)}
+            />
+          ) : (
+            <>
+              <PlaceSelect value={null} onChange={(p) => p && choosePlace(p)} />
+              <div className="place-extra">
+                {last && (
+                  <button className="linkbtn" onClick={() => choosePlace(last)}>
+                    El mismo que la última vez: <strong className="mono">{last.code}</strong>
+                  </button>
+                )}
+                <button className="linkbtn" onClick={() => setScanning(true)}>
+                  📷 O escanea su etiqueta
+                </button>
+              </div>
+              <div className="actions">
+                <button className="btn" onClick={() => setStep(1)}>← Otro material</button>
+              </div>
+            </>
           )}
-          <PlacePicker hint="Escanea la etiqueta de la caja, bandeja o ubicación, o escribe su código." onPick={choosePlace} onCancel={() => setStep(1)} />
         </div>
       )}
 

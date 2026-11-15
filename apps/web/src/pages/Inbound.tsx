@@ -4,6 +4,8 @@ import {
   type Disposition, type Family, type Inbound, type InboundStatus, type Material, type PhotoData, type PlaceRef, type Unit, type User,
 } from '../api';
 import { shrink } from '../components/ItemExtras';
+import { PhotoField, uploadMaterialPhoto } from '../components/PhotoField';
+import { PlaceSelect } from '../components/PlaceSelect';
 import { parseNumber, PlacePicker, QtyStepper } from '../components/Stock';
 import { navigate } from '../router';
 
@@ -241,25 +243,17 @@ export function PendingReceive(props: { user: User; onBack: () => void }) {
 
       <div className="field">
         <span className="field-l">3. ¿Dónde lo dejas de momento?</span>
-        {place ? (
-          <p className="confirm">
-            <strong className="mono">{place.code}</strong>
-            <button type="button" className="linkbtn" onClick={() => setPicking(true)}>
-              Cambiar
+        <PlaceSelect value={place} onChange={setPlace} />
+        <div className="place-extra">
+          {last && !place && (
+            <button type="button" className="linkbtn" onClick={() => setPlace(last)}>
+              El mismo que la última vez: <strong className="mono">{last.code}</strong>
             </button>
-          </p>
-        ) : (
-          <div className="actions actions-wrap nomargin">
-            {last && (
-              <button type="button" className="btn" onClick={() => setPlace(last)}>
-                En el mismo sitio que la última vez: <strong className="mono">{last.code}</strong>
-              </button>
-            )}
-            <button type="button" className="btn" onClick={() => setPicking(true)}>
-              📷 Escanear o escribir el sitio
-            </button>
-          </div>
-        )}
+          )}
+          <button type="button" className="linkbtn" onClick={() => setPicking(true)}>
+            📷 O escanea su etiqueta
+          </button>
+        </div>
       </div>
 
       <label className="field">
@@ -580,7 +574,6 @@ function CompleteForm(props: { user: User; item: Inbound; onDone: (message: stri
   const [families, setFamilies] = useState<Family[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
   const [projects, setProjects] = useState<string[]>([]);
-  const [q, setQ] = useState('');
   const [material, setMaterial] = useState<Material | null>(null);
   const [isNew, setIsNew] = useState(false);
   const [nm, setNm] = useState({ description: item.description ?? '', familyId: '', unitCode: 'ud', manufacturer: '', manufacturerRef: '' });
@@ -590,8 +583,10 @@ function CompleteForm(props: { user: User; item: Inbound; onDone: (message: stri
   const [usage, setUsage] = useState('');
   const [disposition, setDisposition] = useState<Disposition | null>(null);
   const [dest, setDest] = useState<Place | null>(null);
+  const [elsewhere, setElsewhere] = useState(false);
   const [picking, setPicking] = useState(false);
   const [usePhoto, setUsePhoto] = useState(true);
+  const [ownPhoto, setOwnPhoto] = useState<File | null>(null);
   const [note, setNote] = useState('');
   const [key, setKey] = useState(newOperationKey);
   const [busy, setBusy] = useState(false);
@@ -604,17 +599,14 @@ function CompleteForm(props: { user: User; item: Inbound; onDone: (message: stri
     api.inboundProjects().then((r) => setProjects(r.projects)).catch(() => undefined);
   }, []);
 
-  const hits = useMemo(() => {
-    if (!all || !q.trim()) return [];
-    const words = normalize(q).split(/\s+/).filter(Boolean);
-    return all
-      .filter((m) => m.status === 'ACTIVE')
-      .filter((m) => {
-        const t = normalize([m.description, m.internalRef, m.manufacturer, m.manufacturerRef, m.familyName].filter(Boolean).join(' '));
-        return words.every((w) => t.includes(w));
-      })
-      .slice(0, 8);
-  }, [all, q]);
+  // El catálogo agrupado por familia, para la lista desplegable.
+  const groups = useMemo(() => {
+    const g = new Map<string, Material[]>();
+    for (const m of (all ?? []).filter((x) => x.status === 'ACTIVE')) g.set(m.familyName, [...(g.get(m.familyName) ?? []), m]);
+    return [...g.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0], 'es'))
+      .map(([family, items]) => [family, items.sort((a, b) => a.description.localeCompare(b.description, 'es'))] as const);
+  }, [all]);
 
   const decimals = isNew ? (units.find((u) => u.code === nm.unitCode)?.decimals ?? 0) : (material?.decimals ?? 0);
   const unit = isNew ? nm.unitCode : (material?.unitCode ?? 'ud');
@@ -626,7 +618,6 @@ function CompleteForm(props: { user: User; item: Inbound; onDone: (message: stri
   const pickMaterial = (m: Material) => {
     setMaterial(m);
     setIsNew(false);
-    setQ('');
     setUsePhoto(!m.photoId);
   };
 
@@ -637,6 +628,7 @@ function CompleteForm(props: { user: User; item: Inbound; onDone: (message: stri
     if (isNew && (!nm.description.trim() || !nm.familyId)) return setError('Del material nuevo, indica al menos qué es y su familia');
     if (!untracked && !n) return setError('Indica la cantidad');
     if (!disposition) return setError('Indica si se guarda en el almacén o se despliega directamente');
+    if (disposition === 'STORE' && elsewhere && !dest) return setError('Elige en qué sitio se guarda');
     setBusy(true);
     try {
       const r = await api.completeInbound(
@@ -656,7 +648,12 @@ function CompleteForm(props: { user: User; item: Inbound; onDone: (message: stri
         },
         key,
       );
-      props.onDone(r.message);
+      let msg = r.message;
+      if (isNew && ownPhoto) {
+        const up = await uploadMaterialPhoto(r.materialId, ownPhoto);
+        if (up.error) msg += ` La foto del material no se ha podido subir (${up.error}); puedes añadirla desde su ficha.`;
+      }
+      props.onDone(msg);
     } catch (err) {
       setError(errorMessage(err));
       setKey(newOperationKey());
@@ -673,6 +670,7 @@ function CompleteForm(props: { user: User; item: Inbound; onDone: (message: stri
           hint="Escanea o escribe el sitio donde se va a guardar."
           onPick={(p) => {
             setDest(p);
+            setElsewhere(true);
             setPicking(false);
           }}
           onCancel={() => setPicking(false)}
@@ -730,29 +728,41 @@ function CompleteForm(props: { user: User; item: Inbound; onDone: (message: stri
                 <input value={nm.manufacturerRef} onChange={(e) => setNm({ ...nm, manufacturerRef: e.target.value })} maxLength={120} />
               </label>
             </div>
+            {props.user.permissions.includes('photo.add') && (
+              <PhotoField label="Foto del material" file={ownPhoto} onChange={setOwnPhoto} hint="Una foto propia del material, además de las de la recepción." />
+            )}
             <button type="button" className="linkbtn" onClick={() => setIsNew(false)}>
-              ← Buscar en el catálogo
+              ← Elegir del catálogo
             </button>
           </div>
         ) : (
           <>
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Busca en el catálogo: nombre, referencia, fabricante…" />
-            {q.trim() && (
-              <div className="pick pick-short">
-                {hits.map((m) => (
-                  <button type="button" key={m.id} className="pick-btn" onClick={() => pickMaterial(m)}>
-                    <span>
-                      <b>{m.description}</b>
-                      <small>{m.internalRef} · {m.familyName}</small>
-                    </span>
-                  </button>
-                ))}
-                {all !== null && hits.length === 0 && <p className="muted">No está en el catálogo.</p>}
-              </div>
-            )}
-            <button type="button" className="btn" onClick={() => { setIsNew(true); setUsePhoto(true); }}>
-              + Es un material nuevo
-            </button>
+            <select
+              className="place-select"
+              value=""
+              disabled={all === null}
+              onChange={(e) => {
+                const m = all?.find((x) => x.id === e.target.value);
+                if (m) pickMaterial(m);
+              }}
+            >
+              <option value="">{all === null ? 'Cargando catálogo…' : all.length === 0 ? 'El catálogo está vacío' : 'Elige del catálogo…'}</option>
+              {groups.map(([family, items]) => (
+                <optgroup key={family} label={family}>
+                  {items.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.description} · {m.internalRef}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+            <div className="place-extra">
+              <span className="muted small">¿No está en la lista?</span>
+              <button type="button" className="btn" onClick={() => { setIsNew(true); setUsePhoto(true); }}>
+                + Es un material nuevo
+              </button>
+            </div>
           </>
         )}
       </div>
@@ -808,13 +818,23 @@ function CompleteForm(props: { user: User; item: Inbound; onDone: (message: stri
             <div className="field">
               <span className="field-l">¿Dónde se guarda?</span>
               <div className="actions actions-wrap nomargin">
-                <button type="button" className={`btn ${!dest ? 'on' : ''}`} onClick={() => setDest(null)}>
+                <button type="button" className={`btn ${!elsewhere ? 'on' : ''}`} onClick={() => { setElsewhere(false); setDest(null); }}>
                   Donde está ahora: <strong className="mono">{item.placeCode}</strong>
                 </button>
-                <button type="button" className={`btn ${dest ? 'on' : ''}`} onClick={() => setPicking(true)}>
-                  {dest ? <>En <strong className="mono">{dest.code}</strong> · cambiar</> : 'En otro sitio…'}
+                <button type="button" className={`btn ${elsewhere ? 'on' : ''}`} onClick={() => setElsewhere(true)}>
+                  En otro sitio
                 </button>
               </div>
+              {elsewhere && (
+                <>
+                  <PlaceSelect value={dest} onChange={setDest} />
+                  <div className="place-extra">
+                    <button type="button" className="linkbtn" onClick={() => setPicking(true)}>
+                      📷 O escanea su etiqueta
+                    </button>
+                  </div>
+                </>
+              )}
               {dest && <small className="muted">Se avisará a {item.receivedBy} para que lo lleve allí.</small>}
             </div>
           )}

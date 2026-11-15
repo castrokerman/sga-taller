@@ -515,6 +515,7 @@ export function MaterialPicker(props: { user: User; onPick: (m: Material) => voi
     return (
       <MaterialForm
         title="Material nuevo"
+        canPhoto={props.user.permissions.includes('photo.add')}
         onCancel={() => setCreating(false)}
         onDone={(m) => props.onPick(m)}
         embedded

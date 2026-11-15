@@ -3,6 +3,7 @@ import { api, errorMessage, formatQty, photoUrl, TRACKING_NAMES, type Family, ty
 import { Highlight, optionsFrom, useListControls, type ListConfig } from '../components/ListControls';
 import { navigate } from '../router';
 import { BulkEditor, type BulkChanges } from '../components/BulkEditor';
+import { PhotoField, uploadMaterialPhoto } from '../components/PhotoField';
 
 const FAMILY_KEY = 'sga.familia-elegida';
 
@@ -120,6 +121,7 @@ export function MaterialsPage({ user }: { user: User }) {
       {creating && (
         <MaterialForm
           title="Nuevo material"
+          canPhoto={user.permissions.includes('photo.add')}
           initial={family ? { familyId: family.id, unitCode: family.defaultUnitCode ?? undefined } : undefined}
           onCancel={() => setCreating(false)}
           onDone={(m) => navigate(`material/${m.id}`)}
@@ -274,6 +276,8 @@ export function MaterialForm(props: {
   initial?: MaterialInput;
   materialId?: string;
   embedded?: boolean;
+  /** Si se ofrece foto al crear (hace falta permiso para añadir fotos). */
+  canPhoto?: boolean;
   onCancel: () => void;
   onDone: (m: Material) => void;
 }) {
@@ -288,6 +292,8 @@ export function MaterialForm(props: {
   const [more, setMore] = useState(Boolean(init.manufacturer || init.manufacturerRef || init.materialSpec || init.qualityGrade || init.dimensions || init.notes));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [photo, setPhoto] = useState<File | null>(null);
+  const canPhoto = !props.materialId && Boolean(props.canPhoto ?? true);
 
   useEffect(() => {
     Promise.all([api.families(), api.units()])
@@ -325,6 +331,12 @@ export function MaterialForm(props: {
     }
     try {
       const r = props.materialId ? await api.updateMaterial(props.materialId, data) : await api.createMaterial(data);
+      // La foto se sube después de crear el material. Si falla, el material ya está creado.
+      if (canPhoto && photo) {
+        const up = await uploadMaterialPhoto(r.material.id, photo);
+        if (up.id) r.material.photoId = up.id;
+        else window.setTimeout(() => window.alert(`El material se ha creado, pero la foto no se ha podido subir (${up.error}). Puedes añadirla desde su ficha.`), 0);
+      }
       props.onDone(r.material);
     } catch (err) {
       setError(errorMessage(err));
@@ -458,13 +470,14 @@ export function MaterialForm(props: {
           </span>
         </label>
       )}
+      {canPhoto && <PhotoField label="Foto del material" file={photo} onChange={setPhoto} hint="Se guarda en su ficha. Puedes añadir más después." />}
       {error && <p className="alert alert-error">{error}</p>}
       <div className="actions">
         <button type="button" className="btn" onClick={props.onCancel}>
           Cancelar
         </button>
         <button className="btn btn-primary" disabled={busy}>
-          {busy ? 'Guardando…' : props.materialId ? 'Guardar' : 'Crear material'}
+          {busy ? (photo ? 'Guardando y subiendo foto…' : 'Guardando…') : props.materialId ? 'Guardar' : 'Crear material'}
         </button>
       </div>
     </>

@@ -113,6 +113,7 @@ export function MaterialPage({ user, materialId }: { user: User; materialId: str
       {panel === 'duplicate' && (
         <MaterialForm
           title={`Nuevo material a partir de ${m.internalRef}`}
+          canPhoto={user.permissions.includes('photo.add')}
           initial={{ ...m, internalRef: undefined, status: undefined, description: m.description }}
           onCancel={() => setPanel('none')}
           onDone={(n) => navigate(`material/${n.id}`)}
