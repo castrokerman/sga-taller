@@ -136,6 +136,12 @@ export interface LocationSummary {
   qrToken: string;
   typeCode: string;
   typeName: string;
+  /** Su tipo guarda contenido directamente (armario, cajonera…); si no, solo aloja contenedores. */
+  holdsContent: boolean;
+  /** Tipos de contenedor que admite (vacío: cualquiera). */
+  allowedContainerTypes: string[];
+  /** Líneas de contenido suelto directamente en ella. */
+  looseLines: number;
   maxCapacity: number | null;
   allowedHazardClasses: string[];
   active: boolean;
@@ -165,6 +171,8 @@ export interface ContainerSummary {
   projectId: string | null;
   projectCode: string | null;
   projectName: string | null;
+  /** Responsables del proyecto, separados por comas. */
+  projectResponsibles: string | null;
 }
 
 export interface PathItem {
@@ -538,7 +546,10 @@ export interface SearchResult {
 
 export const photoUrl = (id: string, size: 'thumb' | 'image' = 'thumb') => `/api/photos/${id}/${size}`;
 
-export interface LocationType { code: string; name: string; active: boolean; codePrefix: string; sortOrder: number; locationCount: number }
+export interface LocationType {
+  code: string; name: string; active: boolean; codePrefix: string; sortOrder: number; locationCount: number;
+  holdsContent: boolean; allowedContainerTypes: string[];
+}
 export interface ContainerType { code: string; name: string; codePrefix: string; defaultReusePolicy: string; active: boolean; containerCount: number }
 export interface ScanHit { kind: 'container' | 'location' | 'equipment' | 'material'; id: string; code: string; name: string | null }
 export type LabelFormat = '4x6' | 'a4-24';
@@ -570,9 +581,9 @@ export const api = {
     request<{ actions: Array<{ action: string; n: number }>; users: Array<{ id: string; fullName: string }> }>('GET', '/api/admin/audit/actions'),
 
   locationTypes: () => request<{ types: LocationType[] }>('GET', '/api/location-types'),
-  createLocationType: (data: { name: string; codePrefix: string }) =>
+  createLocationType: (data: { name: string; codePrefix: string; holdsContent?: boolean; allowedContainerTypes?: string[] }) =>
     request<{ type: LocationType }>('POST', '/api/location-types', data),
-  updateLocationType: (code: string, data: { name?: string; codePrefix?: string; active?: boolean }) =>
+  updateLocationType: (code: string, data: { name?: string; codePrefix?: string; active?: boolean; holdsContent?: boolean; allowedContainerTypes?: string[] }) =>
     request<{ recoded: number }>('PATCH', `/api/location-types/${code}`, data),
   updateContainerType: (code: string, data: { name?: string; codePrefix?: string; defaultReusePolicy?: string; active?: boolean }) =>
     request<{ recoded: number }>('PATCH', `/api/container-types/${code}`, data),
@@ -589,6 +600,7 @@ export const api = {
   createContainerType: (data: { code?: string; name: string; codePrefix: string; defaultReusePolicy: string }) =>
     request<{ type: ContainerType }>('POST', '/api/container-types', data),
 
+  boxLoose: (id: string, typeCode = 'CAJA') => request<{ containerId: string; code: string; lines: number }>('POST', `/api/locations/${id}/box-loose`, { typeCode }),
   deleteLocation: (id: string) => request<{ ok: true; code: string }>('DELETE', `/api/locations/${id}`),
   rootLocations: () => request<{ locations: LocationSummary[] }>('GET', '/api/locations'),
   location: (id: string) => request<LocationDetail>('GET', `/api/locations/${id}`),

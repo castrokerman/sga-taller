@@ -58,6 +58,11 @@ export function ContainerCard({ c, q = '' }: { c: ContainerSummary; q?: string }
       </span>
       <span className="item-meta">
         {c.projectCode && <span className="tag tag-project" title={c.projectName ?? ''}>🔒 {c.projectCode}</span>}
+        {(c.responsibleName || c.projectResponsibles) && (
+          <span className="tag tag-person" title={c.responsibleName ? 'Responsable del contenedor' : 'Responsables del proyecto'}>
+            👤 {c.responsibleName ?? c.projectResponsibles}
+          </span>
+        )}
         <span className="tag">{c.typeName}</span>
         <span>{c.childCount > 0 ? `${c.childCount} dentro` : ''}</span>
       </span>

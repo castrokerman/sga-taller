@@ -218,6 +218,7 @@ export function PendingReceive(props: { user: User; onBack: () => void }) {
         <h3>¿Dónde lo dejas de momento?</h3>
         <PlacePicker
           hint="Escanea la etiqueta de la ubicación, bandeja o caja donde lo dejas, o escribe su código."
+          scanOnly
           onPick={(p) => {
             setPlace(p);
             setPicking(false);
@@ -321,7 +322,7 @@ export function PendingReceive(props: { user: User; onBack: () => void }) {
 
       <div className="field">
         <span className="field-l">3. ¿Dónde lo dejas de momento?</span>
-        <PlaceSelect value={place} onChange={setPlace} />
+        <PlaceSelect value={place} onChange={setPlace} anyLocation />
         <div className="place-extra">
           {last && !place && (
             <button type="button" className="linkbtn" onClick={() => setPlace(last)}>
@@ -756,6 +757,7 @@ function CompleteForm(props: { user: User; item: Inbound; onDone: (message: stri
         <h3>¿Dónde se guarda?</h3>
         <PlacePicker
           hint="Escanea o escribe el sitio donde se va a guardar."
+          scanOnly
           onPick={(p) => {
             setDest(p);
             setElsewhere(true);

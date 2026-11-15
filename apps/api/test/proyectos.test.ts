@@ -69,6 +69,8 @@ beforeAll(async () => {
     `UPDATE location_type SET code_prefix = x.p FROM (VALUES ('PASILLO', 'P'), ('ESTANTERIA', 'E'), ('NIVEL', 'N'), ('POSICION', 'S')) AS x (c, p) WHERE code = x.c`,
   );
   await pool.query(`UPDATE app_user SET must_change_password = false`);
+  // Estas pruebas guardan contenido suelto en zonas: aquí la zona hace de contenedor.
+  await pool.query(`UPDATE location_type SET holds_content = true WHERE code = 'ZONA'`);
   [almacen, usuario, consulta, proyecto] = (await Promise.all(
     ['demo.almacen', 'demo.usuario', 'demo.consulta', 'demo.proyecto'].map(sessionOf),
   )) as [Cookie, Cookie, Cookie, Cookie];

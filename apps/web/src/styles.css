@@ -648,3 +648,7 @@ ul.replies > li { padding: 0.4rem 0; }
 .pre-card span { color: var(--ink-soft); font-size: 0.9rem; }
 .pre-card small { color: var(--ink-soft); }
 .pre-chosen { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.pchips.tight { margin-bottom: 0.2rem; gap: 0.25rem; }
+.pchips.tight .pchip { padding: 0.15rem 0.55rem; font-size: 0.85rem; }
+.move-pick { display: grid; gap: 0.3rem; max-height: 18rem; overflow: auto; margin: 0.4rem 0; }
+.tag-person { background: #eef7f0; color: #1d5130; border: 1px solid #bfdcc8; }

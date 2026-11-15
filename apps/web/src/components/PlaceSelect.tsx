@@ -7,6 +7,7 @@ interface Option {
   value: string;
   label: string;
   place: PickedPlace;
+  disabled?: boolean;
 }
 interface Group {
   label: string;
@@ -18,8 +19,24 @@ interface Group {
  * por zona, con sus ubicaciones activas en orden y, tras cada una, sus
  * contenedores. Sin espacios delante: el código ya dice dónde está cada cosa,
  * y así se lee bien una vez elegido.
+ *
+ * Para dejar contenido, las ubicaciones que solo alojan contenedores salen
+ * deshabilitadas: hay que elegir una caja de dentro. Con anyLocation (un
+ * paquete por recepcionar, por ejemplo) vale cualquiera.
  */
-export function PlaceSelect(props: { value: PickedPlace | null; onChange: (p: PickedPlace | null) => void; autoFocus?: boolean }) {
+export function PlaceSelect(props: {
+  value: PickedPlace | null;
+  onChange: (p: PickedPlace | null) => void;
+  autoFocus?: boolean;
+  anyLocation?: boolean;
+  /** Sitio donde ya está (sale deshabilitado). Si es un contenedor, tampoco salen los de dentro. */
+  exclude?: string | null;
+  /** Para mover un contenedor de este tipo: las ubicaciones que no lo admiten salen deshabilitadas. */
+  containerType?: string;
+  /** Para mover contenedores: tipo admitido sin filtrar y estos contenedores (con lo de dentro) no salen. */
+  moving?: boolean;
+  hide?: string[];
+}) {
   const [data, setData] = useState<{ locations: TreeLocation[]; containers: TreeContainer[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,15 +54,30 @@ export function PlaceSelect(props: { value: PickedPlace | null; onChange: (p: Pi
       contIn.set(k, [...(contIn.get(k) ?? []), c]);
     }
     const byCode = <T extends { code: string }>(a: T, b: T) => a.code.localeCompare(b.code, 'es', { numeric: true });
-    const locOption = (l: TreeLocation): Option => ({
-      value: `l:${l.id}`, label: `${l.code}${l.name ? ` · ${l.name}` : ''}`, place: { ref: { locationId: l.id }, code: l.code },
-    });
+    const locOption = (l: TreeLocation): Option => {
+      const ct = props.containerType;
+      const only = !props.moving && !ct && !props.anyLocation && !l.holdsContent;
+      const notAllowed = Boolean(ct && l.allowedContainerTypes.length > 0 && !l.allowedContainerTypes.includes(ct));
+      const here = l.id === props.exclude;
+      return {
+        value: `l:${l.id}`,
+        label: `${l.code}${l.name ? ` · ${l.name}` : ''}${here ? ' (aquí está ahora)' : only ? ' (solo contenedores)' : notAllowed ? ' (no admite este tipo)' : ''}`,
+        place: { ref: { locationId: l.id }, code: l.code },
+        disabled: only || notAllowed || here,
+      };
+    };
 
     const out: Group[] = [];
     for (const zone of (locKids.get(null) ?? []).sort(byCode)) {
       const options: Option[] = [];
       const addContainers = (key: string) => {
         for (const c of (contIn.get(key) ?? []).sort(byCode)) {
+          if (props.hide?.includes(c.id)) continue; // él mismo y lo de dentro
+          if (c.id === props.exclude) {
+            options.push({ value: `c:${c.id}`, label: `↳ ▣ ${c.code} (aquí está ahora)`, place: { ref: { containerId: c.id }, code: c.code }, disabled: true });
+            addContainers(`c:${c.id}`);
+            continue;
+          }
           options.push({
             value: `c:${c.id}`,
             label: `↳ ▣ ${c.code}${c.description ? ` · ${c.description}` : ''}`,
@@ -67,7 +99,7 @@ export function PlaceSelect(props: { value: PickedPlace | null; onChange: (p: Pi
       out.push({ label: `${zone.code}${zone.name ? ` · ${zone.name}` : ''}`, options });
     }
     return out;
-  }, [data]);
+  }, [data, props.anyLocation, props.exclude, props.containerType, props.moving, (props.hide ?? []).join()]);
 
   const current = props.value ? (props.value.ref.containerId ? `c:${props.value.ref.containerId}` : `l:${props.value.ref.locationId}`) : '';
 
@@ -84,7 +116,7 @@ export function PlaceSelect(props: { value: PickedPlace | null; onChange: (p: Pi
       {groups.map((g) => (
         <optgroup key={g.label} label={g.label}>
           {g.options.map((o) => (
-            <option key={o.value} value={o.value}>
+            <option key={o.value} value={o.value} disabled={o.disabled}>
               {o.label}
             </option>
           ))}

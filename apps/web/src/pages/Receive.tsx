@@ -121,6 +121,7 @@ export function ReceivePage({ user, initial }: { user: User; initial?: string })
           {scanning ? (
             <PlacePicker
               hint="Escanea la etiqueta de la caja, bandeja o ubicación, o escribe su código."
+              scanOnly
               onPick={(p) => { setScanning(false); choosePlace(p); }}
               onCancel={() => setScanning(false)}
             />

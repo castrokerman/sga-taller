@@ -295,7 +295,8 @@ export function inboundRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
           }
           const responsibleId: string = b.responsibleUserId ?? project!.responsibles[0]!;
           const responsible = await activeUser(c, responsibleId);
-          const place = await resolvePlace(c, b);
+          // Donde se deja el paquete de momento puede ser cualquier sitio: aún no es contenido registrado.
+          const place = await resolvePlace(c, b, { forContent: false });
           const r = await c.query(
             `INSERT INTO inbound_item (description, packages, external_reference, received_by, responsible_user_id, container_id, location_id, project_id)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, 'REC-' || lpad(number::text, 6, '0') AS code`,
@@ -408,7 +409,7 @@ export function inboundRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
           const perLine = m.unitTracked ? 1 : quantity;
           if (m.lotTracked && !m.unitTracked && !b.lotCode?.trim()) throw badRequest(`${m.description} exige indicar el lote`, 'FALTA_LOTE');
           const lotId = m.unitTracked ? null : await findOrCreateLot(c, m.id, b.lotCode);
-          const provisional: Place = await resolvePlace(c, { containerId: item.containerId, locationId: item.locationId })
+          const provisional: Place = await resolvePlace(c, { containerId: item.containerId, locationId: item.locationId }, { forContent: false })
             .catch(() => {
               throw conflict(`El sitio provisional ${item.placeCode} ya no admite contenido`, 'SITIO_NO_VALIDO');
             });
@@ -427,7 +428,12 @@ export function inboundRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
           let receiptId: string;
           let withdrawalId: string | null = null;
           if (b.disposition === 'STORE') {
-            final = b.containerId || b.locationId ? await resolvePlace(c, b) : provisional;
+            // Si se guarda donde está, ese sitio tiene que admitir contenido (una caja, un armario…).
+            final = b.containerId || b.locationId
+              ? await resolvePlace(c, b)
+              : await resolvePlace(c, { containerId: item.containerId, locationId: item.locationId }).catch((e: Error) => {
+                throw conflict(`${e.message}. Elige «En otro sitio» y la caja donde se guarda`, 'SOLO_CONTENEDORES');
+              });
             const mv = await createMovement(c, {
               type: 'RECEIPT', userId: request.user!.id, reason: `Recepción ${item.code}${extra ? ` · ${extra}` : ''}`,
             });

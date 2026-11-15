@@ -8,6 +8,8 @@ import { idempotent } from '../idempotency.js';
 import { incrementCode, incrementName } from '../warehouse/codes.js';
 import { CONTAINER_SELECT, LOCATION_SELECT, locationPath } from '../warehouse/queries.js';
 import { newQrToken } from '../warehouse/tokens.js';
+import { recordContainerMove } from '../warehouse/containers.js';
+import { applyLine, createMovement, deleteBalance, getMaterial } from '../inventory/stock.js';
 
 const CODE_PATTERN = '^[A-Z0-9][A-Z0-9-]{0,79}$';
 /** Parte propia del código: letras, números y guiones en medio. */
@@ -169,6 +171,16 @@ async function assertParent(db: pg.PoolClient, parentId: string | null | undefin
   if (!r.rows[0].active) throw conflict('La ubicación superior está desactivada', 'UBICACION_INACTIVA');
 }
 
+/** Qué tipos de contenedor admite un tipo de ubicación (vacío: cualquiera). */
+async function setAllowed(c: pg.PoolClient, locationTypeId: string, codes: string[]) {
+  const ids = await c.query(`SELECT id FROM container_type WHERE code = ANY($1)`, [codes]);
+  if (ids.rowCount !== codes.length) throw badRequest('Alguno de los tipos de contenedor no existe', 'TIPO_NO_EXISTE');
+  await c.query(`DELETE FROM location_type_container_type WHERE location_type_id = $1`, [locationTypeId]);
+  for (const r of ids.rows) {
+    await c.query(`INSERT INTO location_type_container_type (location_type_id, container_type_id) VALUES ($1, $2)`, [locationTypeId, r.id]);
+  }
+}
+
 export function locationRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
   const { pool } = deps;
 
@@ -176,6 +188,9 @@ export function locationRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
   app.get('/api/location-types', { preHandler: requirePermission('location.read') }, async () => {
     const r = await pool.query(
       `SELECT t.code, t.name, t.active, t.code_prefix AS "codePrefix", t.sort_order AS "sortOrder",
+              t.holds_content AS "holdsContent",
+              coalesce((SELECT array_agg(ct.code ORDER BY ct.name) FROM location_type_container_type x
+                          JOIN container_type ct ON ct.id = x.container_type_id WHERE x.location_type_id = t.id), '{}') AS "allowedContainerTypes",
               (SELECT count(*)::int FROM storage_location l WHERE l.location_type_id = t.id) AS "locationCount"
          FROM location_type t ORDER BY t.sort_order, t.name`,
     );
@@ -213,12 +228,14 @@ export function locationRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
             code: { type: 'string', pattern: TYPE_CODE_PATTERN },
             name: { type: 'string', minLength: 1, maxLength: 60 },
             codePrefix: { type: 'string', pattern: '^[A-Z]{1,6}$' },
+            holdsContent: { type: 'boolean' },
+            allowedContainerTypes: { type: 'array', maxItems: 100, uniqueItems: true, items: { type: 'string', maxLength: 30 } },
           },
         },
       },
     },
     async (request, reply) => {
-      const body = request.body as { code?: string; name: string; codePrefix: string };
+      const body = request.body as { code?: string; name: string; codePrefix: string; holdsContent?: boolean; allowedContainerTypes?: string[] };
       const code = body.code ?? typeCodeFrom(body.name);
       const exists = await pool.query(`SELECT code, code_prefix FROM location_type WHERE code = $1 OR code_prefix = $2`, [code, body.codePrefix]);
       if (exists.rowCount) {
@@ -227,7 +244,12 @@ export function locationRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
           'TIPO_DUPLICADO',
         );
       }
-      await pool.query(`INSERT INTO location_type (code, name, code_prefix) VALUES ($1, $2, $3)`, [code, body.name.trim(), body.codePrefix]);
+      await withTransaction(pool, async (c) => {
+        const r = await c.query(`INSERT INTO location_type (code, name, code_prefix, holds_content) VALUES ($1, $2, $3, $4) RETURNING id`, [
+          code, body.name.trim(), body.codePrefix, body.holdsContent ?? false,
+        ]);
+        if (body.allowedContainerTypes) await setAllowed(c, r.rows[0].id, body.allowedContainerTypes);
+      });
       await writeAudit(pool, {
         userId: request.user!.id, action: 'tipo_ubicacion.alta', entityType: 'location_type', entityId: code,
         after: { ...body, code }, ip: request.ip, requestId: request.id,
@@ -250,13 +272,15 @@ export function locationRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
             name: { type: 'string', minLength: 1, maxLength: 60 },
             codePrefix: { type: 'string', pattern: '^[A-Z]{1,6}$' },
             active: { type: 'boolean' },
+            holdsContent: { type: 'boolean' },
+            allowedContainerTypes: { type: 'array', maxItems: 100, uniqueItems: true, items: { type: 'string', maxLength: 30 } },
           },
         },
       },
     },
     async (request) => {
       const { code } = request.params as { code: string };
-      const body = request.body as { name?: string; codePrefix?: string; active?: boolean };
+      const body = request.body as { name?: string; codePrefix?: string; active?: boolean; holdsContent?: boolean; allowedContainerTypes?: string[] };
       return withTransaction(pool, async (c) => {
         const before = (await c.query(`SELECT id, name, code_prefix, active FROM location_type WHERE code = $1 FOR UPDATE`, [code])).rows[0];
         if (!before) throw notFound('El tipo de ubicación no existe');
@@ -272,9 +296,11 @@ export function locationRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
                SELECT count(*)::int AS n FROM down`, [before.id])).rows[0].n
           : 0;
         await c.query(
-          `UPDATE location_type SET name = coalesce($2, name), code_prefix = coalesce($3, code_prefix), active = coalesce($4, active) WHERE id = $1`,
-          [before.id, body.name?.trim() ?? null, body.codePrefix ?? null, body.active ?? null],
+          `UPDATE location_type SET name = coalesce($2, name), code_prefix = coalesce($3, code_prefix), active = coalesce($4, active),
+                  holds_content = coalesce($5, holds_content) WHERE id = $1`,
+          [before.id, body.name?.trim() ?? null, body.codePrefix ?? null, body.active ?? null, body.holdsContent ?? null],
         );
+        if (body.allowedContainerTypes) await setAllowed(c, before.id, body.allowedContainerTypes);
         await writeAudit(c, {
           userId: request.user!.id, action: 'tipo_ubicacion.modificacion', entityType: 'location_type', entityId: code,
           before: { name: before.name, codePrefix: before.code_prefix, active: before.active },
@@ -580,6 +606,75 @@ export function locationRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
       const body = request.body as Record<string, unknown>;
       const location = await withTransaction(pool, (c) => updateLocation(c, request, id, body));
       return location;
+    },
+  );
+
+  // ---- Meter lo suelto en una caja nueva ------------------------------------
+  // Para ubicaciones que solo alojan contenedores y tienen contenido suelto de
+  // antes: se crea una caja ahí y todo lo suelto pasa dentro (un traslado).
+  app.post(
+    '/api/locations/:id/box-loose',
+    {
+      preHandler: requirePermission('container.manage'),
+      schema: {
+        params: idParams,
+        body: { type: 'object', additionalProperties: false, properties: { typeCode: { type: 'string', maxLength: 30, default: 'CAJA' }, description: { type: 'string', maxLength: 300 } } },
+      },
+    },
+    async (request) => {
+      const { id } = request.params as { id: string };
+      const b = request.body as { typeCode: string; description?: string };
+      return withTransaction(pool, async (c) => {
+        const loc = (await c.query(`SELECT code, active FROM storage_location WHERE id = $1`, [id])).rows[0];
+        if (!loc) throw notFound('La ubicación no existe');
+        const lines = (await c.query(
+          `SELECT id, material_id, lot_id, quantity::float AS q FROM stock_balance WHERE location_id = $1 FOR UPDATE`,
+          [id],
+        )).rows as Array<{ id: string; material_id: string; lot_id: string | null; q: number | null }>;
+        if (!lines.length) throw badRequest('Aquí no hay nada suelto', 'NADA_SUELTO');
+        const t = (await c.query(
+          `SELECT id, code_prefix, next_number, default_reuse_policy FROM container_type WHERE code = $1 AND active FOR UPDATE`,
+          [b.typeCode],
+        )).rows[0];
+        if (!t) throw badRequest('El tipo de contenedor no existe', 'TIPO_NO_EXISTE');
+        const code = `${t.code_prefix}-${String(t.next_number).padStart(6, '0')}`;
+        const k = await c.query(
+          `INSERT INTO container (qr_token, code, container_type_id, location_id, reuse_policy, description)
+           VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+          [newQrToken(), code, t.id, id, t.default_reuse_policy, b.description?.trim() || `Lo que había suelto en ${loc.code}`],
+        );
+        const boxId = k.rows[0].id as string;
+        await c.query(`UPDATE container_type SET next_number = next_number + 1 WHERE id = $1`, [t.id]);
+        await recordContainerMove(c, {
+          userId: request.user!.id, containerId: boxId, fromLocationId: null, fromParentId: null,
+          toLocationId: id, toParentId: null, reason: 'Alta del contenedor para lo que había suelto',
+        });
+        const mv = await createMovement(c, { type: 'TRANSFER', userId: request.user!.id, reason: `Meter lo suelto de ${loc.code} en ${code}` });
+        let n = 1;
+        for (const l of lines) {
+          const m = await getMaterial(c, l.material_id);
+          await applyLine(c, mv, n++, { material: m, lotId: l.lot_id, containerId: null, locationId: id, delta: l.q === null ? null : -l.q, presence: false });
+          await applyLine(c, mv, n++, { material: m, lotId: l.lot_id, containerId: boxId, locationId: null, delta: l.q, presence: true });
+        }
+        // Se ha metido todo: lo que quede suelto (un estimado a cero) desaparece.
+        // Lo reservado para un proyecto pasa con el contenido a la caja.
+        for (const l of lines) {
+          if (!(await c.query(`SELECT 1 FROM stock_balance WHERE id = $1`, [l.id])).rowCount) continue;
+          await c.query(
+            `UPDATE stock_allocation SET stock_balance_id = nb.id
+               FROM stock_balance nb
+              WHERE stock_allocation.stock_balance_id = $1
+                AND nb.container_id = $2 AND nb.material_id = $3 AND nb.lot_id IS NOT DISTINCT FROM $4`,
+            [l.id, boxId, l.material_id, l.lot_id],
+          );
+          await deleteBalance(c, l.id);
+        }
+        await writeAudit(c, {
+          userId: request.user!.id, action: 'contenedor.alta', entityType: 'container', entityId: boxId,
+          after: { code, en: loc.code, lineas_metidas: lines.length }, ip: request.ip, requestId: request.id,
+        });
+        return { containerId: boxId, code, lines: lines.length };
+      });
     },
   );
 

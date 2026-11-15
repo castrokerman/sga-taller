@@ -6,7 +6,10 @@ export const LOCATION_SELECT = `
   SELECT l.id, l.code, l.segment, l.seq, l.location_type_id AS "typeId", t.code_prefix AS "typePrefix", l.name, l.description, l.parent_id AS "parentId", l.qr_token AS "qrToken",
          (SELECT p.code FROM storage_location p WHERE p.id = l.parent_id) AS "parentCode",
          (SELECT ph.id FROM photo ph WHERE ph.entity_type = 'location' AND ph.entity_id = l.id ORDER BY ph.position LIMIT 1) AS "photoId",
-         t.code AS "typeCode", t.name AS "typeName",
+         t.code AS "typeCode", t.name AS "typeName", t.holds_content AS "holdsContent",
+         coalesce((SELECT array_agg(ct.code ORDER BY ct.name) FROM location_type_container_type x
+                     JOIN container_type ct ON ct.id = x.container_type_id WHERE x.location_type_id = t.id), '{}') AS "allowedContainerTypes",
+         (SELECT count(*)::int FROM stock_balance b WHERE b.location_id = l.id) AS "looseLines",
          l.max_capacity::float AS "maxCapacity", l.allowed_hazard_classes AS "allowedHazardClasses",
          l.restrictions_note AS "restrictionsNote", l.active, l.created_at AS "createdAt",
          (SELECT count(*)::int FROM storage_location c WHERE c.parent_id = l.id AND c.active) AS "childCount",
@@ -21,6 +24,9 @@ export const CONTAINER_SELECT = `
          t.code AS "typeCode", t.name AS "typeName",
          c.created_at AS "createdAt", c.retired_at AS "retiredAt",
          c.project_id AS "projectId", pr.code AS "projectCode", pr.name AS "projectName",
+         (SELECT string_agg(u.full_name, ', ' ORDER BY m.position, u.full_name)
+            FROM project_member m JOIN app_user u ON u.id = m.user_id
+           WHERE m.project_id = c.project_id AND m.role = 'RESPONSIBLE' AND u.deleted_at IS NULL) AS "projectResponsibles",
          (SELECT ph.id FROM photo ph WHERE ph.entity_type = 'container' AND ph.entity_id = c.id ORDER BY ph.position LIMIT 1) AS "photoId",
          (SELECT count(*)::int FROM container k WHERE k.parent_container_id = c.id AND k.status = 'ACTIVE') AS "childCount"
     FROM container c

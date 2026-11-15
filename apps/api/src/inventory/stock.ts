@@ -46,7 +46,9 @@ export async function getMaterial(c: pg.PoolClient, id: string): Promise<Materia
 }
 
 /** Comprueba que el sitio existe y admite material: un contenedor activo o una ubicación activa. */
-export async function resolvePlace(c: pg.PoolClient, p: { containerId?: string | null; locationId?: string | null }): Promise<Place> {
+export async function resolvePlace(
+  c: pg.PoolClient, p: { containerId?: string | null; locationId?: string | null }, opts: { forContent?: boolean } = {},
+): Promise<Place> {
   if (Boolean(p.containerId) === Boolean(p.locationId)) {
     throw badRequest('Indica dónde: un contenedor o una ubicación', 'SITIO_NO_VALIDO');
   }
@@ -56,9 +58,20 @@ export async function resolvePlace(c: pg.PoolClient, p: { containerId?: string |
     if (r.rows[0].status !== 'ACTIVE') throw conflict('El contenedor está retirado', 'CONTENEDOR_RETIRADO');
     return { containerId: p.containerId, locationId: null, code: r.rows[0].code };
   }
-  const r = await c.query(`SELECT code, active FROM storage_location WHERE id = $1`, [p.locationId]);
+  const r = await c.query(
+    `SELECT l.code, l.active, t.holds_content, t.name AS type_name FROM storage_location l
+       JOIN location_type t ON t.id = l.location_type_id WHERE l.id = $1`,
+    [p.locationId],
+  );
   if (!r.rows[0]) throw badRequest('La ubicación no existe', 'UBICACION_NO_EXISTE');
   if (!r.rows[0].active) throw conflict('La ubicación está desactivada', 'UBICACION_INACTIVA');
+  // El contenido va siempre en un contenedor, salvo en las ubicaciones que hacen de contenedor (armarios, cajoneras…).
+  if ((opts.forContent ?? true) && !r.rows[0].holds_content) {
+    throw conflict(
+      `${r.rows[0].code} es ${String(r.rows[0].type_name).toLowerCase()} y solo aloja contenedores: mete el contenido en una caja o bandeja de ahí`,
+      'SOLO_CONTENEDORES',
+    );
+  }
   return { containerId: null, locationId: p.locationId!, code: r.rows[0].code };
 }
 
@@ -263,7 +276,7 @@ export async function applyLine(
   return after;
 }
 
-async function deleteBalance(c: pg.PoolClient, id: string) {
+export async function deleteBalance(c: pg.PoolClient, id: string) {
   const a = await c.query(`SELECT 1 FROM stock_allocation WHERE stock_balance_id = $1 AND quantity > 0 LIMIT 1`, [id]);
   if (a.rowCount) {
     throw conflict('Ese contenido tiene cantidad asignada a un proyecto y no puede vaciarse así', 'STOCK_ASIGNADO');

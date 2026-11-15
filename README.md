@@ -39,6 +39,11 @@ documentación técnica y calibración de equipos.
   de serie; si entran varias iguales, cada una se registra aparte.
 - Borrar usuarios conservando su historial.
 - Pre-recepciones: avisar de un pedido para que el almacén lo reconozca al recibirlo.
+- El contenido va siempre en un contenedor o en una ubicación que guarda contenido
+  (armario, cajonera, cajón); cada tipo de ubicación dice qué guarda y qué
+  contenedores admite. Lo suelto antiguo se mete en una caja nueva con un botón.
+- Mover varios contenedores a la vez y elegir cualquier destino en una lista
+  desplegable, sin saberse el código.
 - Inicio agrupado por bloques (Día a día, Inventario, Control, Administración);
   cada persona ve los suyos según sus permisos.
 - Contenidos (antes «Materiales») con tipos editables: Material, Herramienta,

@@ -38,7 +38,7 @@ no, empieza por [fase-1-instrucciones.md](fase-1-instrucciones.md).
 | **Almacén** | Recorrer el árbol de ubicaciones y ver qué contenedores hay en cada una | Todos |
 | **Ficha de contenedor** | Ver dónde está, qué lleva dentro y su historial | Todos |
 | **Escáner QR** | Escanear una etiqueta y abrir su ficha | Todos |
-| **Mover** | Cambiar un contenedor de sitio escaneando el destino | Todos menos consulta |
+| **Mover** | Cambiar uno o varios contenedores de sitio, eligiendo el destino en una lista o escaneándolo | Todos menos consulta |
 | **Etiquetas QR** | Descargar el PDF para imprimir | Todos menos consulta |
 | **Crear y editar** ubicaciones y contenedores | Montar y mantener el almacén | Responsable de almacén y administrador |
 | **Tipos** | Añadir tipos nuevos de ubicación y de contenedor | Administrador |
@@ -156,6 +156,31 @@ código, como al crear, no se puede cambiar.
 - Puedes pulsar «Duplicar» varias veces seguidas desde el original: cada vez
   propone el siguiente código libre.
 
+### Dónde va el contenido
+
+El contenido (materiales, herramientas, equipos, consumibles) está **siempre
+dentro de un contenedor**, salvo cuando está desplegado o prestado. Hay dos
+clases de ubicación, y cada tipo de ubicación dice a cuál pertenece en
+«Tipos», columna «Qué guarda»:
+
+- **Contenido directamente:** muebles que hacen de contenedor. Por defecto,
+  Armario, Cajonera y Cajón. Se puede registrar contenido en ellos sin caja.
+- **Solo contenedores:** zonas, pasillos, estanterías, niveles, posiciones.
+  Aquí se colocan palets, cajas y bandejas, y el contenido va dentro de ellos.
+  En la ficha pone «solo contenedores» y no sale «+ Entrada». En las listas
+  desplegables salen en gris con «(solo contenedores)».
+
+Cada tipo de ubicación puede limitar también **qué contenedores admite**
+(columna «Contenedores que admite»): por ejemplo, que en un nivel solo quepan
+cajas y bandejas, no palets. Sin ninguno marcado, admite cualquiera. Si se
+intenta poner uno que no admite, el sistema lo impide y dice cuáles sí.
+
+**Contenido que ya estaba suelto.** Si una ubicación pasa a «Solo
+contenedores» y tenía contenido suelto, su ficha lo avisa en amarillo con un
+botón «Meter todo en una caja nueva»: crea una caja allí mismo y mete dentro
+todo lo suelto, con lo reservado para proyectos incluido. Después imprime la
+etiqueta de la caja.
+
 ### Contenedores: lo que se mueve
 
 1. Entra en la ubicación donde está físicamente el contenedor y pulsa «Nuevo
@@ -202,6 +227,8 @@ el almacén anidado.
   su ubicación.
 - La búsqueda deja solo lo que coincide y el camino hasta ello, ya desplegado.
   Sirve para saber dónde está algo sin recorrer el almacén.
+- Junto a cada contenedor salen sus nubes: 🔒 el proyecto al que está
+  asignado y 👤 su responsable y los responsables del proyecto.
 - Pulsar una línea abre su ficha. La vista elegida se recuerda la próxima vez.
 - **Dentro de cada ubicación** también está el selector «Lista | Árbol»: el
   árbol muestra solo lo que cuelga de ella.
@@ -235,12 +262,22 @@ cambie de lugar o de contenido.
 
 ## 5. Escanear y mover
 
+En todos los pasos de «¿a dónde?» (mover, trasladar contenido, devolver un
+préstamo…) hay una lista desplegable con todo el almacén, así que no hace
+falta saberse el código. El escáner sigue debajo para quien prefiera la
+etiqueta.
+
 ### Con la cámara
 
 1. Pulsa «Escáner QR» y apunta a una etiqueta. Se abre la ficha de esa
    ubicación o contenedor.
-2. Para mover un contenedor: abre su ficha, pulsa «Mover» y escanea la etiqueta
-   del destino, que puede ser una ubicación u otro contenedor.
+2. Para mover un contenedor: abre su ficha, pulsa «Mover» y **elige el destino
+   en la lista desplegable** o escanea su etiqueta. Puede ser una ubicación u
+   otro contenedor. Las ubicaciones que no admiten ese tipo de contenedor salen
+   en gris.
+   Para mover **varios a la vez**, entra en la ubicación donde están, pulsa
+   «Mover» en la sección «Contenedores», marca cuáles (o «Todos») y elige el
+   destino.
 3. Revisa el mensaje («Mover PAL-000001 a la ubicación ALM-A-P01-E02») y pulsa
    «Confirmar».
 
@@ -366,6 +403,16 @@ Se abre a pantalla completa, como una aplicación más.
 - [ ] Filtrar contenedores escribiendo parte de una descripción y con un filtro
       por tipo; quitar los filtros con su aspa.
 - [ ] Pasar a la vista de árbol, desplegar todo y buscar el código de una caja.
+- [ ] En «Tipos», poner que los niveles solo admiten cajas y bandejas; intentar
+      crear un palet en un nivel (lo impide) y una caja (sí).
+- [ ] Intentar registrar contenido directamente en una estantería (no deja) y
+      en un armario (sí).
+- [ ] En una ubicación con contenido suelto antiguo, pulsar «Meter todo en una
+      caja nueva».
+- [ ] Mover varios contenedores a la vez desde su ubicación, eligiendo el
+      destino en la lista desplegable.
+- [ ] Asignar un palet a un proyecto y verlo en el árbol con sus nubes de
+      proyecto y responsables.
 - [ ] En el móvil, abrir `http://IP/movil` e instalar el certificado.
 
 ## 8. Si algo falla

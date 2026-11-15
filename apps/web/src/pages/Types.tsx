@@ -56,7 +56,10 @@ export function TypesPage() {
       <div className="page-head">
         <div>
           <h2>Tipos</h2>
-          <p className="muted nomargin">Ubicaciones, contenedores y contenidos: cada tipo tiene un prefijo con el que se codifica todo lo de ese tipo.</p>
+          <p className="muted nomargin">
+            Ubicaciones, contenedores y contenidos: cada tipo tiene un prefijo con el que se codifica todo lo de ese tipo. El contenido va
+            siempre en un contenedor o en una ubicación que guarde contenido directamente (un armario, una cajonera).
+          </p>
         </div>
       </div>
       {notice && <p className="alert alert-ok">{notice}</p>}
@@ -74,6 +77,8 @@ export function TypesPage() {
               <tr>
                 <th>Nombre</th>
                 <th>Prefijo</th>
+                <th>Qué guarda</th>
+                <th>Contenedores que admite</th>
                 <th className="num">Ubicaciones</th>
                 <th>Estado</th>
                 <th />
@@ -89,6 +94,9 @@ export function TypesPage() {
                     prefix={t.codePrefix}
                     active={t.active}
                     count={t.locationCount}
+                    holdsContent={t.holdsContent}
+                    allowed={t.allowedContainerTypes}
+                    containerTypes={containerTypes}
                     onCancel={() => setEditing(null)}
                     onSave={(v) =>
                       run(async () => {
@@ -103,6 +111,12 @@ export function TypesPage() {
                   <tr key={t.code} className={t.active ? undefined : 'row-off'}>
                     <td>{t.name}</td>
                     <td className="mono">{t.codePrefix}01</td>
+                    <td>{t.holdsContent ? <strong>Contenido directamente</strong> : 'Solo contenedores'}</td>
+                    <td>
+                      {t.allowedContainerTypes.length === 0
+                        ? <span className="muted">Cualquiera</span>
+                        : t.allowedContainerTypes.map((c) => containerTypes.find((x) => x.code === c)?.name ?? c).join(', ')}
+                    </td>
                     <td className="num">{t.locationCount}</td>
                     <td>{t.active ? <span className="badge badge-ok">Activo</span> : <span className="badge badge-off">Desactivado</span>}</td>
                     <td className="row-actions">
@@ -119,7 +133,7 @@ export function TypesPage() {
         <NewType
           kind="location"
           onCreate={(v) => run(async () => {
-            await api.createLocationType({ name: v.name, codePrefix: v.prefix });
+            await api.createLocationType({ name: v.name, codePrefix: v.prefix, holdsContent: v.holdsContent });
             return `Tipo de ubicación creado: ${v.name} (${v.prefix}01, ${v.prefix}02…)`;
           })}
         />
@@ -267,7 +281,7 @@ export function TypesPage() {
 
 type TypeValues = {
   name: string; codePrefix: string; active: boolean; defaultReusePolicy?: string; defaultTracking?: Tracking; defaultLoanable?: boolean;
-  unitTracked?: boolean;
+  unitTracked?: boolean; holdsContent?: boolean; allowedContainerTypes?: string[];
 };
 type Kind = 'location' | 'container' | 'content';
 
@@ -279,6 +293,9 @@ function TypeEditRow(props: {
   tracking?: Tracking;
   loanable?: boolean;
   unitTracked?: boolean;
+  holdsContent?: boolean;
+  allowed?: string[];
+  containerTypes?: ContainerType[];
   active: boolean;
   count: number;
   onCancel: () => void;
@@ -290,6 +307,8 @@ function TypeEditRow(props: {
   const [tracking, setTracking] = useState<Tracking>(props.tracking ?? 'EXACT');
   const [loanable, setLoanable] = useState(props.loanable ?? false);
   const [unitTracked, setUnitTracked] = useState(props.unitTracked ?? false);
+  const [holds, setHolds] = useState(props.holdsContent ?? false);
+  const [allowed, setAllowed] = useState<string[]>(props.allowed ?? []);
   const [active, setActive] = useState(props.active);
   const [busy, setBusy] = useState(false);
   const max = props.kind === 'location' ? 6 : 5;
@@ -307,6 +326,7 @@ function TypeEditRow(props: {
       name: name.trim(), codePrefix: prefix, active,
       ...(props.kind === 'container' ? { defaultReusePolicy: policy } : {}),
       ...(props.kind === 'content' ? { defaultTracking: tracking, defaultLoanable: loanable, unitTracked } : {}),
+      ...(props.kind === 'location' ? { holdsContent: holds, allowedContainerTypes: allowed } : {}),
     });
     setBusy(false);
   };
@@ -320,6 +340,31 @@ function TypeEditRow(props: {
         <input className="mono prefix-input" value={prefix} onChange={(e) => setPrefix(letters(e.target.value, max))} aria-label="Prefijo" />
         {changedPrefix && props.count > 0 && <div className="small low">Recodificará {props.count} {noun}</div>}
       </td>
+      {props.kind === 'location' && (
+        <>
+          <td>
+            <select value={holds ? 'yes' : 'no'} onChange={(e) => setHolds(e.target.value === 'yes')} aria-label="Qué guarda">
+              <option value="no">Solo contenedores</option>
+              <option value="yes">Contenido directamente</option>
+            </select>
+          </td>
+          <td>
+            <div className="pchips tight">
+              {(props.containerTypes ?? []).filter((c) => c.active || allowed.includes(c.code)).map((c) => (
+                <button
+                  type="button"
+                  key={c.code}
+                  className={`pchip ${allowed.includes(c.code) ? 'on' : ''}`}
+                  onClick={() => setAllowed(allowed.includes(c.code) ? allowed.filter((x) => x !== c.code) : [...allowed, c.code])}
+                >
+                  {c.name}
+                </button>
+              ))}
+            </div>
+            <small className="muted">{allowed.length ? 'Solo los marcados' : 'Ninguno marcado: admite cualquiera'}</small>
+          </td>
+        </>
+      )}
       {props.kind === 'container' && (
         <td>
           <select value={policy} onChange={(e) => setPolicy(e.target.value)} aria-label="Política por defecto">
@@ -370,7 +415,7 @@ function TypeEditRow(props: {
 
 function NewType(props: {
   kind: Kind;
-  onCreate: (v: { name: string; prefix: string; policy?: string; tracking?: Tracking; loanable?: boolean; unitTracked?: boolean }) => Promise<boolean>;
+  onCreate: (v: { name: string; prefix: string; policy?: string; tracking?: Tracking; loanable?: boolean; unitTracked?: boolean; holdsContent?: boolean }) => Promise<boolean>;
 }) {
   const [name, setName] = useState('');
   const [prefix, setPrefix] = useState('');
@@ -378,11 +423,12 @@ function NewType(props: {
   const [tracking, setTracking] = useState<Tracking>('EXACT');
   const [loanable, setLoanable] = useState(false);
   const [unitTracked, setUnitTracked] = useState(false);
+  const [holdsContent, setHoldsContent] = useState(false);
   const max = props.kind === 'location' ? 6 : 5;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (await props.onCreate({ name: name.trim(), prefix, policy, tracking, loanable, unitTracked })) {
+    if (await props.onCreate({ name: name.trim(), prefix, policy, tracking, loanable, unitTracked, holdsContent })) {
       setName('');
       setPrefix('');
     }
@@ -414,6 +460,15 @@ function NewType(props: {
                 : `De 2 a 5 letras, distinto de los de contenedor. Con REP, serán REP-000001, REP-000002…`}
           </small>
         </label>
+        {props.kind === 'location' && (
+          <label className="field">
+            <span>Qué guarda</span>
+            <select value={holdsContent ? 'yes' : 'no'} onChange={(e) => setHoldsContent(e.target.value === 'yes')}>
+              <option value="no">Solo contenedores (estanterías, niveles, zonas…)</option>
+              <option value="yes">Contenido directamente (armarios, cajoneras…)</option>
+            </select>
+          </label>
+        )}
         {props.kind === 'container' && (
           <label className="field">
             <span>Política por defecto</span>

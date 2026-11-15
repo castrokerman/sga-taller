@@ -8,6 +8,7 @@ import { LabelPanel } from './Common';
 import { navigate } from '../router';
 import { normalize } from './ListControls';
 import { Scanner } from './Scanner';
+import { PlaceSelect } from './PlaceSelect';
 
 /**
  * Material de un sitio (contenedor o ubicación) y todas las operaciones de
@@ -43,7 +44,14 @@ export function StockKind({ line }: { line: Pick<StockLine, 'allocations' | 'qua
   );
 }
 
-export function StockSection(props: { user: User; place: PlaceRef; placeCode: string; active: boolean; onChanged?: () => void }) {
+export function StockSection(props: {
+  user: User; place: PlaceRef; placeCode: string; active: boolean; onChanged?: () => void;
+  /** false: ubicación que solo aloja contenedores (no admite contenido suelto). */
+  holdsContent?: boolean;
+}) {
+  const holds = props.holdsContent ?? true;
+  const [boxing, setBoxing] = useState(false);
+  const [boxNotice, setBoxNotice] = useState<string | null>(null);
   const { user, place } = props;
   const [lines, setLines] = useState<StockLine[] | null>(null);
   const [op, setOp] = useState<Op | null>(null);
@@ -93,7 +101,7 @@ export function StockSection(props: { user: User; place: PlaceRef; placeCode: st
                 Retirar
               </button>
             )}
-            {can(user, 'stock.receive') && (
+            {can(user, 'stock.receive') && holds && (
               <button className="btn" onClick={() => start({ kind: 'receipt' })}>
                 + Entrada
               </button>
@@ -104,6 +112,38 @@ export function StockSection(props: { user: User; place: PlaceRef; placeCode: st
 
       {notice && <OpNotice r={notice} />}
       {error && <p className="alert alert-error">{error}</p>}
+      {!holds && lines && lines.length > 0 && props.place.locationId && (
+        <div className="alert alert-warn">
+          <p className="nomargin">
+            Aquí solo van contenedores, pero hay {lines.length === 1 ? 'una línea de contenido suelta' : `${lines.length} líneas de contenido sueltas`}.
+            El contenido tiene que estar dentro de una caja, una bandeja o una ubicación que guarde contenido.
+          </p>
+          {can(user, 'container.manage') && props.active && (
+            <button
+              className="btn btn-small"
+              disabled={boxing}
+              onClick={async () => {
+                setBoxing(true);
+                setError(null);
+                try {
+                  const r = await api.boxLoose(props.place.locationId!);
+                  setNotice(null);
+                  await load();
+                  props.onChanged?.();
+                  setBoxNotice(`Metido en la caja nueva ${r.code} (${r.lines} línea${r.lines === 1 ? '' : 's'}). Imprime su etiqueta desde la caja.`);
+                } catch (e) {
+                  setError(errorMessage(e));
+                } finally {
+                  setBoxing(false);
+                }
+              }}
+            >
+              {boxing ? 'Metiendo…' : 'Meter todo en una caja nueva'}
+            </button>
+          )}
+        </div>
+      )}
+      {boxNotice && <p className="alert alert-ok">{boxNotice}</p>}
 
       {op && (
         <OpPanel
@@ -120,7 +160,11 @@ export function StockSection(props: { user: User; place: PlaceRef; placeCode: st
       {lines === null ? (
         <p className="muted">Cargando…</p>
       ) : lines.length === 0 ? (
-        <p className="muted">No hay contenido registrado aquí.</p>
+        <p className="muted">
+          {holds
+            ? 'No hay contenido registrado aquí.'
+            : 'Aquí solo van contenedores: el contenido se mete en una caja o bandeja de esta ubicación.'}
+        </p>
       ) : (
         <div className="table-wrap card">
           <table className="stock-table">
@@ -565,7 +609,12 @@ export function MaterialPicker(props: { user: User; onPick: (m: Material) => voi
 }
 
 /** Elegir un sitio escaneando su QR o tecleando su código. */
-export function PlacePicker(props: { hint: string; exclude?: string | null; onPick: (p: { ref: PlaceRef; code: string }) => void; onCancel: () => void }) {
+export function PlacePicker(props: {
+  hint: string; exclude?: string | null; onPick: (p: { ref: PlaceRef; code: string }) => void; onCancel: () => void;
+  /** Solo escáner: cuando la pantalla ya tiene su propia lista al lado. */
+  scanOnly?: boolean;
+  anyLocation?: boolean;
+}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const onCode = async (code: string) => {
@@ -585,6 +634,13 @@ export function PlacePicker(props: { hint: string; exclude?: string | null; onPi
   };
   return (
     <>
+      {!props.scanOnly && (
+        <div className="field">
+          <span className="field-l">Elige el sitio de la lista</span>
+          <PlaceSelect value={null} exclude={props.exclude} anyLocation={props.anyLocation} onChange={(p) => p && props.onPick(p)} />
+          <small className="muted">O escanea su etiqueta:</small>
+        </div>
+      )}
       <Scanner onCode={onCode} busy={busy} hint={props.hint} />
       {error && <p className="alert alert-error">{error}</p>}
       <div className="actions">

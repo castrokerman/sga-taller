@@ -3,6 +3,7 @@ import { api, ApiError, errorMessage, formatDateTime, newOperationKey, type Cont
 import { Breadcrumbs, ContainerCard, containerListConfig, LabelPanel } from '../components/Common';
 import { useListControls } from '../components/ListControls';
 import { Scanner } from '../components/Scanner';
+import { MoveContainersPanel } from '../components/MoveContainers';
 import { StockSection } from '../components/Stock';
 import { ItemExtras } from '../components/ItemExtras';
 import { BulkContainers, ContainerForm } from './Warehouse';
@@ -248,90 +249,13 @@ export function ContainerPage({ user, containerId }: { user: User; containerId: 
 /** Mover: se escanea (o se teclea) el destino y se confirma. */
 function MovePanel(props: { detail: ContainerDetail; onCancel: () => void; onDone: (text: string) => void }) {
   const c = props.detail.container;
-  const [dest, setDest] = useState<ScanHit | null>(null);
-  const [key, setKey] = useState(newOperationKey);
-  const [error, setError] = useState<string | null>(null);
-  const [warning, setWarning] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const onCode = async (code: string) => {
-    if (busy || dest) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const hit = await api.scan(code);
-      if (hit.kind === 'equipment') setError('Un equipo no puede ser destino de un contenedor');
-      else if (hit.id === c.id) setError('Has escaneado el propio contenedor. Escanea el sitio de destino');
-      else {
-        setDest(hit);
-        setKey(newOperationKey());
-        setWarning(null);
-      }
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const confirm = async (force: boolean) => {
-    if (!dest) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const r = await api.moveContainer(
-        c.id,
-        { ...(dest.kind === 'location' ? { toLocationId: dest.id } : { toParentContainerId: dest.id }), force },
-        key,
-      );
-      const extra = r.descendantsMoved > 0 ? `, con ${r.descendantsMoved} contenedor${r.descendantsMoved > 1 ? 'es' : ''} dentro` : '';
-      props.onDone(`${c.code} movido a ${r.destination}${extra}`);
-    } catch (e) {
-      if (e instanceof ApiError && e.code === 'CAPACIDAD_SUPERADA') {
-        setWarning(e.message);
-        setKey(newOperationKey());
-      } else {
-        setError(errorMessage(e));
-      }
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
-    <div className="card form">
-      <h3>Mover {c.code}</h3>
-      {!dest ? (
-        <>
-          <Scanner onCode={onCode} busy={busy} hint="Escanea el QR del sitio de destino: una ubicación u otro contenedor." />
-          {error && <p className="alert alert-error">{error}</p>}
-          <div className="actions">
-            <button className="btn" onClick={props.onCancel}>
-              Cancelar
-            </button>
-          </div>
-        </>
-      ) : (
-        <>
-          <p className="confirm">
-            Mover <strong>{c.code}</strong> {dest.kind === 'location' ? 'a la ubicación' : 'dentro del contenedor'}{' '}
-            <strong>{dest.code}</strong>
-            {dest.name ? ` (${dest.name})` : ''}
-            {props.detail.children.length > 0 && ', con todo lo que lleva dentro'}.
-          </p>
-          {warning && <p className="alert alert-warn">{warning}. Puedes moverlo de todos modos.</p>}
-          {error && <p className="alert alert-error">{error}</p>}
-          <div className="actions">
-            <button className="btn" onClick={() => { setDest(null); setError(null); setWarning(null); }} disabled={busy}>
-              Otro destino
-            </button>
-            <button className="btn btn-primary btn-big-inline" onClick={() => confirm(Boolean(warning))} disabled={busy}>
-              {busy ? 'Moviendo…' : warning ? 'Mover de todos modos' : 'Confirmar'}
-            </button>
-          </div>
-        </>
-      )}
-    </div>
+    <MoveContainersPanel
+      containers={[{ id: c.id, code: c.code, typeCode: c.typeCode, hasInside: props.detail.children.length > 0 }]}
+      from={c.parentContainerId ?? c.locationId}
+      onCancel={props.onCancel}
+      onDone={props.onDone}
+    />
   );
 }
 

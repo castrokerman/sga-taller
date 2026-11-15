@@ -63,6 +63,8 @@ beforeAll(async () => {
     `UPDATE location_type SET code_prefix = x.p FROM (VALUES ('PASILLO', 'P'), ('ESTANTERIA', 'E'), ('NIVEL', 'N'), ('POSICION', 'S')) AS x (c, p) WHERE code = x.c`,
   );
   await pool.query(`UPDATE app_user SET must_change_password = false`);
+  // Estas pruebas guardan contenido suelto en zonas: aquí la zona hace de contenedor.
+  await pool.query(`UPDATE location_type SET holds_content = true WHERE code = 'ZONA'`);
   [almacen, usuario] = await Promise.all([sessionOf('demo.almacen'), sessionOf('demo.usuario')]);
 });
 
@@ -369,5 +371,62 @@ describe('auditoría', () => {
     const busq = (await call('GET', '/api/admin/audit?q=MULTI-E10', almacen)).json().entries;
     expect(busq.length).toBeGreaterThan(0);
     expect((await call('GET', '/api/admin/audit', usuario)).statusCode).toBe(403);
+  });
+});
+
+describe('el contenido va siempre en un contenedor', () => {
+  let admin: Cookie;
+  beforeAll(async () => {
+    const res = await app.inject({
+      method: 'POST', url: '/api/auth/login', headers: { 'x-sga-client': 'web' },
+      payload: { username: 'admin', password: config.adminPassword },
+    });
+    admin = { sga_session: res.cookies.find((c) => c.name === 'sga_session')!.value };
+  });
+  it('solo los muebles (armario, cajonera, cajón) guardan contenido directamente', async () => {
+    const types = (await call('GET', '/api/location-types', almacen)).json().types;
+    expect(types.filter((t: { holdsContent: boolean }) => t.holdsContent).map((t: { code: string }) => t.code).sort()).toEqual(['ARMARIO', 'CAJON', 'CAJONERA', 'ZONA']);
+    const z = await loc('CONT', 'ZONA');
+    const est = await loc('E1', 'ESTANTERIA', z.id);
+    const arm = await loc('A1', 'ARMARIO', z.id);
+    const fam = (await call('GET', '/api/material-families', almacen)).json().families[0].id;
+    const mat = (await call('POST', '/api/materials', almacen, { description: 'FICTICIO Arandela', familyId: fam, unitCode: 'ud' })).json().material.id;
+    const no = await call('POST', '/api/stock/receipt', almacen, { materialId: mat, locationId: est.id, quantity: 5 });
+    expect(no.statusCode).toBe(409);
+    expect(no.json().error.code).toBe('SOLO_CONTENEDORES');
+    expect(no.json().error.message).toContain('solo aloja contenedores');
+    expect((await call('POST', '/api/stock/receipt', almacen, { materialId: mat, locationId: arm.id, quantity: 5 })).statusCode).toBe(201);
+    // Se puede cambiar en Tipos.
+    expect((await call('PATCH', '/api/location-types/ESTANTERIA', admin, { holdsContent: true })).statusCode).toBe(200);
+    expect((await call('POST', '/api/stock/receipt', almacen, { materialId: mat, locationId: est.id, quantity: 2 })).statusCode).toBe(201);
+    // Un estimado también: al meterlo en la caja no deja una línea a cero suelta.
+    const est2 = (await call('POST', '/api/materials', almacen, { description: 'FICTICIO Bridas', familyId: fam, unitCode: 'ud', quantityTracking: 'ESTIMATED' })).json().material.id;
+    expect((await call('POST', '/api/stock/receipt', almacen, { materialId: est2, locationId: est.id, quantity: 50 })).statusCode).toBe(201);
+    await call('PATCH', '/api/location-types/ESTANTERIA', admin, { holdsContent: false });
+    // Lo que quedó suelto se avisa y se mete en una caja nueva con un botón.
+    const d = (await call('GET', `/api/locations/${est.id}`, almacen)).json().location;
+    expect(d).toMatchObject({ holdsContent: false, looseLines: 2 });
+    const box = await call('POST', `/api/locations/${est.id}/box-loose`, almacen, {});
+    expect(box.statusCode, box.body).toBe(200);
+    expect(box.json().code).toMatch(/^CAJ-/);
+    const inBox = (await pool.query(`SELECT quantity::float AS q FROM stock_balance WHERE container_id = $1 ORDER BY quantity`, [box.json().containerId])).rows;
+    expect(inBox).toEqual([{ q: 2 }, { q: 50 }]);
+    expect((await call('GET', `/api/locations/${est.id}`, almacen)).json().location.looseLines).toBe(0);
+  });
+
+  it('cada tipo de ubicación puede limitar qué contenedores admite', async () => {
+    const z = await loc('PALETS', 'ZONA');
+    const ok = await call('PATCH', '/api/location-types/AREA', admin, { allowedContainerTypes: ['PALET'] });
+    expect(ok.statusCode, ok.body).toBe(200);
+    const area = await loc('AR1', 'AREA', z.id);
+    const caja = await call('POST', '/api/containers', almacen, { typeCode: 'CAJA', locationId: area.id });
+    expect(caja.statusCode).toBe(409);
+    expect(caja.json().error.message).toContain('no caben contenedores de tipo Caja');
+    expect((await call('POST', '/api/containers', almacen, { typeCode: 'PALET', locationId: area.id })).statusCode).toBe(201);
+    // Mover una caja ahí tampoco se deja.
+    const otra = (await call('POST', '/api/containers', almacen, { typeCode: 'CAJA', locationId: z.id })).json().containers[0].id;
+    expect((await call('POST', `/api/containers/${otra}/move`, almacen, { toLocationId: area.id })).statusCode).toBe(409);
+    expect((await call('GET', '/api/location-types', almacen)).json().types.find((t: { code: string }) => t.code === 'AREA').allowedContainerTypes).toEqual(['PALET']);
+    await call('PATCH', '/api/location-types/AREA', admin, { allowedContainerTypes: [] });
   });
 });
