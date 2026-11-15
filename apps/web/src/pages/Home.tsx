@@ -106,7 +106,7 @@ export function HomePage({ user }: { user: User }) {
                   {t.title}
                   {t.path === 'recepciones' && pendingCount > 0 && <b className="tile-count">{pendingCount}</b>}
                 </strong>
-                <span>{t.text}</span>
+                <span>{t.path === 'prestamos' && !can('loan.read_all') ? 'Lo que tienes prestado' : t.text}</span>
               </a>
             ))}
           </div>

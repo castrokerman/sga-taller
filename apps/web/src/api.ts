@@ -577,7 +577,7 @@ export const api = {
     request<OpResult>('POST', '/api/stock/count', data, key),
   reverse: (movementId: string, reason: string, key: string) =>
     request<OpResult>('POST', `/api/stock/movements/${movementId}/reverse`, { reason }, key),
-  loans: (all = false) => request<{ loans: Loan[] }>('GET', `/api/loans?all=${all}`),
+  loans: (all = false) => request<{ loans: Loan[]; everyone: boolean }>('GET', `/api/loans?all=${all}`),
   lend: (data: { balanceId: string; quantity?: number; dueDate?: string; borrowerId?: string; notes?: string }, key: string) =>
     request<OpResult>('POST', '/api/loans', data, key),
   returnLoan: (id: string, data: PlaceRef & { notes?: string }, key: string) =>

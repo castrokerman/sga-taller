@@ -343,11 +343,14 @@ export function stockRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
     },
     async (request) => {
       const { all } = request.query as { all: boolean };
+      // Cada uno ve sus préstamos; solo los responsables de almacén ven los de todos.
+      const everyone = request.user!.permissions.includes('loan.read_all');
       const r = await pool.query(
-        `${LOAN_SELECT} WHERE ($1 OR t.status = 'OPEN') ORDER BY (t.status = 'OPEN') DESC, t.due_at LIMIT 1000`,
-        [all],
+        `${LOAN_SELECT} WHERE ($1 OR t.status = 'OPEN') AND ($2 OR t.borrower_id = $3)
+          ORDER BY (t.status = 'OPEN') DESC, t.due_at LIMIT 1000`,
+        [all, everyone, request.user!.id],
       );
-      return { loans: r.rows };
+      return { loans: r.rows, everyone };
     },
   );
 

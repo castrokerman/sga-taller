@@ -54,7 +54,7 @@ Para el inventario, estos son los accesos principales:
 | --- | --- |
 | **Contenidos** | El catálogo: qué hay (materiales, herramientas, equipos, consumibles…), cuánto en total y dónde. |
 | **Movimientos** | Todo lo que ha entrado, salido o cambiado de sitio, con quién y cuándo. |
-| **Préstamos** | Las herramientas prestadas, a quién y hasta qué día. |
+| **Préstamos** | Las herramientas prestadas y hasta qué día: cada uno ve las suyas; los responsables de almacén, todas. |
 
 Y en la ficha de cada **contenedor** y de cada **ubicación** hay una sección
 nueva, **«Contenido»**, con lo que hay dentro y los botones para operar.
@@ -241,8 +241,10 @@ En una herramienta marcada como prestable, **«Prestar»**. Por defecto se
 presta a quien lo pide, y la fecha de devolución es **dentro de 14 días** si
 no se indica otra. Un responsable puede prestar a otra persona.
 
-En **«Préstamos»** se ven las abiertas; las que están fuera de plazo salen
-en rojo. Para devolver: **«Devolver a…»** la deja en el sitio del que salió,
+En **«Préstamos»** se ven los abiertos; los que están fuera de plazo salen
+en rojo. Cada persona ve **solo sus préstamos** («Tus préstamos»); los
+**responsables de almacén** ven los de todos y pueden devolver en nombre de
+otro. Para devolver: **«Devolver a…»** la deja en el sitio del que salió,
 y **«A otro sitio»** permite escanear un sitio distinto.
 
 ## 5. Fotos y anotaciones

@@ -354,9 +354,18 @@ describe('préstamos de herramientas', () => {
   });
 
   it('al devolver vuelve a su sitio y el préstamo se cierra', async () => {
-    const loans = ok<{ loans: Array<{ id: string; materialId: string; borrowerName: string }> }>(await call('GET', '/api/loans', usuario));
-    const mine = loans.loans.find((l) => l.materialId === taladro.id && l.borrowerName === 'FICTICIO Usuario Estándar')!;
-    const other = loans.loans.find((l) => l.materialId === taladro.id && l.borrowerName !== 'FICTICIO Usuario Estándar')!;
+    type L = { loans: Array<{ id: string; materialId: string; borrowerName: string }>; everyone: boolean };
+    // El usuario solo ve los suyos; el responsable de almacén ve todos.
+    const own = ok<L>(await call('GET', '/api/loans', usuario));
+    expect(own.everyone).toBe(false);
+    expect(new Set(own.loans.map((l) => l.borrowerName))).toEqual(new Set(['FICTICIO Usuario Estándar']));
+    const all = ok<L>(await call('GET', '/api/loans', almacen));
+    expect(all.everyone).toBe(true);
+    expect(all.loans.some((l) => l.borrowerName !== 'FICTICIO Usuario Estándar')).toBe(true);
+    // Un administrador sin el rol de almacén ve solo los suyos.
+    expect(ok<L>(await call('GET', '/api/loans', admin)).everyone).toBe(false);
+    const mine = own.loans.find((l) => l.materialId === taladro.id)!;
+    const other = all.loans.find((l) => l.materialId === taladro.id && l.borrowerName !== 'FICTICIO Usuario Estándar')!;
     expect((await call('POST', `/api/loans/${other.id}/return`, usuario, {})).statusCode).toBe(403);
     ok(await call('POST', `/api/loans/${mine.id}/return`, usuario, {}));
     expect((await balanceOf(taladro.id, caja2))!.q).toBe(1);

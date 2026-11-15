@@ -6,6 +6,7 @@ import { OpNotice, PlacePicker } from '../components/Stock';
 export function LoansPage({ user }: { user: User }) {
   const [loans, setLoans] = useState<Loan[] | null>(null);
   const [all, setAll] = useState(false);
+  const [everyone, setEveryone] = useState(true);
   const [returning, setReturning] = useState<Loan | null>(null);
   const [notice, setNotice] = useState<OpResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -13,7 +14,9 @@ export function LoansPage({ user }: { user: User }) {
 
   const load = async (withClosed = all) => {
     try {
-      setLoans((await api.loans(withClosed)).loans);
+      const r = await api.loans(withClosed);
+      setLoans(r.loans);
+      setEveryone(r.everyone);
     } catch (e) {
       setError(errorMessage(e));
     }
@@ -45,13 +48,14 @@ export function LoansPage({ user }: { user: User }) {
         <a href="#/inicio">Inicio</a>
         <span>
           <i>›</i>
-          <strong>Préstamos</strong>
+          <strong>{everyone ? 'Préstamos' : 'Tus préstamos'}</strong>
         </span>
       </nav>
       <div className="page-head">
         <div>
-          <h2>Préstamos de herramientas</h2>
+          <h2>{everyone ? 'Préstamos de herramientas' : 'Tus préstamos'}</h2>
           <p className="muted nomargin">
+            {everyone ? '' : 'Lo que tienes prestado tú: '}
             {open.length} prestado{open.length === 1 ? '' : 's'}
             {overdue > 0 && <span className="over"> · {overdue} fuera de plazo</span>}. Para prestar algo, ve a su sitio o a su ficha y pulsa «Prestar».
           </p>
@@ -86,7 +90,7 @@ export function LoansPage({ user }: { user: User }) {
             <thead>
               <tr>
                 <th>Herramienta</th>
-                <th>Quién</th>
+                {everyone && <th>Quién</th>}
                 <th>Devolver el</th>
                 <th />
               </tr>
@@ -102,7 +106,7 @@ export function LoansPage({ user }: { user: User }) {
                       {formatQty(l.quantity, l.unitCode)} · salió de {l.fromCode ?? '—'} el {formatDate(l.loanedAt)}
                     </div>
                   </td>
-                  <td>{l.borrowerName}</td>
+                  {everyone && <td>{l.borrowerName}</td>}
                   <td className={`nowrap ${l.overdue ? 'over' : ''}`}>
                     {l.status === 'OPEN' ? (
                       <>
