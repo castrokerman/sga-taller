@@ -173,6 +173,9 @@ export interface ContainerSummary {
   projectName: string | null;
   /** Responsables del proyecto, separados por comas. */
   projectResponsibles: string | null;
+  /** La foto más reciente de lo que lleva dentro, y cuándo se hizo. */
+  contentsPhotoId: string | null;
+  contentsPhotoAt: string | null;
   /** Qué lleva dentro, en texto libre. */
   contentDescription: string | null;
 }
@@ -394,6 +397,8 @@ export interface OpResult {
   emptyDisposable?: string | null;
   /** Herramientas y equipos: las unidades que han entrado, cada una con su código. */
   units?: UnitRef[];
+  /** Contenedores cuyo contenido ha cambiado con esta operación. */
+  containers?: Array<{ id: string; code: string }>;
 }
 export interface UnitRef { id: string; internalRef: string }
 
@@ -415,7 +420,10 @@ export interface Photo {
   uploadedAt: string;
   uploadedById: string;
   uploadedBy: string;
+  /** GENERAL: foto de la cosa en sí. CONTENTS: lo que lleva dentro un contenedor. */
+  purpose: PhotoPurpose;
 }
+export type PhotoPurpose = 'GENERAL' | 'CONTENTS';
 
 export interface Note {
   id: string;
@@ -684,7 +692,7 @@ export const api = {
 
   photos: (entityType: EntityType | 'inbound', entityId: string) =>
     request<{ photos: Photo[] }>('GET', `/api/photos?entityType=${entityType}&entityId=${entityId}`),
-  addPhoto: (data: { entityType: EntityType; entityId: string; image: string; thumbnail: string; width: number; height: number }, key: string) =>
+  addPhoto: (data: { entityType: EntityType; entityId: string; image: string; thumbnail: string; width: number; height: number; purpose?: PhotoPurpose }, key: string) =>
     request<{ photo: Photo }>('POST', '/api/photos', data, key),
   makePrimaryPhoto: (id: string) => request<{ ok: true }>('POST', `/api/photos/${id}/primary`, {}),
   deletePhoto: (id: string) => request<{ ok: true }>('DELETE', `/api/photos/${id}`),

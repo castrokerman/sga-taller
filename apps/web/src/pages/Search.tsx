@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, errorMessage, formatQty, photoUrl, type SearchResult } from '../api';
 import { Highlight } from '../components/ListControls';
 import { navigate } from '../router';
+import { Thumb } from '../components/Thumb';
 
 const KEY = 'sga.buscador-ultimo';
 
@@ -85,7 +86,7 @@ export function SearchPage() {
             {res.materials.map((m) => (
               <li key={m.id}>
                 <button className="result" onClick={() => navigate(`material/${m.id}`)}>
-                  {m.photoId ? <img className="item-photo" src={photoUrl(m.photoId)} alt="" loading="lazy" /> : <span className="item-photo empty" />}
+                  {m.photoId ? <Thumb className="item-photo" photoId={m.photoId} /> : <span className="item-photo empty" />}
                   <span className="result-main">
                     <strong><Highlight text={m.description} query={query} /></strong>
                     <span className="muted small">
@@ -121,7 +122,7 @@ export function SearchPage() {
             {res.containers.map((c) => (
               <li key={c.id}>
                 <button className="result" onClick={() => navigate(`contenedor/${c.id}`)}>
-                  {c.photoId ? <img className="item-photo" src={photoUrl(c.photoId)} alt="" loading="lazy" /> : <span className="item-photo empty" />}
+                  {c.photoId ? <Thumb className="item-photo" photoId={c.photoId} /> : <span className="item-photo empty" />}
                   <span className="result-main">
                     <strong className="mono"><Highlight text={c.code} query={query} /></strong>
                     <span className="small">
@@ -159,7 +160,7 @@ export function SearchPage() {
             {res.locations.map((l) => (
               <li key={l.id}>
                 <button className={`result ${l.active ? '' : 'item-off'}`} onClick={() => navigate(`almacen/${l.id}`)}>
-                  {l.photoId ? <img className="item-photo" src={photoUrl(l.photoId)} alt="" loading="lazy" /> : <span className="item-photo empty" />}
+                  {l.photoId ? <Thumb className="item-photo" photoId={l.photoId} /> : <span className="item-photo empty" />}
                   <span className="result-main">
                     <strong className="mono"><Highlight text={l.code} query={query} /></strong>
                     <span className="small">

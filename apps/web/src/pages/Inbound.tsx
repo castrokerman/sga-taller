@@ -8,6 +8,7 @@ import { PhotoField, uploadMaterialPhoto } from '../components/PhotoField';
 import { PlaceSelect } from '../components/PlaceSelect';
 import { parseNumber, PlacePicker, QtyStepper, UnitLabels } from '../components/Stock';
 import { navigate } from '../router';
+import { Thumb } from '../components/Thumb';
 
 type Place = { ref: PlaceRef; code: string };
 type Person = { id: string; fullName: string };
@@ -443,7 +444,7 @@ export function InboundListPage({ user }: { user: User }) {
 function InboundCard({ i, mine }: { i: Inbound; mine: boolean }) {
   return (
     <button className={`item inbound-item ${i.status === 'PENDING' && mine ? 'item-todo' : ''}`} onClick={() => navigate(`recepcion/${i.id}`)}>
-      {i.photoId ? <img className="item-photo" src={photoUrl(i.photoId)} alt="" loading="lazy" /> : <span className="item-photo" />}
+      {i.photoId ? <Thumb className="item-photo" photoId={i.photoId} /> : <span className="item-photo" />}
       <span className="item-main">
         <strong>
           {i.status === 'DONE' ? i.materialDescription : i.description || 'Sin descripción'}

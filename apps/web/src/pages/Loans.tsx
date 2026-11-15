@@ -61,7 +61,7 @@ export function LoansPage({ user }: { user: User }) {
           </p>
         </div>
       </div>
-      {notice && <OpNotice r={notice} />}
+      {notice && <OpNotice r={notice} user={user} />}
       {error && <p className="alert alert-error">{error}</p>}
       {returning && (
         <div className="card form op-form">

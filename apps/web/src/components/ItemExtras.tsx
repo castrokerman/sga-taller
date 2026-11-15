@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { api, errorMessage, formatDateTime, newOperationKey, photoUrl, type EntityType, type Note, type Photo, type User } from '../api';
+import { api, errorMessage, formatDateTime, newOperationKey, photoUrl, type EntityType, type Note, type Photo, type PhotoPurpose, type User } from '../api';
+import { CONTENTS_PHOTO_EVENT } from './ContentsPhoto';
 
 /** Fotos y comentarios de una ubicación, un contenedor o un contenido. */
 export function ItemExtras(props: { user: User; entityType: EntityType; entityId: string; onPhotosChanged?: () => void }) {
   return (
     <>
       <PhotoGallery {...props} />
+      {props.entityType === 'container' && <PhotoGallery {...props} purpose="CONTENTS" />}
       <Notes {...props} />
     </>
   );
@@ -44,9 +46,19 @@ export async function shrink(file: File): Promise<{ image: string; thumbnail: st
   }
 }
 
-function PhotoGallery(props: { user: User; entityType: EntityType; entityId: string; onPhotosChanged?: () => void }) {
+/**
+ * Galería de fotos. En los contenedores hay dos: las del propio contenedor (la
+ * primera es la principal) y las de su contenido (la más reciente es la actual
+ * y las anteriores quedan de historial).
+ */
+function PhotoGallery(props: { user: User; entityType: EntityType; entityId: string; onPhotosChanged?: () => void; purpose?: PhotoPurpose }) {
   const { user } = props;
-  const [photos, setPhotos] = useState<Photo[] | null>(null);
+  const purpose = props.purpose ?? 'GENERAL';
+  const contents = purpose === 'CONTENTS';
+  const [all, setPhotos] = useState<Photo[] | null>(null);
+  const photos = all === null ? null : contents
+    ? all.filter((p) => p.purpose === 'CONTENTS').sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt))
+    : all.filter((p) => p.purpose !== 'CONTENTS');
   const [open, setOpen] = useState<number | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -67,6 +79,15 @@ function PhotoGallery(props: { user: User; entityType: EntityType; entityId: str
     void load();
   }, [load]);
 
+  // La foto del contenido se puede hacer también desde el aviso tras mover algo.
+  useEffect(() => {
+    const onNew = (e: Event) => {
+      if ((e as CustomEvent<string>).detail === props.entityId) void load();
+    };
+    window.addEventListener(CONTENTS_PHOTO_EVENT, onNew);
+    return () => window.removeEventListener(CONTENTS_PHOTO_EVENT, onNew);
+  }, [load, props.entityId]);
+
   const changed = async () => {
     await load();
     props.onPhotosChanged?.();
@@ -80,7 +101,7 @@ function PhotoGallery(props: { user: User; entityType: EntityType; entityId: str
       for (const [i, file] of list.entries()) {
         setBusy(list.length > 1 ? `Subiendo ${i + 1} de ${list.length}…` : 'Subiendo foto…');
         const data = await shrink(file);
-        await api.addPhoto({ entityType: props.entityType, entityId: props.entityId, ...data }, newOperationKey());
+        await api.addPhoto({ entityType: props.entityType, entityId: props.entityId, purpose, ...data }, newOperationKey());
       }
     } catch (e) {
       setError(e instanceof Error && e.constructor === Error ? e.message : errorMessage(e));
@@ -109,15 +130,18 @@ function PhotoGallery(props: { user: User; entityType: EntityType; entityId: str
   return (
     <section>
       <div className="section-head">
-        <h3>Fotos {photos.length > 0 && <span className="muted small">({photos.length})</span>}</h3>
+        <h3>
+          {contents ? 'Foto del contenido' : props.entityType === 'container' ? 'Fotos del contenedor' : 'Fotos'}{' '}
+          {photos.length > 0 && <span className="muted small">({photos.length})</span>}
+        </h3>
         {canAdd && (
           <label className="btn btn-small push-right">
-            {busy ?? '+ Añadir foto'}
+            {busy ?? (contents ? (photos.length ? '📷 Actualizar foto' : '📷 Hacer foto') : '+ Añadir foto')}
             <input
               ref={input}
               type="file"
               accept="image/*"
-              multiple
+              {...(contents ? { capture: 'environment' as const } : { multiple: true })}
               hidden
               disabled={Boolean(busy)}
               onChange={(e) => void upload(e.target.files)}
@@ -126,14 +150,19 @@ function PhotoGallery(props: { user: User; entityType: EntityType; entityId: str
         )}
       </div>
       {error && <p className="alert alert-error">{error}</p>}
+      {contents && <p className="muted small nomargin">Lo que lleva dentro. Al meter o sacar algo, la aplicación pregunta si quieres actualizarla.</p>}
+      {!contents && props.entityType === 'container' && photos.length > 0 && <p className="muted small nomargin">Para reconocer el propio contenedor. La principal sale en las listas.</p>}
       {photos.length === 0 ? (
-        <p className="muted">Sin fotos.{canAdd && ' Desde el móvil, «Añadir foto» abre la cámara o la galería.'}</p>
+        <p className="muted">
+          {contents ? 'Aún no hay foto de lo que lleva dentro.' : 'Sin fotos.'}
+          {canAdd && !contents && ' Desde el móvil, «Añadir foto» abre la cámara o la galería.'}
+        </p>
       ) : (
         <div className="gallery">
           {photos.map((p, i) => (
             <button key={p.id} className="thumb" onClick={() => setOpen(i)} aria-label={`Ver foto ${i + 1}`}>
               <img src={photoUrl(p.id)} alt="" loading="lazy" />
-              {i === 0 && <span className="thumb-main">Principal</span>}
+              {i === 0 && <span className="thumb-main">{contents ? `Actual · ${formatDateTime(p.uploadedAt)}` : 'Principal'}</span>}
             </button>
           ))}
         </div>
@@ -154,7 +183,7 @@ function PhotoGallery(props: { user: User; entityType: EntityType; entityId: str
                     <button className="btn btn-small" onClick={() => setOpen((open! + 1) % photos.length)}>›</button>
                   </>
                 )}
-                {canAdd && open! > 0 && (
+                {canAdd && !contents && open! > 0 && (
                   <button className="btn btn-small" onClick={() => act(() => api.makePrimaryPhoto(current.id), () => setOpen(0))}>
                     Hacer principal
                   </button>

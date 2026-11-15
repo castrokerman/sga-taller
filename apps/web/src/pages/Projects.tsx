@@ -4,6 +4,7 @@ import {
   type Person, type Project, type ProjectDetail, type ProjectStatus, type User,
 } from '../api';
 import { navigate } from '../router';
+import { Thumb } from '../components/Thumb';
 
 const STATUS: Record<ProjectStatus, { label: string; cls: string }> = {
   ACTIVE: { label: 'Activo', cls: 'badge-ok' },
@@ -384,7 +385,7 @@ export function ProjectPage({ projectId }: { user: User; projectId: string }) {
               <div className="list">
                 {d.inbound!.map((i) => (
                   <button key={i.id} className={`item ${i.status === 'PENDING' ? 'item-todo' : ''}`} onClick={() => navigate(`recepcion/${i.id}`)}>
-                    {i.photoId ? <img className="item-photo" src={photoUrl(i.photoId)} alt="" loading="lazy" /> : <span className="item-photo" />}
+                    {i.photoId ? <Thumb className="item-photo" photoId={i.photoId} /> : <span className="item-photo" />}
                     <span className="item-main">
                       <strong>{i.materialDescription ?? i.description ?? 'Sin descripción'}</strong>
                       <span className="mono">{i.code}</span>

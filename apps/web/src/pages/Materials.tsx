@@ -4,6 +4,7 @@ import { Highlight, optionsFrom, useListControls, type ListConfig } from '../com
 import { navigate } from '../router';
 import { BulkEditor, type BulkChanges } from '../components/BulkEditor';
 import { PhotoField, uploadMaterialPhoto } from '../components/PhotoField';
+import { Thumb } from '../components/Thumb';
 
 const FAMILY_KEY = 'sga.familia-elegida';
 
@@ -193,7 +194,7 @@ export function MaterialsPage({ user }: { user: User }) {
                     {list.visible.map((m) => (
                       <tr key={m.id} className="clickable" onClick={() => navigate(`material/${m.id}`)}>
                         <td className="mat-cell">
-                          {m.photoId ? <img className="mat-photo" src={photoUrl(m.photoId)} alt="" loading="lazy" /> : <span className="mat-photo empty" />}
+                          {m.photoId ? <Thumb className="mat-photo" photoId={m.photoId} /> : <span className="mat-photo empty" />}
                           <div>
                           <a href={`#/material/${m.id}`} onClick={(e) => e.stopPropagation()}>
                             <strong>

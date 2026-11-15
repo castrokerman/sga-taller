@@ -63,7 +63,7 @@ export function MovementsPage({ user }: { user: User }) {
           Stock a Excel
         </a>
       </div>
-      {notice && <OpNotice r={notice} />}
+      {notice && <OpNotice r={notice} user={user} />}
       {error && <p className="alert alert-error">{error}</p>}
       {lines === null ? (
         <p className="muted">Cargando…</p>

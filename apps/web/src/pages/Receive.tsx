@@ -5,6 +5,7 @@ import { MaterialPicker, parseNumber, PlacePicker, QtyStepper, UnitLabels } from
 import { navigate } from '../router';
 import { PendingReceive } from './Inbound';
 import { PlaceSelect } from '../components/PlaceSelect';
+import { ContentsPhotoPrompt } from '../components/ContentsPhoto';
 
 type Place = { ref: PlaceRef; code: string };
 const LAST_PLACE = 'sga.entrada-ultimo-sitio';
@@ -164,6 +165,7 @@ export function ReceivePage({ user, initial }: { user: User; initial?: string })
           <h3>Entrada registrada</h3>
           <p>{result.message}.</p>
           <p className="muted small">Movimiento n.º {result.movementNumber}, a nombre de {user.fullName}.</p>
+          {result.containers && result.containers.length > 0 && <ContentsPhotoPrompt containers={result.containers} user={user} />}
           {result.units && result.units.length > 0 && (
             <>
               <p className="small nomargin">Pega a cada unidad su etiqueta, para que se pueda escanear al prestarla o moverla.</p>

@@ -104,7 +104,7 @@ export function imageType(buf: Buffer): string | null {
 const PHOTO_SELECT = `
   SELECT p.id, p.position, p.width, p.height, p.caption, p.mime_type AS "mimeType",
          octet_length(p.image) AS bytes, p.uploaded_at AS "uploadedAt",
-         p.uploaded_by AS "uploadedById", u.full_name AS "uploadedBy"
+         p.uploaded_by AS "uploadedById", u.full_name AS "uploadedBy", p.purpose
     FROM photo p JOIN app_user u ON u.id = p.uploaded_by`;
 
 const NOTE_SELECT = `
@@ -135,7 +135,7 @@ export function extrasRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
   app.get('/api/photos', { preHandler: requireAuth(), schema: { querystring: photoQuery } }, async (request) => {
     const q = request.query as { entityType: EntityType; entityId: string };
     await getEntity(pool, request, q.entityType, q.entityId);
-    const r = await pool.query(`${PHOTO_SELECT} WHERE p.entity_type = $1 AND p.entity_id = $2 ORDER BY p.position, p.uploaded_at`, [q.entityType, q.entityId]);
+    const r = await pool.query(`${PHOTO_SELECT} WHERE p.entity_type = $1 AND p.entity_id = $2 ORDER BY p.purpose DESC, p.position, p.uploaded_at`, [q.entityType, q.entityId]);
     return { photos: r.rows };
   });
 
@@ -156,6 +156,7 @@ export function extrasRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
             width: { type: 'integer', minimum: 1, maximum: 10000 },
             height: { type: 'integer', minimum: 1, maximum: 10000 },
             caption: { type: 'string', maxLength: 200 },
+            purpose: { type: 'string', enum: ['GENERAL', 'CONTENTS'] },
           },
         },
       },
@@ -164,7 +165,10 @@ export function extrasRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
       idempotent(pool, request, reply, async () => {
         const b = request.body as {
           entityType: EntityType; entityId: string; image: string; thumbnail: string; width: number; height: number; caption?: string;
+          purpose?: 'GENERAL' | 'CONTENTS';
         };
+        const purpose = b.purpose ?? 'GENERAL';
+        if (purpose === 'CONTENTS' && b.entityType !== 'container') throw badRequest('Solo los contenedores tienen foto del contenido', 'FOTO_CONTENIDO');
         const image = Buffer.from(b.image, 'base64');
         const thumb = Buffer.from(b.thumbnail, 'base64');
         const mime = imageType(image);
@@ -173,16 +177,16 @@ export function extrasRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
         const id = await withTransaction(pool, async (c) => {
           const e = await getEntity(c, request, b.entityType, b.entityId);
           const pos = await c.query(
-            `SELECT coalesce(max(position) + 1, 0) AS n FROM photo WHERE entity_type = $1 AND entity_id = $2`,
-            [b.entityType, b.entityId],
+            `SELECT coalesce(max(position) + 1, 0) AS n FROM photo WHERE entity_type = $1 AND entity_id = $2 AND purpose = $3`,
+            [b.entityType, b.entityId, purpose],
           );
           const r = await c.query(
-            `INSERT INTO photo (entity_type, entity_id, position, mime_type, width, height, image, thumbnail, caption, uploaded_by)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
-            [b.entityType, b.entityId, pos.rows[0].n, mime, b.width, b.height, image, thumb, b.caption?.trim() || null, request.user!.id],
+            `INSERT INTO photo (entity_type, entity_id, position, mime_type, width, height, image, thumbnail, caption, uploaded_by, purpose)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
+            [b.entityType, b.entityId, pos.rows[0].n, mime, b.width, b.height, image, thumb, b.caption?.trim() || null, request.user!.id, purpose],
           );
           await writeAudit(c, {
-            userId: request.user!.id, action: 'foto.alta', entityType: b.entityType, entityId: b.entityId,
+            userId: request.user!.id, action: purpose === 'CONTENTS' ? 'foto.contenido' : 'foto.alta', entityType: b.entityType, entityId: b.entityId,
             after: { foto: r.rows[0].id, de: e.code, bytes: image.length }, ip: request.ip, requestId: request.id,
           });
           return r.rows[0].id as string;
@@ -216,10 +220,11 @@ export function extrasRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
   app.post('/api/photos/:id/primary', { preHandler: requirePermission('photo.add'), schema: { params: idParams } }, async (request) => {
     const { id } = request.params as { id: string };
     await withTransaction(pool, async (c) => {
-      const p = (await c.query(`SELECT entity_type, entity_id FROM photo WHERE id = $1`, [id])).rows[0];
+      const p = (await c.query(`SELECT entity_type, entity_id, purpose FROM photo WHERE id = $1`, [id])).rows[0];
       if (!p) throw notFound('La foto no existe');
+      if (p.purpose !== 'GENERAL') throw badRequest('Las fotos del contenido no son principales: vale la más reciente', 'FOTO_CONTENIDO');
       await getEntity(c, request, p.entity_type, p.entity_id);
-      const all = await c.query(`SELECT id FROM photo WHERE entity_type = $1 AND entity_id = $2 ORDER BY position, uploaded_at FOR UPDATE`, [
+      const all = await c.query(`SELECT id FROM photo WHERE entity_type = $1 AND entity_id = $2 AND purpose = 'GENERAL' ORDER BY position, uploaded_at FOR UPDATE`, [
         p.entity_type, p.entity_id,
       ]);
       const order = [id, ...all.rows.map((x) => x.id as string).filter((x) => x !== id)];

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { api, errorMessage, photoUrl, type ContainerSummary, type LabelFormat, type LabelRef, type LocationSummary, type PathItem } from '../api';
 import { navigate } from '../router';
 import { Highlight, optionsFrom, type ListConfig } from './ListControls';
+import { Thumb } from './Thumb';
 
 /** Ruta de ubicaciones (y contenedores) hasta el elemento actual. */
 export function Breadcrumbs(props: { locations: PathItem[]; containers?: PathItem[]; current?: string }) {
@@ -29,7 +30,7 @@ export function LocationCard({ l, q = '' }: { l: LocationSummary; q?: string }) 
   const over = l.maxCapacity !== null && l.containerCount > l.maxCapacity;
   return (
     <button className={`item ${l.active ? '' : 'item-off'}`} onClick={() => navigate(`almacen/${l.id}`)}>
-      {l.photoId && <img className="item-photo" src={photoUrl(l.photoId)} alt="" loading="lazy" />}
+      {l.photoId && <Thumb className="item-photo" photoId={l.photoId} />}
       <span className="item-main">
         <strong><Highlight text={l.code} query={q} /></strong>
         <span><Highlight text={l.name} query={q} /></span>
@@ -51,7 +52,7 @@ export function LocationCard({ l, q = '' }: { l: LocationSummary; q?: string }) 
 export function ContainerCard({ c, q = '' }: { c: ContainerSummary; q?: string }) {
   return (
     <button className="item item-container" onClick={() => navigate(`contenedor/${c.id}`)}>
-      {c.photoId && <img className="item-photo" src={photoUrl(c.photoId)} alt="" loading="lazy" />}
+      {c.photoId && <Thumb className="item-photo" photoId={c.photoId} />}
       <span className="item-main">
         <strong><Highlight text={c.code} query={q} /></strong>
         <span><Highlight text={c.description ?? c.typeName} query={q} /></span>
