@@ -237,7 +237,7 @@ export function WarehouseTree({ user, onList, rootId }: { user: User; onList: ()
                     {ch.text}
                   </span>
                 ))}
-                <span className="tag">{n.typeName}</span>
+                <span className={`tag ${n.kind === 'container' ? 'tag-ctype' : ''}`}>{n.typeName}</span>
                 {n.meta && <span className={n.over ? 'over' : undefined}>{n.meta}</span>}
               </span>
             </div>

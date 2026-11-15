@@ -63,7 +63,7 @@ export function ContainerCard({ c, q = '' }: { c: ContainerSummary; q?: string }
             👤 {c.responsibleName ?? c.projectResponsibles}
           </span>
         )}
-        <span className="tag">{c.typeName}</span>
+        <span className="tag tag-ctype">{c.typeName}</span>
         <span>{c.childCount > 0 ? `${c.childCount} dentro` : ''}</span>
       </span>
     </button>
