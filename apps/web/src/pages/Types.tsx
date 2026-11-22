@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { api, errorMessage, TRACKING_NAMES, type ContainerType, type ContentType, type LocationType, type Tracking } from '../api';
+import { api, errorMessage, TRACKING_NAMES, type ContainerType, type ContentType, type LocationType, type Tracking, type TypeKind } from '../api';
 
 const letters = (v: string, max: number) => v.toUpperCase().replace(/[^A-Z]/g, '').slice(0, max);
 
@@ -44,6 +44,47 @@ export function TypesPage() {
     }
   };
 
+  /** Mover un tipo un puesto arriba o abajo y guardar el orden nuevo. */
+  const move = (kind: TypeKind, list: Array<{ code: string; name: string }>, i: number, by: -1 | 1) => {
+    const codes = list.map((t) => t.code);
+    [codes[i], codes[i + by]] = [codes[i + by]!, codes[i]!];
+    void run(async () => {
+      await api.orderTypes(kind, codes);
+      return `Orden guardado: ${list[i]!.name} ${by < 0 ? 'sube' : 'baja'} un puesto`;
+    });
+  };
+
+  const tools = (kind: TypeKind, list: Array<{ code: string; name: string }>, i: number, count: number, key: string) => {
+    const t = list[i]!;
+    return (
+      <td className="row-actions type-tools">
+        <button className="btn btn-small btn-icon" title="Subir" aria-label={`Subir ${t.name}`} disabled={i === 0} onClick={() => move(kind, list, i, -1)}>
+          ↑
+        </button>
+        <button className="btn btn-small btn-icon" title="Bajar" aria-label={`Bajar ${t.name}`} disabled={i === list.length - 1} onClick={() => move(kind, list, i, 1)}>
+          ↓
+        </button>
+        <button className="btn btn-small" onClick={() => { setNotice(null); setEditing(key); }}>
+          Editar
+        </button>
+        <button
+          className="btn btn-small btn-danger"
+          disabled={count > 0}
+          title={count > 0 ? `No se puede eliminar: lo usan ${count}. Desactívalo para que no se use más` : 'Eliminar este tipo'}
+          onClick={() => {
+            if (!window.confirm(`¿Seguro que quieres eliminar el tipo «${t.name}»? No se puede deshacer.`)) return;
+            void run(async () => {
+              await api.deleteType(kind, t.code);
+              return `Tipo «${t.name}» eliminado`;
+            });
+          }}
+        >
+          Eliminar
+        </button>
+      </td>
+    );
+  };
+
   return (
     <>
       <nav className="crumbs">
@@ -85,7 +126,7 @@ export function TypesPage() {
               </tr>
             </thead>
             <tbody>
-              {locationTypes.map((t) =>
+              {locationTypes.map((t, i) =>
                 editing === `l:${t.code}` ? (
                   <TypeEditRow
                     key={t.code}
@@ -119,11 +160,7 @@ export function TypesPage() {
                     </td>
                     <td className="num">{t.locationCount}</td>
                     <td>{t.active ? <span className="badge badge-ok">Activo</span> : <span className="badge badge-off">Desactivado</span>}</td>
-                    <td className="row-actions">
-                      <button className="btn btn-small" onClick={() => { setNotice(null); setEditing(`l:${t.code}`); }}>
-                        Editar
-                      </button>
-                    </td>
+                    {tools('location', locationTypes, i, t.locationCount, `l:${t.code}`)}
                   </tr>
                 ),
               )}
@@ -157,7 +194,7 @@ export function TypesPage() {
               </tr>
             </thead>
             <tbody>
-              {containerTypes.map((t) =>
+              {containerTypes.map((t, i) =>
                 editing === `c:${t.code}` ? (
                   <TypeEditRow
                     key={t.code}
@@ -184,11 +221,7 @@ export function TypesPage() {
                     <td>{t.defaultReusePolicy === 'DISPOSABLE' ? 'Desechable' : 'Reutilizable'}</td>
                     <td className="num">{t.containerCount}</td>
                     <td>{t.active ? <span className="badge badge-ok">Activo</span> : <span className="badge badge-off">Desactivado</span>}</td>
-                    <td className="row-actions">
-                      <button className="btn btn-small" onClick={() => { setNotice(null); setEditing(`c:${t.code}`); }}>
-                        Editar
-                      </button>
-                    </td>
+                    {tools('container', containerTypes, i, t.containerCount, `c:${t.code}`)}
                   </tr>
                 ),
               )}
@@ -225,7 +258,7 @@ export function TypesPage() {
               </tr>
             </thead>
             <tbody>
-              {contentTypes.map((t) =>
+              {contentTypes.map((t, i) =>
                 editing === `k:${t.code}` ? (
                   <TypeEditRow
                     key={t.code}
@@ -256,11 +289,7 @@ export function TypesPage() {
                     <td>{t.defaultLoanable ? 'Sí' : 'No'}</td>
                     <td className="num">{t.contentCount}</td>
                     <td>{t.active ? <span className="badge badge-ok">Activo</span> : <span className="badge badge-off">Desactivado</span>}</td>
-                    <td className="row-actions">
-                      <button className="btn btn-small" onClick={() => { setNotice(null); setEditing(`k:${t.code}`); }}>
-                        Editar
-                      </button>
-                    </td>
+                    {tools('content', contentTypes, i, t.contentCount, `k:${t.code}`)}
                   </tr>
                 ),
               )}

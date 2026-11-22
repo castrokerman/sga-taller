@@ -80,9 +80,9 @@ export function containerRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
   // ---- Tipos de contenedor ------------------------------------------------
   app.get('/api/container-types', { preHandler: requirePermission('container.read') }, async () => {
     const r = await pool.query(
-      `SELECT t.code, t.name, t.code_prefix AS "codePrefix", t.default_reuse_policy AS "defaultReusePolicy", t.active,
+      `SELECT t.code, t.name, t.code_prefix AS "codePrefix", t.default_reuse_policy AS "defaultReusePolicy", t.active, t.sort_order AS "sortOrder",
               (SELECT count(*)::int FROM container k WHERE k.container_type_id = t.id) AS "containerCount"
-         FROM container_type t ORDER BY t.name`,
+         FROM container_type t ORDER BY t.sort_order, t.name`,
     );
     return { types: r.rows };
   });
@@ -115,7 +115,7 @@ export function containerRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
       ]);
       if (dup.rowCount) throw conflict('Ya existe un tipo de contenedor con ese código o prefijo', 'TIPO_DUPLICADO');
       await pool.query(
-        `INSERT INTO container_type (code, name, code_prefix, default_reuse_policy) VALUES ($1, $2, $3, $4)`,
+        `INSERT INTO container_type (code, name, code_prefix, default_reuse_policy, sort_order) VALUES ($1, $2, $3, $4, (SELECT coalesce(max(sort_order), 0) + 1 FROM container_type))`,
         [body.code, body.name.trim(), body.codePrefix, body.defaultReusePolicy ?? 'REUSABLE'],
       );
       await writeAudit(pool, {

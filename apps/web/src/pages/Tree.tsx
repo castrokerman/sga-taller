@@ -38,7 +38,12 @@ function containerChips(c: TreeContainer) {
   return out;
 }
 
-function buildTree(locations: TreeLocation[], containers: TreeContainer[], withContainers: boolean): Node[] {
+/**
+ * Monta el árbol. Sin ubicaciones, los contenedores que están en una ubicación
+ * salen arriba del todo, cada uno con la ubicación donde está.
+ */
+function buildTree(locations: TreeLocation[], containers: TreeContainer[], withContainers: boolean, withLocations = true): Node[] {
+  const locCode = new Map(locations.map((l) => [l.id, l.code]));
   const nodes = new Map<string, Node>();
   for (const l of locations) {
     const parts = [];
@@ -53,21 +58,24 @@ function buildTree(locations: TreeLocation[], containers: TreeContainer[], withC
     for (const c of containers) {
       nodes.set(`c:${c.id}`, {
         key: `c:${c.id}`, kind: 'container', id: c.id, code: c.code, label: c.description ?? '', typeName: c.typeName,
-        meta: '', over: false, children: [], chips: containerChips(c), photoId: c.photoId,
+        meta: !withLocations && c.locationId ? `en ${locCode.get(c.locationId) ?? '?'}` : '', over: false, children: [], chips: containerChips(c), photoId: c.photoId,
       });
     }
   }
   const roots: Node[] = [];
-  for (const l of locations) {
-    const n = nodes.get(`l:${l.id}`)!;
-    const parent = l.parentId ? nodes.get(`l:${l.parentId}`) : undefined;
-    (parent ? parent.children : roots).push(n);
+  if (withLocations) {
+    for (const l of locations) {
+      const n = nodes.get(`l:${l.id}`)!;
+      const parent = l.parentId ? nodes.get(`l:${l.parentId}`) : undefined;
+      (parent ? parent.children : roots).push(n);
+    }
   }
   if (withContainers) {
     for (const c of containers) {
       const n = nodes.get(`c:${c.id}`)!;
-      const parent = c.parentContainerId ? nodes.get(`c:${c.parentContainerId}`) : c.locationId ? nodes.get(`l:${c.locationId}`) : undefined;
-      parent?.children.push(n);
+      if (c.parentContainerId) nodes.get(`c:${c.parentContainerId}`)?.children.push(n);
+      else if (!withLocations) roots.push(n);
+      else if (c.locationId) nodes.get(`l:${c.locationId}`)?.children.push(n);
     }
   }
   const sortAll = (list: Node[]) => {
@@ -82,13 +90,15 @@ function buildTree(locations: TreeLocation[], containers: TreeContainer[], withC
  * Si hay búsqueda, deja solo lo que coincide y el camino hasta ello.
  * Devuelve el árbol podado, los nodos que hay que desplegar y cuántos coinciden.
  */
-function prune(nodes: Node[], query: string) {
+/** Deja lo que coincide con la búsqueda y el tipo elegido, con lo que lo contiene. */
+function prune(nodes: Node[], query: string, type = '') {
   const q = normalize(query);
   const open = new Set<string>();
   let hits = 0;
   const walk = (list: Node[]): Node[] =>
     list.flatMap((n) => {
-      const match = normalize(n.code).includes(q) || normalize(n.label).includes(q);
+      const match = (!q || normalize(n.code).includes(q) || normalize(n.label).includes(q) || (n.chips ?? []).some((ch) => normalize(ch.text).includes(q)))
+        && (!type || `${n.kind}:${n.typeName}` === type);
       const kids = walk(n.children);
       if (match) hits++;
       if (kids.length) open.add(n.key);
@@ -134,6 +144,8 @@ export function WarehouseTree({ user, onList, rootId }: { user: User; onList: ()
   const [query, setQuery] = useState('');
   const canSeeContainers = user.permissions.includes('container.read');
   const [withContainers, setWithContainers] = useState(() => canSeeContainers && readPref('sga.arbol-contenedores', true));
+  const [withLocations, setWithLocations] = useState(() => !canSeeContainers || readPref('sga.arbol-ubicaciones', true));
+  const [typeFilter, setTypeFilter] = useState('');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -157,7 +169,7 @@ export function WarehouseTree({ user, onList, rootId }: { user: User; onList: ()
 
   const tree = useMemo(() => {
     if (!data) return [];
-    const all = buildTree(data.locations, data.containers, withContainers);
+    const all = buildTree(data.locations, data.containers, withContainers, withLocations || Boolean(rootId));
     if (!rootId) return all;
     const find = (list: Node[]): Node | undefined => {
       for (const n of list) {
@@ -168,10 +180,14 @@ export function WarehouseTree({ user, onList, rootId }: { user: User; onList: ()
       return undefined;
     };
     return find(all)?.children ?? [];
-  }, [data, withContainers, rootId]);
+  }, [data, withContainers, withLocations, rootId]);
   const q = query.trim();
-  const searching = q.length > 0;
-  const view = useMemo(() => (searching ? prune(tree, q) : null), [tree, q, searching]);
+  const searching = q.length > 0 || typeFilter !== '';
+  const view = useMemo(() => (searching ? prune(tree, q, typeFilter) : null), [tree, q, typeFilter, searching]);
+  const types = useMemo(() => ({
+    locations: [...new Set((data?.locations ?? []).map((l) => l.typeName))].sort(),
+    containers: [...new Set((data?.containers ?? []).map((c) => c.typeName))].sort(),
+  }), [data]);
   const shown = view ? view.nodes : tree;
   const isOpen = (key: string) => (view ? view.open.has(key) : expanded.has(key));
 
@@ -196,8 +212,19 @@ export function WarehouseTree({ user, onList, rootId }: { user: User; onList: ()
     setExpanded(next);
   };
 
+  const toggleLocations = (v: boolean) => {
+    setWithLocations(v);
+    if (typeFilter.startsWith('location:') && !v) setTypeFilter('');
+    try {
+      window.localStorage.setItem('sga.arbol-ubicaciones', String(v));
+    } catch {
+      /* sin almacenamiento: se queda solo para esta vez */
+    }
+  };
+
   const toggleContainers = (v: boolean) => {
     setWithContainers(v);
+    if (typeFilter.startsWith('container:') && !v) setTypeFilter('');
     writePref('sga.arbol-contenedores', v);
   };
 
@@ -273,14 +300,35 @@ export function WarehouseTree({ user, onList, rootId }: { user: User; onList: ()
             />
           </div>
         </div>
+        {canSeeContainers && !rootId && (
+          <label className="check">
+            <input type="checkbox" checked={withLocations} disabled={!withContainers} onChange={(e) => toggleLocations(e.target.checked)} />
+            <span>
+              <strong>Mostrar ubicaciones</strong>
+            </span>
+          </label>
+        )}
         {canSeeContainers && (
           <label className="check">
-            <input type="checkbox" checked={withContainers} onChange={(e) => toggleContainers(e.target.checked)} />
+            <input type="checkbox" checked={withContainers} disabled={!withLocations && !rootId} onChange={(e) => toggleContainers(e.target.checked)} />
             <span>
               <strong>Mostrar contenedores</strong>
             </span>
           </label>
         )}
+        <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} aria-label="Filtrar por tipo" className="tree-type">
+          <option value="">Todos los tipos</option>
+          {(withLocations || rootId) && types.locations.length > 0 && (
+            <optgroup label="Ubicaciones">
+              {types.locations.map((t) => <option key={t} value={`location:${t}`}>{t}</option>)}
+            </optgroup>
+          )}
+          {withContainers && types.containers.length > 0 && (
+            <optgroup label="Contenedores">
+              {types.containers.map((t) => <option key={t} value={`container:${t}`}>{t}</option>)}
+            </optgroup>
+          )}
+        </select>
         <button className="btn" disabled={searching} onClick={() => setExpanded(new Set(allKeys(tree)))}>
           Desplegar todo
         </button>

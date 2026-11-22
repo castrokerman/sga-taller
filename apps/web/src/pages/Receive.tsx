@@ -1,5 +1,7 @@
-import { useRef, useState, type FormEvent } from 'react';
-import { api, errorMessage, formatQty, newOperationKey, type Material, type OpResult, type PlaceRef, type User } from '../api';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { api, errorMessage, formatQty, newOperationKey, type ContentType, type Material, type OpResult, type PlaceRef, type User } from '../api';
+import { MaterialForm } from './Materials';
+import { ReceiveBatch } from './ReceiveBatch';
 import { shrink } from '../components/ItemExtras';
 import { MaterialPicker, parseNumber, PlacePicker, QtyStepper, UnitLabels } from '../components/Stock';
 import { navigate } from '../router';
@@ -19,13 +21,22 @@ const readLast = (): Place | null => {
 };
 
 /**
- * Registrar entrada, paso a paso: qué material (o crearlo con su foto),
- * dónde se guarda (escaneando) y cuánto entra.
+ * Registrar entrada, paso a paso: el tipo de contenido; si es un contenido
+ * nuevo (se da de alta, con su foto) o uno ya registrado (se repone); dónde se
+ * guarda; y cuánto entra y para quién (un proyecto, una persona o el taller).
  */
 export function ReceivePage({ user, initial }: { user: User; initial?: string }) {
-  const [mode, setMode] = useState<'choose' | 'direct' | 'pending'>(initial === 'pendiente' ? 'pending' : initial === 'directa' ? 'direct' : 'choose');
+  const [mode, setMode] = useState<'choose' | 'direct' | 'pending' | 'batch'>(
+    initial === 'pendiente' ? 'pending' : initial === 'directa' ? 'direct' : initial === 'varias' ? 'batch' : 'choose',
+  );
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+  const [types, setTypes] = useState<ContentType[]>([]);
+  const [type, setType] = useState<ContentType | null>(null);
+  const [kind, setKind] = useState<'new' | 'existing' | null>(null);
   const [material, setMaterial] = useState<Material | null>(null);
+  useEffect(() => {
+    api.contentTypes().then((r) => setTypes(r.types.filter((t) => t.active))).catch(() => undefined);
+  }, []);
   const [place, setPlace] = useState<Place | null>(null);
   const [result, setResult] = useState<OpResult | null>(null);
   const [last, setLast] = useState<Place | null>(readLast);
@@ -44,7 +55,11 @@ export function ReceivePage({ user, initial }: { user: User; initial?: string })
 
   const restart = (keep: 'place' | 'material' | 'none') => {
     setResult(null);
-    if (keep !== 'material') setMaterial(null);
+    if (keep !== 'material') {
+      setMaterial(null);
+      setKind(null);
+      setType(null);
+    }
     if (keep !== 'place') setPlace(null);
     setStep(keep === 'material' ? 2 : 1);
   };
@@ -75,18 +90,24 @@ export function ReceivePage({ user, initial }: { user: User; initial?: string })
           <button className="mode-card" onClick={() => setMode('direct')}>
             <span className="mode-icon" aria-hidden="true">✓</span>
             <b>Sé lo que es</b>
-            <span>Lo eliges del catálogo (o lo das de alta), escaneas dónde lo guardas y la cantidad.</span>
+            <span>Eliges el tipo, si es nuevo o ya registrado, dónde lo guardas y la cantidad.</span>
+          </button>
+          <button className="mode-card" onClick={() => setMode('batch')}>
+            <span className="mode-icon" aria-hidden="true">☰</span>
+            <b>Varias cosas a la vez</b>
+            <span>Una lista con una fila por cosa: se rellena, se revisa y se registra todo de una vez.</span>
           </button>
         </div>
       )}
 
       {mode === 'pending' && <PendingReceive user={user} onBack={() => setMode('choose')} />}
+      {mode === 'batch' && <ReceiveBatch user={user} onBack={() => setMode('choose')} />}
 
       {mode === 'direct' && (<>
       <ol className="steps">
         <li className={step === 1 ? 'on' : step > 1 ? 'done' : undefined}>
-          <button disabled={step === 4} onClick={() => setStep(1)}>
-            1. Contenido{material && step > 1 ? `: ${material.description}` : ''}
+          <button disabled={step === 4} onClick={() => { setMaterial(null); setStep(1); }}>
+            1. Contenido{material && step > 1 ? `: ${material.description}` : type ? `: ${type.name}` : ''}
           </button>
         </li>
         <li className={step === 2 ? 'on' : step > 2 ? 'done' : undefined}>
@@ -99,16 +120,75 @@ export function ReceivePage({ user, initial }: { user: User; initial?: string })
         </li>
       </ol>
 
-      {step === 1 && (
+      {step === 1 && !type && (
         <div className="card form op-form">
-          <h3>¿Qué contenido entra?</h3>
+          <h3>¿Qué tipo de contenido entra?</h3>
+          <div className="type-choice">
+            {types.map((t) => (
+              <button key={t.code} type="button" className="type-btn" onClick={() => { setType(t); setKind(null); }}>
+                <b>{t.name}</b>
+                <small>{t.unitTracked ? 'De uno en uno, cada uno con su código' : 'Por cantidad'}</small>
+              </button>
+            ))}
+          </div>
+          <div className="actions">
+            <button className="btn" onClick={() => setMode('choose')}>Cancelar</button>
+          </div>
+        </div>
+      )}
+
+      {step === 1 && type && !kind && (
+        <div className="card form op-form">
+          <h3>{type.name}: ¿es nuevo o ya está registrado?</h3>
+          <div className="mode-choice">
+            {user.permissions.includes('material.manage') && (
+              <button className="mode-card" onClick={() => setKind('new')}>
+                <span className="mode-icon" aria-hidden="true">＋</span>
+                <b>Contenido nuevo</b>
+                <span>No está en el catálogo: se da de alta (con su foto) y entra.</span>
+              </button>
+            )}
+            <button className="mode-card" onClick={() => setKind('existing')}>
+              <span className="mode-icon" aria-hidden="true">↻</span>
+              <b>Contenido ya registrado</b>
+              <span>Ya está en el catálogo: reponer o aumentar lo que hay.</span>
+            </button>
+          </div>
+          <div className="actions">
+            <button className="btn" onClick={() => setType(null)}>← Otro tipo</button>
+          </div>
+        </div>
+      )}
+
+      {step === 1 && type && kind === 'new' && (
+        <div className="card form op-form">
+          <h3>{type.name} nuevo</h3>
+          <MaterialForm
+            title=""
+            embedded
+            fixedType={type.code}
+            canPhoto={user.permissions.includes('photo.add')}
+            onCancel={() => setKind(null)}
+            onDone={(m) => {
+              setMaterial(m);
+              setStep(place ? 3 : 2);
+            }}
+          />
+        </div>
+      )}
+
+      {step === 1 && type && kind === 'existing' && (
+        <div className="card form op-form">
+          <h3>¿Qué {type.name.toLowerCase()} entra?</h3>
           <MaterialPicker
             user={user}
+            type={type.code}
+            noCreate
             onPick={(m) => {
               setMaterial(m);
               setStep(place ? 3 : 2);
             }}
-            onCancel={() => setMode('choose')}
+            onCancel={() => setKind(null)}
           />
         </div>
       )}
@@ -206,6 +286,15 @@ function QuantityStep(props: { user: User; material: Material; place: Place; onB
   const [albaran, setAlbaran] = useState('');
   const [note, setNote] = useState('');
   const [isReturn, setIsReturn] = useState(false);
+  const [forWhom, setForWhom] = useState<'taller' | 'reservado'>('taller');
+  const [projectId, setProjectId] = useState('');
+  const [personId, setPersonId] = useState('');
+  const [projects, setProjects] = useState<Array<{ id: string; code: string; name: string }>>([]);
+  const [people, setPeople] = useState<Array<{ id: string; fullName: string }>>([]);
+  useEffect(() => {
+    api.projects().then((r) => setProjects(r.projects.filter((p) => p.status === 'ACTIVE'))).catch(() => undefined);
+    api.basicUsers().then((r) => setPeople(r.users)).catch(() => undefined);
+  }, []);
   const [photo, setPhoto] = useState<File | null>(null);
   const [key, setKey] = useState(newOperationKey);
   const [busy, setBusy] = useState<string | null>(null);
@@ -224,6 +313,7 @@ function QuantityStep(props: { user: User; material: Material; place: Place; onB
         {
           ...place.ref, materialId: material.id, quantity: untracked ? undefined : n, lotCode: lot.trim() || undefined,
           externalReference: albaran.trim() || undefined, reason: note.trim() || undefined, isReturn,
+          ...(forWhom === 'reservado' ? { projectId: projectId || undefined, responsibleUserId: personId || undefined } : {}),
         },
         key,
       );
@@ -289,8 +379,50 @@ function QuantityStep(props: { user: User; material: Material; place: Place; onB
         <span>
           Nota <span className="muted">(opcional)</span>
         </span>
-        <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} placeholder="Proveedor, para qué proyecto, estado…" />
+        <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} placeholder="Proveedor, estado…" />
       </label>
+      <div className="field">
+        <span className="field-l">¿Para quién es?</span>
+        <div className="pchips">
+          <button type="button" className={`pchip ${forWhom === 'taller' ? 'on' : ''}`} onClick={() => setForWhom('taller')}>
+            Uso general del taller
+          </button>
+          <button type="button" className={`pchip ${forWhom === 'reservado' ? 'on' : ''}`} onClick={() => setForWhom('reservado')}>
+            Para un proyecto o una persona
+          </button>
+        </div>
+        {forWhom === 'reservado' && (
+          <div className="grid-2">
+            <label className="field">
+              <span>Proyecto</span>
+              <select value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+                <option value="">Ninguno</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.code} · {p.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>Persona responsable</span>
+              <select value={personId} onChange={(e) => setPersonId(e.target.value)}>
+                <option value="">Ninguna</option>
+                {people.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.fullName}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        )}
+        <small className="muted">
+          {forWhom === 'taller'
+            ? 'Lo puede usar cualquiera del taller.'
+            : 'Queda reservado: solo lo sacan los responsables del proyecto, esa persona y el responsable de almacén.'}
+        </small>
+      </div>
       {canPhoto && (
         <div className="field">
           <span className="field-l">Foto del contenido <span className="muted">(opcional)</span></span>
@@ -320,7 +452,7 @@ function QuantityStep(props: { user: User; material: Material; place: Place; onB
         <button type="button" className="btn" onClick={props.onBack} disabled={Boolean(busy)}>
           ← Otro sitio
         </button>
-        <button className="btn btn-primary btn-big-inline" disabled={Boolean(busy) || (!untracked && !n)}>
+        <button className="btn btn-primary btn-big-inline" disabled={Boolean(busy) || (!untracked && !n) || (forWhom === 'reservado' && !projectId && !personId)}>
           {busy ??
             (untracked
               ? 'Registrar entrada'

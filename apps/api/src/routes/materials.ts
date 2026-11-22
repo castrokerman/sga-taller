@@ -20,6 +20,7 @@ export const FAMILY_SELECT = `
     SELECT f.id, tree.path || ' › ' || f.name, tree.ids || f.id FROM material_family f JOIN tree ON f.parent_id = tree.id
   )
   SELECT f.id, f.code, f.name, f.parent_id AS "parentId", f.default_unit_code AS "defaultUnitCode", f.active,
+         f.content_type_code AS "contentTypeCode",
          tree.path, tree.ids AS "ancestorIds",
          (SELECT count(*)::int FROM material m WHERE m.family_id = f.id AND m.deleted_at IS NULL) AS "materialCount",
          (SELECT count(*)::int FROM material_family k WHERE k.parent_id = f.id) AS "childCount"
@@ -37,7 +38,11 @@ export const MATERIAL_SELECT = `
          s.quantity::float AS quantity, s.quantity_free::float AS "quantityFree", s.places::int AS places,
          coalesce(s.needs_recount, false) AS "needsRecount",
          (m.min_stock IS NOT NULL AND m.quantity_tracking <> 'NOT_TRACKED' AND coalesce(s.quantity, 0) < m.min_stock) AS "lowStock",
-         (SELECT coalesce(sum(t.quantity), 0)::float FROM tool_loan t WHERE t.material_id = m.id AND t.status = 'OPEN') AS "onLoan"
+         (SELECT coalesce(sum(t.quantity), 0)::float FROM tool_loan t WHERE t.material_id = m.id AND t.status = 'OPEN') AS "onLoan",
+         (SELECT json_build_object('borrowerName', lu.full_name, 'projectCode', lp.code, 'projectName', lp.name,
+                                   'dueAt', t.due_at, 'overdue', t.due_at < now())
+            FROM tool_loan t JOIN app_user lu ON lu.id = t.borrower_id LEFT JOIN project lp ON lp.id = t.project_id
+           WHERE t.material_id = m.id AND t.status = 'OPEN' ORDER BY t.due_at LIMIT 1) AS "openLoan"
     FROM material m
     JOIN content_type ct ON ct.code = m.content_type_code
     JOIN material_family f ON f.id = m.family_id
@@ -81,8 +86,8 @@ type MaterialInput = Partial<{
 }>;
 
 /** Tipo de contenido activo, o error. */
-export async function contentType(c: pg.PoolClient, code: string | undefined): Promise<{ code: string; prefix: string }> {
-  const r = await c.query(`SELECT code, code_prefix AS prefix, active FROM content_type WHERE code = $1`, [code ?? 'MATERIAL']);
+export async function contentType(c: pg.PoolClient, code: string | undefined): Promise<{ code: string; prefix: string; unitTracked: boolean; name: string }> {
+  const r = await c.query(`SELECT code, code_prefix AS prefix, active, unit_tracked AS "unitTracked", name FROM content_type WHERE code = $1`, [code ?? 'MATERIAL']);
   if (!r.rows[0]) throw badRequest('El tipo de contenido no existe', 'TIPO_NO_EXISTE');
   if (!r.rows[0].active) throw conflict('Ese tipo de contenido está desactivado', 'TIPO_INACTIVO');
   return r.rows[0];
@@ -93,6 +98,13 @@ export const AUTO_REF = (prefixParam: string) => `${prefixParam} || '-' || lpad(
 
 const typeCodeFrom = (name: string) =>
   name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30) || 'TIPO';
+
+/** Un tipo recién creado aún no tiene familias: mientras tanto vale cualquiera. */
+const hasFamilies = async (c: pg.PoolClient, type: string) =>
+  Boolean((await c.query(`SELECT 1 FROM material_family WHERE content_type_code = $1 AND active LIMIT 1`, [type])).rowCount);
+
+const familyMismatch = (fam: { name: string }, type: { name: string }) =>
+  badRequest(`Esa familia es de ${fam.name}; para ${type.name} elige una familia de ${type.name}`, 'FAMILIA_DE_OTRO_TIPO');
 
 const clean = (v: string | null | undefined) => (v === undefined ? undefined : v === null ? null : v.trim() || null);
 
@@ -234,12 +246,15 @@ export function materialRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
       schema: {
         body: {
           type: 'object', required: ['name'], additionalProperties: false,
-          properties: { name: { type: 'string', minLength: 1, maxLength: 80 }, parentId: uuid, defaultUnitCode: { type: 'string', maxLength: 10 } },
+          properties: {
+            name: { type: 'string', minLength: 1, maxLength: 80 }, parentId: uuid, defaultUnitCode: { type: 'string', maxLength: 10 },
+            contentTypeCode: { type: 'string', maxLength: 40 },
+          },
         },
       },
     },
     async (request, reply) => {
-      const body = request.body as { name: string; parentId?: string; defaultUnitCode?: string };
+      const body = request.body as { name: string; parentId?: string; defaultUnitCode?: string; contentTypeCode?: string };
       const name = body.name.trim();
       if (!name) throw badRequest('Escribe un nombre');
       const id = await withTransaction(pool, async (c) => {
@@ -252,9 +267,17 @@ export function materialRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
         for (let i = 2; (await c.query(`SELECT 1 FROM material_family WHERE code = $1`, [code])).rowCount; i++) {
           code = `${familyCode(name).slice(0, 21)}_${i}`;
         }
+        // Una familia de primer nivel dice de qué tipo de contenido es; una subfamilia lo hereda.
+        let type = body.contentTypeCode ?? null;
+        if (!body.parentId) {
+          type ??= (await c.query(`SELECT code FROM content_type ORDER BY sort_order, name LIMIT 1`)).rows[0]?.code ?? null;
+          if (!type || !(await c.query(`SELECT 1 FROM content_type WHERE code = $1`, [type])).rowCount) {
+            throw badRequest('Elige de qué tipo de contenido es la familia', 'TIPO_NO_VALIDO');
+          }
+        }
         const r = await c.query(
-          `INSERT INTO material_family (code, name, parent_id, default_unit_code) VALUES ($1, $2, $3, $4) RETURNING id`,
-          [code, name, body.parentId ?? null, body.defaultUnitCode ?? null],
+          `INSERT INTO material_family (code, name, parent_id, default_unit_code, content_type_code) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+          [code, name, body.parentId ?? null, body.defaultUnitCode ?? null, type ?? 'MATERIAL'],
         );
         await writeAudit(c, {
           userId: request.user!.id, action: 'familia.alta', entityType: 'material_family', entityId: r.rows[0].id,
@@ -280,13 +303,14 @@ export function materialRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
             parentId: { anyOf: [{ type: 'null' }, uuid] },
             defaultUnitCode: { anyOf: [{ type: 'null' }, { type: 'string', maxLength: 10 }] },
             active: { type: 'boolean' },
+            contentTypeCode: { type: 'string', maxLength: 40 },
           },
         },
       },
     },
     async (request) => {
       const { id } = request.params as { id: string };
-      const body = request.body as { name?: string; parentId?: string | null; defaultUnitCode?: string | null; active?: boolean };
+      const body = request.body as { name?: string; parentId?: string | null; defaultUnitCode?: string | null; active?: boolean; contentTypeCode?: string };
       await withTransaction(pool, async (c) => {
         const before = (await c.query(`SELECT name, parent_id, default_unit_code, active FROM material_family WHERE id = $1 FOR UPDATE`, [id])).rows[0];
         if (!before) throw notFound('La familia no existe');
@@ -297,9 +321,10 @@ export function materialRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
         await c.query(
           `UPDATE material_family SET name = $2, parent_id = $3,
                   default_unit_code = CASE WHEN $4 THEN $5 ELSE default_unit_code END,
-                  active = coalesce($6, active)
+                  active = coalesce($6, active),
+                  content_type_code = coalesce($7, content_type_code)
             WHERE id = $1`,
-          [id, name, parentId, 'defaultUnitCode' in body, body.defaultUnitCode ?? null, body.active ?? null],
+          [id, name, parentId, 'defaultUnitCode' in body, body.defaultUnitCode ?? null, body.active ?? null, body.contentTypeCode ?? null],
         );
         await writeAudit(c, {
           userId: request.user!.id, action: 'familia.modificacion', entityType: 'material_family', entityId: id,
@@ -461,7 +486,7 @@ export function materialRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
       preHandler: requirePermission('material.manage'),
       schema: {
         body: {
-          type: 'object', required: ['description', 'familyId', 'unitCode'], additionalProperties: false,
+          type: 'object', required: ['description', 'familyId'], additionalProperties: false,
           properties: materialBody,
         },
       },
@@ -471,7 +496,13 @@ export function materialRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
       const id = await withTransaction(pool, async (c) => {
         await checkRefs(c, body);
         if (body.internalRef) await refCheck(c, body.internalRef, null);
-        const type = await contentType(c, body.contentTypeCode);
+        // El tipo es el de la familia (las familias cuelgan de un tipo de contenido).
+        const famType = (await c.query(`SELECT content_type_code FROM material_family WHERE id = $1`, [body.familyId])).rows[0].content_type_code as string;
+        const type = await contentType(c, body.contentTypeCode ?? famType);
+        if (type.code !== famType && await hasFamilies(c, type.code)) throw familyMismatch(await contentType(c, famType), type);
+        // Herramientas y equipos van de uno en uno: su unidad es siempre «ud».
+        const unitCode = type.unitTracked ? 'ud' : body.unitCode;
+        if (!unitCode) throw badRequest('Indica la unidad', 'FALTA_UNIDAD');
         const r = await c.query(
           `INSERT INTO material
              (internal_ref, description, family_id, manufacturer, manufacturer_ref, material_spec, quality_grade,
@@ -482,7 +513,7 @@ export function materialRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
           [
             body.internalRef?.trim().toUpperCase() || null, body.description!.trim(), body.familyId,
             clean(body.manufacturer) ?? null, clean(body.manufacturerRef) ?? null, clean(body.materialSpec) ?? null,
-            clean(body.qualityGrade) ?? null, clean(body.dimensions) ?? null, body.unitCode,
+            clean(body.qualityGrade) ?? null, clean(body.dimensions) ?? null, unitCode,
             body.quantityTracking ?? 'EXACT', body.lotTracked ?? false, body.isLoanable ?? false,
             body.minStock ?? null, clean(body.notes) ?? null, type.code, type.prefix, clean(body.serialNumber) ?? null,
           ],
@@ -553,6 +584,15 @@ async function updateMaterial(c: pg.PoolClient, request: FastifyRequest, id: str
   if (!before) throw notFound('El contenido no existe');
   await checkRefs(c, body);
   if (body.internalRef) await refCheck(c, body.internalRef, id);
+
+  // Familia y tipo van juntos: al cambiar de familia, el tipo sigue a la familia;
+  // al cambiar de tipo, la familia tiene que ser de ese tipo.
+  if (body.familyId !== undefined || body.contentTypeCode !== undefined) {
+    const famType = (await c.query(`SELECT content_type_code FROM material_family WHERE id = $1`, [body.familyId ?? before.family_id])).rows[0].content_type_code as string;
+    const finalType = body.contentTypeCode ?? (body.familyId !== undefined ? famType : before.content_type_code);
+    if (finalType !== famType && await hasFamilies(c, finalType)) throw familyMismatch(await contentType(c, famType), await contentType(c, finalType));
+    if (finalType !== before.content_type_code) body = { ...body, contentTypeCode: finalType };
+  }
 
   // Cambiar cómo se cuenta o la unidad de un material que ya tiene stock cambiaría el sentido de lo guardado.
   const hasStock = (await c.query(`SELECT 1 FROM stock_balance WHERE material_id = $1 LIMIT 1`, [id])).rowCount;
@@ -690,10 +730,11 @@ export const LOAN_SELECT = `
          t.loaned_at AS "loanedAt", t.due_at AS "dueAt", t.returned_at AS "returnedAt", t.status, t.notes,
          (t.status = 'OPEN' AND t.due_at < now()) AS overdue,
          coalesce(k.code, sl.code) AS "fromCode", t.container_id AS "containerId", t.location_id AS "locationId",
-         lt.lot_code AS "lotCode"
+         lt.lot_code AS "lotCode", t.project_id AS "projectId", lp.code AS "projectCode", lp.name AS "projectName"
     FROM tool_loan t
     JOIN material m ON m.id = t.material_id
     JOIN app_user u ON u.id = t.borrower_id
+    LEFT JOIN project lp ON lp.id = t.project_id
     LEFT JOIN material_lot lt ON lt.id = t.lot_id
     LEFT JOIN container k ON k.id = t.container_id
     LEFT JOIN storage_location sl ON sl.id = t.location_id`;

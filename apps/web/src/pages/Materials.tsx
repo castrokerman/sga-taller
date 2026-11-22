@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { api, errorMessage, formatQty, photoUrl, TRACKING_NAMES, type ContentType, type Family, type Material, type MaterialInput, type Unit, type User } from '../api';
+import { api, errorMessage, formatDate, formatQty, photoUrl, TRACKING_NAMES, type ContentType, type Family, type Material, type MaterialInput, type Unit, type User } from '../api';
 import { Highlight, optionsFrom, useListControls, type ListConfig } from '../components/ListControls';
 import { navigate } from '../router';
 import { BulkEditor, type BulkChanges } from '../components/BulkEditor';
@@ -214,9 +214,15 @@ export function MaterialsPage({ user }: { user: User }) {
                         <td className="hide-m">{m.familyName}</td>
                         <td className="hide-m">{TRACKING_NAMES[m.quantityTracking]}</td>
                         <td className={`num nowrap ${m.lowStock ? 'low' : ''}`}>
-                          <strong>{m.places === 0 ? <span className="muted">Sin stock</span> : formatQty(m.quantity, m.unitCode, m.quantityTracking)}</strong>
-                          {m.lowStock && <div className="small">Stock bajo</div>}
-                          {m.onLoan > 0 && <div className="small muted">{formatQty(m.onLoan, m.unitCode)} prestado</div>}
+                          {singleLoanable(m) ? (
+                            <LoanChip m={m} />
+                          ) : (
+                            <>
+                              <strong>{m.places === 0 ? <span className="muted">Sin stock</span> : formatQty(m.quantity, m.unitCode, m.quantityTracking)}</strong>
+                              {m.lowStock && <div className="small">Stock bajo</div>}
+                              {m.onLoan > 0 && <div className="small muted">{formatQty(m.onLoan, m.unitCode)} prestado</div>}
+                            </>
+                          )}
                         </td>
                         <td className="hide-m">{m.places === 0 ? '—' : m.places === 1 ? '1 sitio' : `${m.places} sitios`}</td>
                       </tr>
@@ -282,6 +288,8 @@ export function MaterialForm(props: {
   embedded?: boolean;
   /** Si se ofrece foto al crear (hace falta permiso para añadir fotos). */
   canPhoto?: boolean;
+  /** Tipo ya elegido antes (al registrar una entrada): no se vuelve a preguntar. */
+  fixedType?: string;
   onCancel: () => void;
   onDone: (m: Material) => void;
 }) {
@@ -291,10 +299,13 @@ export function MaterialForm(props: {
   const [types, setTypes] = useState<ContentType[]>([]);
   const [f, setF] = useState<MaterialInput>({
     description: '', familyId: '', unitCode: 'ud', quantityTracking: 'EXACT', lotTracked: false, isLoanable: false,
-    contentTypeCode: 'MATERIAL',
+    contentTypeCode: props.fixedType ?? 'MATERIAL',
     ...init,
   });
   const unitType = Boolean(types.find((t) => t.code === f.contentTypeCode)?.unitTracked);
+  // Solo las familias del tipo elegido (si el tipo aún no tiene, todas).
+  const ofType = families.filter((x) => x.contentTypeCode === f.contentTypeCode);
+  const typeFamilies = ofType.length ? ofType : families;
   const [min, setMin] = useState(init.minStock != null ? String(init.minStock).replace('.', ',') : '');
   const [more, setMore] = useState(Boolean(init.manufacturer || init.manufacturerRef || init.materialSpec || init.qualityGrade || init.dimensions || init.notes));
   const [error, setError] = useState<string | null>(null);
@@ -356,6 +367,7 @@ export function MaterialForm(props: {
   const body = (
     <>
       {!props.embedded && <h3>{props.title}</h3>}
+      {!props.fixedType && (
       <div className="field">
         <span className="field-l">Tipo</span>
         <div className="pchips">
@@ -369,7 +381,10 @@ export function MaterialForm(props: {
                 setF((x) => ({
                   ...x, contentTypeCode: t.code,
                   ...(props.materialId ? {} : { quantityTracking: t.unitTracked ? 'EXACT' : t.defaultTracking, isLoanable: t.defaultLoanable }),
-                  ...(t.unitTracked ? { quantityTracking: 'EXACT' as const, lotTracked: false } : {}),
+                  ...(t.unitTracked ? { quantityTracking: 'EXACT' as const, lotTracked: false, unitCode: 'ud' } : {}),
+                  // La familia tiene que ser de este tipo.
+                  ...(families.some((fa) => fa.id === x.familyId && fa.contentTypeCode !== t.code) && families.some((fa) => fa.contentTypeCode === t.code)
+                    ? { familyId: '' } : {}),
                 }))
               }
             >
@@ -389,6 +404,7 @@ export function MaterialForm(props: {
           );
         })()}
       </div>
+      )}
       <label className="field">
         <span>Descripción</span>
         <input value={f.description ?? ''} onChange={(e) => set('description', e.target.value)} maxLength={300} required autoFocus placeholder="Tornillo DIN 912 M6x20 inox A2" />
@@ -405,24 +421,29 @@ export function MaterialForm(props: {
             }}
           >
             <option value="">Elige una familia</option>
-            {families.map((x) => (
+            {typeFamilies.map((x) => (
               <option key={x.id} value={x.id}>
                 {'  '.repeat(x.ancestorIds.length - 1)}
                 {x.name}
               </option>
             ))}
           </select>
+          {typeFamilies === families && families.length > 0 && (
+            <small className="muted">Este tipo aún no tiene familias propias: se puede elegir cualquiera (en «Familias» se le añaden).</small>
+          )}
         </label>
-        <label className="field">
-          <span>Unidad</span>
-          <select value={f.unitCode} onChange={(e) => set('unitCode', e.target.value)}>
-            {units.map((u) => (
-              <option key={u.code} value={u.code}>
-                {u.name} ({u.code})
-              </option>
-            ))}
-          </select>
-        </label>
+        {!unitType && (
+          <label className="field">
+            <span>Unidad</span>
+            <select value={f.unitCode} onChange={(e) => set('unitCode', e.target.value)}>
+              {units.map((u) => (
+                <option key={u.code} value={u.code}>
+                  {u.name} ({u.code})
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
       {unitType ? (
         <>
@@ -621,4 +642,26 @@ function BulkMaterials(props: { rows: Material[]; families: Family[]; onClose: (
       ]}
     />
   );
+}
+
+/** Prestable de una sola unidad: en vez de «1 ud», si está disponible o prestado. */
+export const singleLoanable = (m: Material) => m.isLoanable && (m.unitTracked || (m.quantity ?? 0) + m.onLoan <= 1);
+
+export function LoanChip({ m }: { m: Material }) {
+  const l = m.openLoan;
+  if (l) {
+    return (
+      <span className="loan-chip-wrap">
+        <span className={`tag ${l.overdue ? 'tag-overdue' : 'tag-lent'}`} title={`Devolver el ${formatDate(l.dueAt)}`}>
+          {l.overdue ? 'Prestado · vencido' : 'Prestado'}
+        </span>
+        <span className="small muted">
+          {l.borrowerName}
+          {l.projectCode && <> · {l.projectCode}</>}
+        </span>
+      </span>
+    );
+  }
+  if ((m.quantity ?? 0) > 0) return <span className="tag tag-available">Disponible</span>;
+  return <span className="muted small">Sin stock</span>;
 }

@@ -245,7 +245,7 @@ export function locationRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
         );
       }
       await withTransaction(pool, async (c) => {
-        const r = await c.query(`INSERT INTO location_type (code, name, code_prefix, holds_content) VALUES ($1, $2, $3, $4) RETURNING id`, [
+        const r = await c.query(`INSERT INTO location_type (code, name, code_prefix, holds_content, sort_order) VALUES ($1, $2, $3, $4, (SELECT coalesce(max(sort_order), 0) + 1 FROM location_type)) RETURNING id`, [
           code, body.name.trim(), body.codePrefix, body.holdsContent ?? false,
         ]);
         if (body.allowedContainerTypes) await setAllowed(c, r.rows[0].id, body.allowedContainerTypes);

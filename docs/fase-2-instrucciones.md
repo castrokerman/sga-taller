@@ -259,6 +259,12 @@ el almacén anidado.
   su ubicación.
 - La búsqueda deja solo lo que coincide y el camino hasta ello, ya desplegado.
   Sirve para saber dónde está algo sin recorrer el almacén.
+- **«Mostrar ubicaciones»** y **«Mostrar contenedores»**: sin ubicaciones,
+  salen solo los contenedores, cada uno con la ubicación donde está. La lista
+  **«Todos los tipos»** filtra por un tipo de ubicación o de contenedor (por
+  ejemplo, solo los palets), con el camino hasta cada uno. En la ficha de una
+  ubicación, en vista de lista, las mismas dos casillas ocultan una sección u
+  otra.
 - En el móvil, las nubes van debajo del código, una encima de otra, para que el
   código se lea entero.
 - Junto a cada contenedor salen sus nubes: 📦 en verde, la descripción de lo

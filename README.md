@@ -44,6 +44,10 @@ documentación técnica y calibración de equipos.
   contenedores admite. Lo suelto antiguo se mete en una caja nueva con un botón.
 - Mover varios contenedores a la vez y elegir cualquier destino en una lista
   desplegable, sin saberse el código.
+- Registrar entrada por tipo (nuevo o ya registrado), para un proyecto o una
+  persona (queda reservado) o de uso general; y varias cosas a la vez en lista.
+- Familias agrupadas por tipo de contenido; tipos que se ordenan y se eliminan.
+- Préstamos asociados a proyecto y estado Disponible / Prestado / Vencido.
 - Inicio agrupado por bloques (Día a día, Inventario, Control, Administración);
   cada persona ve los suyos según sus permisos.
 - Contenidos (antes «Materiales») con tipos editables: Material, Herramienta,

@@ -63,8 +63,15 @@ nueva, **«Contenido»**, con lo que hay dentro y los botones para operar.
 
 ### Familias
 
-En «Contenidos» → **«Gestionar familias»**. Ya vienen unas cuantas para
-empezar: barras, chapas, tornillería, herramientas, consumibles… Puedes:
+En «Contenidos» → **«Gestionar familias»**. El **primer nivel son los tipos
+de contenido** (Material, Herramienta, Equipo, Consumible…) y debajo de cada
+uno, sus familias y subfamilias. Al registrar un contenido solo se ofrecen las
+familias de su tipo. Ya vienen unas cuantas: «Herramientas» en Herramienta,
+«Equipos de medición» en Equipo, «Consumibles» en Consumible y las demás en
+Material. Puedes:
+
+- **Cambiar el tipo** de una familia principal: sus subfamilias la siguen.
+- Un tipo nuevo, mientras no tenga familias propias, deja elegir cualquiera.
 
 - **Crear** familias nuevas y **subfamilias** dentro de otras. Por ejemplo,
   «Tornillos» y «Tuercas y arandelas» dentro de «Tornillería».
@@ -151,17 +158,32 @@ varias a la vez».
 ### Registrar entrada (desde el inicio)
 
 Es la forma más cómoda de meter material. En el inicio, **«Registrar
-entrada»** te lleva en tres pasos:
+entrada»** → **«Sé lo que es»** te lleva paso a paso:
 
-1. **Material**: búscalo por nombre o referencia, o pulsa «+ Material nuevo»
-   para crearlo en ese momento.
-2. **Dónde**: elígelo en la lista desplegable o escanea la etiqueta. Si
+1. **Tipo de contenido**: Material, Herramienta, Equipo, Consumible…
+2. **¿Nuevo o ya registrado?** «Contenido nuevo» lo da de alta en ese momento
+   (solo con las familias de su tipo y, en herramientas y equipos, sin pedir
+   unidad: van de una en una). «Contenido ya registrado» es para reponer o
+   aumentar: búscalo por nombre o referencia.
+3. **Dónde**: elígelo en la lista desplegable o escanea la etiqueta. Si
    repites sitio, sale «El mismo que la última vez».
-3. **Cantidad**: con lote, albarán, nota y, si quieres, **foto del
-   material**, que se añade a su ficha.
+4. **Cantidad y para quién**: con lote, albarán, nota y, si quieres, **foto
+   del contenido**. En «¿Para quién es?»: **«Uso general del taller»** (lo
+   puede usar cualquiera) o **«Para un proyecto o una persona»**: queda
+   reservado y solo lo sacan los responsables de ese proyecto, esa persona y
+   el responsable de almacén.
 
 Al terminar puedes seguir con **otra entrada en el mismo sitio**, con **más
-del mismo material en otro sitio**, o empezar de cero.
+del mismo contenido en otro sitio**, o empezar de cero.
+
+### Varias cosas a la vez
+
+En «Registrar entrada» → **«Varias cosas a la vez»**: una lista con una fila
+por cosa (tipo, contenido, cantidad, dónde y proyecto). En «Contenido»,
+escribe para elegir uno ya registrado; si no está, se da de alta al
+registrar (elige su familia). **Cada fila nueva copia el sitio y el proyecto
+de la anterior.** Se revisa y se pulsa «Registrar N filas»: cada fila dice si
+ha ido bien; las que fallan se quedan para corregirlas.
 
 ### Cuando no sabes qué es: «Lo identifica el responsable»
 
@@ -276,7 +298,14 @@ sigue habiendo.
 
 En una herramienta marcada como prestable, **«Prestar»**. Por defecto se
 presta a quien lo pide, y la fecha de devolución es **dentro de 14 días** si
-no se indica otra. Un responsable puede prestar a otra persona.
+no se indica otra. Un responsable puede prestar a otra persona. Además se
+pregunta **si está asociado a un proyecto** («No: uso general del taller» o
+uno de los proyectos activos).
+
+En «Contenidos», las herramientas prestables de una unidad no muestran «1 ud»
+sino su estado: **«Disponible»** en verde, **«Prestado»** en amarillo o
+**«Prestado · vencido»** en rojo si se ha pasado el plazo, con la persona y
+el proyecto. Lo mismo junto al título de su ficha.
 
 En **«Préstamos»** se ven los abiertos; los que están fuera de plazo salen
 en rojo. Cada persona ve **solo sus préstamos** («Tus préstamos»); los
@@ -380,10 +409,11 @@ Pulsar una línea enseña el detalle de lo registrado.
 ## 7. Material restringido (lo que viene en la Fase 4)
 
 En las tablas de stock aparece el **tipo de stock**: «Genérico de taller»,
-«Libre · proyecto», «Restringido · proyecto» o «Restringido sin proyecto».
-Por ahora todo lo que entra es genérico de taller. Asignar material a
-proyectos y autorizar su retirada llega en la Fase 4. El sistema ya impide
-retirar lo restringido sin autorización.
+«Restringido · proyecto» o «Restringido sin proyecto». Lo que entra «Para un
+proyecto o una persona» queda restringido: solo lo sacan, trasladan o prestan
+los responsables de ese proyecto, esa persona y el responsable de almacén; los
+demás solo pueden sacar la parte libre. Pedir autorización para usar lo de
+otro llega en la Fase 4.
 
 ## 8. Excel
 
@@ -434,10 +464,11 @@ Es una copia para consultar: lo que cambies en el Excel no vuelve al sistema.
 | Importación desde Excel | No incluida: se parte de cero. Si hace falta una carga masiva, se añade |
 
 
-## Eliminar contenidos (administrador técnico)
+## Eliminar contenidos
 
-En «Contenidos» → «Editar en tabla», el administrador técnico tiene un botón
-«Eliminar» en cada fila. Siempre pide confirmación.
+En «Contenidos» → «Editar en tabla», el administrador técnico y el
+responsable de almacén tienen un botón «Eliminar» en cada fila. Siempre pide
+confirmación.
 
 - Si el contenido no tiene historial, se borra del todo.
 - Si tiene historial (movimientos, préstamos, recepciones), desaparece de las
@@ -445,3 +476,10 @@ En «Contenidos» → «Editar en tabla», el administrador técnico tiene un bo
   abierta desde un movimiento antiguo, avisa de que está eliminado.
 - Si aún queda algo guardado o prestado, no deja: primero hay que retirarlo o
   que lo devuelvan.
+
+## Tipos: ordenar y eliminar
+
+En «Tipos», cada fila tiene **↑ ↓** para subirla o bajarla: ese orden es el
+que se ve en todas las listas. **«Eliminar»** borra un tipo que nadie usa
+(con confirmación); si lo usan ubicaciones, contenedores o contenidos, el
+botón sale apagado: desactívalo para que no se use más.

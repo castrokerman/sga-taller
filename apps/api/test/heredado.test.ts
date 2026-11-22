@@ -204,7 +204,7 @@ describe('editar varios contenedores y materiales a la vez', () => {
   it('materiales: familia, aviso mínimo y prestable; todo o nada', async () => {
     const fam = (await call('GET', '/api/material-families', almacen)).json().families as Array<{ id: string; code: string }>;
     const torn = fam.find((f) => f.code === 'TORNILLERIA')!.id;
-    const herr = fam.find((f) => f.code === 'HERRAMIENTA')!.id;
+    const herr = fam.find((f) => f.code === 'BARRA')!.id; // otra familia del mismo tipo
     const mk = async (description: string) =>
       (await call('POST', '/api/materials', almacen, { description, familyId: torn, unitCode: 'ud' })).json().material.id as string;
     const a = await mk('FICTICIO Llave 10');
@@ -428,11 +428,11 @@ describe('el contenido va siempre en un contenedor', () => {
     expect((await call('GET', `/api/containers/${id}`, almacen)).json().container.contentDescription).toBeNull();
   });
 
-  it('el administrador técnico elimina contenidos: sin historial del todo, con historial conservándolo', async () => {
+  it('el administrador técnico y el responsable de almacén eliminan contenidos: sin historial del todo, con historial conservándolo', async () => {
     const fam = (await call('GET', '/api/material-families', almacen)).json().families[0].id;
     const nuevo = (await call('POST', '/api/materials', almacen, { description: 'FICTICIO Borrable', familyId: fam, unitCode: 'ud' })).json().material.id;
-    // El responsable de almacén no puede.
-    expect((await call('DELETE', `/api/materials/${nuevo}`, almacen)).statusCode).toBe(403);
+    // Un usuario normal no puede; el responsable de almacén y el administrador técnico sí.
+    expect((await call('DELETE', `/api/materials/${nuevo}`, usuario)).statusCode).toBe(403);
     const r1 = await call('DELETE', `/api/materials/${nuevo}`, admin);
     expect(r1.statusCode, r1.body).toBe(200);
     expect(r1.json().keptHistory).toBe(false);
@@ -455,6 +455,72 @@ describe('el contenido va siempre en un contenedor', () => {
     const lista = (await call('GET', '/api/materials?includeObsolete=true', almacen)).json().materials;
     expect(lista.some((m: { id: string }) => m.id === usado)).toBe(false);
     expect((await pool.query(`SELECT count(*)::int AS n FROM stock_movement_line WHERE material_id = $1`, [usado])).rows[0].n).toBe(2);
+  });
+
+  it('los tipos sin uso se eliminan, los usados no; y se reordenan a mano', async () => {
+    const ct = await call('POST', '/api/container-types', admin, { code: 'CUBO', name: 'FICTICIO Cubo', codePrefix: 'CUB' });
+    expect(ct.statusCode, ct.body).toBe(201);
+    expect((await call('DELETE', '/api/container-types/CUBO', almacen)).statusCode).toBe(403);
+    expect((await call('DELETE', '/api/container-types/CUBO', admin)).statusCode).toBe(200);
+    const used = await call('DELETE', '/api/container-types/CAJA', admin);
+    expect(used.statusCode).toBe(409);
+    expect(used.json().error.message).toContain('Desactívalo');
+    expect((await call('DELETE', '/api/content-types/MATERIAL', admin)).statusCode).toBe(409);
+    // Reordenar: todos los tipos, en el orden nuevo.
+    const codes = (await call('GET', '/api/location-types', admin)).json().types.map((t: { code: string }) => t.code);
+    const reversed = [...codes].reverse();
+    expect((await call('POST', '/api/location-types/order', admin, { codes: reversed })).statusCode).toBe(200);
+    expect((await call('GET', '/api/location-types', admin)).json().types.map((t: { code: string }) => t.code)).toEqual(reversed);
+    expect((await call('POST', '/api/location-types/order', admin, { codes: reversed.slice(1) })).statusCode).toBe(400);
+    await call('POST', '/api/location-types/order', admin, { codes });
+  });
+
+  it('un préstamo puede ir asociado a un proyecto y la lista de contenidos dice a quién y para qué', async () => {
+    const fam = (await call('GET', '/api/material-families', almacen)).json().families[0].id;
+    const usuarioId = (await pool.query(`SELECT id FROM app_user WHERE username = 'demo.usuario'`)).rows[0].id;
+    const pr = await call('POST', '/api/projects', almacen, { code: 'FIC-PRE', name: 'FICTICIO Préstamos', responsibleIds: [usuarioId] });
+    expect(pr.statusCode, pr.body).toBe(201);
+    const projectId = pr.json().id;
+    const z = await loc('PRES', 'ZONA');
+    const llave = (await call('POST', '/api/materials', almacen, { description: 'FICTICIO Llave dinamométrica', familyId: (await pool.query(`SELECT id FROM material_family WHERE content_type_code = 'HERRAMIENTA' LIMIT 1`)).rows[0].id, unitCode: 'ud', contentTypeCode: 'HERRAMIENTA', isLoanable: true })).json().material.id;
+    expect((await call('POST', '/api/stock/receipt', almacen, { materialId: llave, locationId: z.id, quantity: 1 })).statusCode).toBe(201);
+    const bal = (await pool.query(`SELECT id FROM stock_balance WHERE material_id = $1`, [llave])).rows[0].id;
+    const r = await call('POST', '/api/loans', almacen, { balanceId: bal, borrowerId: usuarioId, projectId });
+    expect(r.statusCode, r.body).toBe(201);
+    expect(r.json().message).toContain('proyecto FIC-PRE');
+    const m = (await call('GET', '/api/materials', almacen)).json().materials.find((x: { id: string }) => x.id === llave);
+    expect(m.openLoan).toMatchObject({ projectCode: 'FIC-PRE', overdue: false });
+    expect(m.openLoan.borrowerName).toBeTruthy();
+    const loans = (await call('GET', '/api/loans?all=true', almacen)).json().loans;
+    expect(loans.find((l: { materialId: string }) => l.materialId === llave).projectCode).toBe('FIC-PRE');
+  });
+
+  it('lo que entra para un proyecto queda reservado: solo sus responsables (y almacén) lo sacan', async () => {
+    const fam = (await call('GET', '/api/material-families', almacen)).json().families[0].id;
+    const ids = Object.fromEntries((await pool.query(`SELECT username, id FROM app_user WHERE username IN ('demo.usuario', 'demo.proyecto')`)).rows.map((r) => [r.username, r.id]));
+    const pr = await call('POST', '/api/projects', almacen, { code: 'FIC-RES', name: 'FICTICIO Reservas', responsibleIds: [ids['demo.proyecto']] });
+    expect(pr.statusCode, pr.body).toBe(201);
+    const z = await loc('RESV', 'ZONA');
+    const m = (await call('POST', '/api/materials', almacen, { description: 'FICTICIO Placa', familyId: fam, unitCode: 'ud' })).json().material.id;
+    const r = await call('POST', '/api/stock/receipt', almacen, { materialId: m, locationId: z.id, quantity: 10, projectId: pr.json().id });
+    expect(r.statusCode, r.body).toBe(201);
+    expect(r.json().message).toContain('reservado para el proyecto FIC-RES');
+    expect((await call('POST', '/api/stock/receipt', almacen, { materialId: m, locationId: z.id, quantity: 2 })).statusCode).toBe(201);
+    const bal = (await pool.query(`SELECT id FROM stock_balance WHERE material_id = $1`, [m])).rows[0].id;
+    // Un usuario cualquiera solo saca lo libre (2).
+    const no = await call('POST', '/api/stock/withdraw', usuario, { balanceId: bal, quantity: 3, reason: 'FICTICIO' });
+    expect(no.statusCode).toBe(409);
+    expect(no.json().error.message).toContain('Solo 2');
+    expect((await call('POST', '/api/stock/withdraw', usuario, { balanceId: bal, quantity: 2, reason: 'FICTICIO' })).statusCode).toBe(200);
+    // El responsable del proyecto sí saca lo reservado, y la reserva baja con ello.
+    const proyecto = await sessionOf('demo.proyecto');
+    const w = await call('POST', '/api/stock/withdraw', proyecto, { balanceId: bal, quantity: 4, reason: 'FICTICIO' });
+    expect(w.statusCode, w.body).toBe(200);
+    const left = (await pool.query(`SELECT quantity::float AS q FROM stock_allocation WHERE stock_balance_id = $1`, [bal])).rows[0].q;
+    expect(left).toBe(6);
+    // El responsable de almacén lo vacía.
+    expect((await call('POST', '/api/stock/withdraw', almacen, { balanceId: bal, quantity: 6, reason: 'FICTICIO' })).statusCode).toBe(200);
+    expect((await pool.query(`SELECT count(*)::int AS n FROM stock_balance WHERE id = $1`, [bal])).rows[0].n).toBe(0);
   });
 
   it('cada tipo de ubicación puede limitar qué contenedores admite', async () => {

@@ -254,6 +254,8 @@ export interface Family {
   ancestorIds: string[];
   materialCount: number;
   childCount: number;
+  /** Tipo de contenido del que cuelga (las subfamilias, el de su familia). */
+  contentTypeCode: string;
 }
 
 export interface Material {
@@ -284,6 +286,8 @@ export interface Material {
   needsRecount: boolean;
   lowStock: boolean;
   onLoan: number;
+  /** El préstamo abierto (el que vence antes): a quién, para qué proyecto y si se ha pasado. */
+  openLoan?: { borrowerName: string; projectCode: string | null; projectName: string | null; dueAt: string; overdue: boolean } | null;
   photoId: string | null;
   /** Tipo de contenido: Material, Herramienta, Equipo, Consumible… */
   contentTypeCode: string;
@@ -295,7 +299,7 @@ export interface Material {
 }
 
 export type MaterialInput = Partial<Omit<Material,
-  'id' | 'familyName' | 'decimals' | 'createdAt' | 'quantity' | 'quantityFree' | 'places' | 'needsRecount' | 'lowStock' | 'onLoan' | 'contentTypeName' | 'unitTracked' | 'qrToken'>>;
+  'id' | 'familyName' | 'decimals' | 'createdAt' | 'quantity' | 'quantityFree' | 'places' | 'needsRecount' | 'lowStock' | 'onLoan' | 'openLoan' | 'contentTypeName' | 'unitTracked' | 'qrToken'>>;
 
 export interface ContentType {
   code: string;
@@ -366,6 +370,9 @@ export interface MovementLine {
 
 export interface Loan {
   id: string;
+  projectId: string | null;
+  projectCode: string | null;
+  projectName: string | null;
   materialId: string;
   internalRef: string;
   description: string;
@@ -661,9 +668,9 @@ export const api = {
 
   units: () => request<{ units: Unit[] }>('GET', '/api/units'),
   families: () => request<{ families: Family[] }>('GET', '/api/material-families'),
-  createFamily: (data: { name: string; parentId?: string; defaultUnitCode?: string }) =>
+  createFamily: (data: { name: string; parentId?: string; defaultUnitCode?: string; contentTypeCode?: string }) =>
     request<{ family: Family }>('POST', '/api/material-families', data, newOperationKey()),
-  updateFamily: (id: string, data: { name?: string; parentId?: string | null; defaultUnitCode?: string | null; active?: boolean }) =>
+  updateFamily: (id: string, data: { name?: string; parentId?: string | null; defaultUnitCode?: string | null; active?: boolean; contentTypeCode?: string }) =>
     request<{ family: Family }>('PATCH', `/api/material-families/${id}`, data),
   deleteFamily: (id: string) => request<{ ok: true }>('DELETE', `/api/material-families/${id}`),
 
@@ -678,7 +685,7 @@ export const api = {
   stockAt: (place: PlaceRef) =>
     request<{ stock: StockLine[] }>('GET', `/api/stock?${place.containerId ? `containerId=${place.containerId}` : `locationId=${place.locationId}`}`),
   movements: (limit = 300) => request<{ movements: MovementLine[] }>('GET', `/api/stock/movements?limit=${limit}`),
-  receive: (data: PlaceRef & { materialId: string; quantity?: number; lotCode?: string; reason?: string; externalReference?: string; isReturn?: boolean }, key: string) =>
+  receive: (data: PlaceRef & { materialId: string; quantity?: number; lotCode?: string; reason?: string; externalReference?: string; isReturn?: boolean; projectId?: string; responsibleUserId?: string }, key: string) =>
     request<OpResult>('POST', '/api/stock/receipt', data, key),
   withdraw: (data: { balanceId: string; quantity?: number; reason?: string; exhausted?: boolean }, key: string) =>
     request<OpResult>('POST', '/api/stock/withdraw', data, key),
@@ -689,7 +696,7 @@ export const api = {
   reverse: (movementId: string, reason: string, key: string) =>
     request<OpResult>('POST', `/api/stock/movements/${movementId}/reverse`, { reason }, key),
   loans: (all = false) => request<{ loans: Loan[]; everyone: boolean }>('GET', `/api/loans?all=${all}`),
-  lend: (data: { balanceId: string; quantity?: number; dueDate?: string; borrowerId?: string; notes?: string }, key: string) =>
+  lend: (data: { balanceId: string; quantity?: number; dueDate?: string; borrowerId?: string; notes?: string; projectId?: string }, key: string) =>
     request<OpResult>('POST', '/api/loans', data, key),
   returnLoan: (id: string, data: PlaceRef & { notes?: string }, key: string) =>
     request<OpResult>('POST', `/api/loans/${id}/return`, data, key),
@@ -750,6 +757,8 @@ export const api = {
   search: (q: string) => request<SearchResult>('GET', `/api/search?q=${encodeURIComponent(q)}`),
   tree: () => request<{ locations: TreeLocation[]; containers: TreeContainer[] }>('GET', '/api/tree'),
   scan: (code: string) => request<ScanHit>('GET', `/api/scan/${encodeURIComponent(code)}`),
+  orderTypes: (kind: TypeKind, codes: string[]) => request<{ ok: true }>('POST', `/api/${TYPE_PATHS[kind]}/order`, { codes }),
+  deleteType: (kind: TypeKind, code: string) => request<{ ok: true }>('DELETE', `/api/${TYPE_PATHS[kind]}/${code}`),
   basicUsers: () => request<{ users: Array<{ id: string; fullName: string }> }>('GET', '/api/users/basic'),
 
   /** Pide el PDF de etiquetas y lo descarga. */
@@ -797,6 +806,9 @@ export const TRACKING_NAMES: Record<Tracking, string> = {
   ESTIMATED: 'Aproximado',
   NOT_TRACKED: 'Sin contar',
 };
+
+export type TypeKind = 'location' | 'container' | 'content';
+const TYPE_PATHS: Record<TypeKind, string> = { location: 'location-types', container: 'container-types', content: 'content-types' };
 
 export const MOVEMENT_NAMES: Record<string, string> = {
   RECEIPT: 'Entrada',

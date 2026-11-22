@@ -546,7 +546,13 @@ function ReceiptForm(props: {
 }
 
 /** Buscar un material del catálogo por nombre, referencia o fabricante. Permite crear uno nuevo. */
-export function MaterialPicker(props: { user: User; onPick: (m: Material) => void; onCancel: () => void }) {
+export function MaterialPicker(props: {
+  user: User; onPick: (m: Material) => void; onCancel: () => void;
+  /** Solo los de este tipo de contenido. */
+  type?: string;
+  /** Sin el botón de alta (la pantalla ya ofrece «Contenido nuevo» aparte). */
+  noCreate?: boolean;
+}) {
   const [all, setAll] = useState<Material[] | null>(null);
   const [q, setQ] = useState('');
   const [creating, setCreating] = useState(false);
@@ -560,18 +566,20 @@ export function MaterialPicker(props: { user: User; onPick: (m: Material) => voi
     if (!all) return [];
     const words = normalize(q).split(/\s+/).filter(Boolean);
     return all
+      .filter((m) => !props.type || m.contentTypeCode === props.type)
       .filter((m) => {
         const text = normalize([m.description, m.internalRef, m.manufacturer, m.manufacturerRef, m.familyName, m.dimensions, m.qualityGrade].filter(Boolean).join(' '));
         return words.every((w) => text.includes(w));
       })
       .slice(0, 12);
-  }, [all, q]);
+  }, [all, q, props.type]);
 
   if (creating) {
     return (
       <MaterialForm
         title="Contenido nuevo"
         canPhoto={props.user.permissions.includes('photo.add')}
+        fixedType={props.type}
         onCancel={() => setCreating(false)}
         onDone={(m) => props.onPick(m)}
         embedded
@@ -608,7 +616,7 @@ export function MaterialPicker(props: { user: User; onPick: (m: Material) => voi
         <button type="button" className="btn" onClick={props.onCancel}>
           Cancelar
         </button>
-        {can(props.user, 'material.manage') && (
+        {can(props.user, 'material.manage') && !props.noCreate && (
           <button type="button" className="btn" onClick={() => setCreating(true)}>
             + Contenido nuevo
           </button>
@@ -790,8 +798,13 @@ function LendForm(props: { user: User; line: StockLine; onCancel: () => void; on
   const [borrower, setBorrower] = useState(user.id);
   const [notes, setNotes] = useState('');
   const [users, setUsers] = useState<Array<{ id: string; fullName: string }>>([]);
+  const [projects, setProjects] = useState<Array<{ id: string; code: string; name: string }>>([]);
+  const [project, setProject] = useState('');
   const { busy, error, run } = useOperation(props.onDone);
   const n = parseNumber(qty);
+  useEffect(() => {
+    api.projects().then((r) => setProjects(r.projects.filter((p) => p.status === 'ACTIVE'))).catch(() => undefined);
+  }, []);
   const defaultDue = new Date(Date.now() + 14 * 86_400_000).toLocaleDateString('es-ES');
 
   useEffect(() => {
@@ -803,7 +816,7 @@ function LendForm(props: { user: User; line: StockLine; onCancel: () => void; on
       className="card form op-form"
       onSubmit={(e) => {
         e.preventDefault();
-        void run((key) => api.lend({ balanceId: line.id, quantity: n, dueDate: due || undefined, borrowerId: borrower, notes: notes.trim() || undefined }, key));
+        void run((key) => api.lend({ balanceId: line.id, quantity: n, dueDate: due || undefined, borrowerId: borrower, notes: notes.trim() || undefined, projectId: project || undefined }, key));
       }}
     >
       <h3>Prestar {line.description}</h3>
@@ -830,6 +843,17 @@ function LendForm(props: { user: User; line: StockLine; onCancel: () => void; on
           <small className="muted">Si lo dejas vacío: dentro de 14 días ({defaultDue}).</small>
         </label>
       </div>
+      <label className="field">
+        <span>¿Está asociado a un proyecto?</span>
+        <select value={project} onChange={(e) => setProject(e.target.value)}>
+          <option value="">No: uso general del taller</option>
+          {projects.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.code} · {p.name}
+            </option>
+          ))}
+        </select>
+      </label>
       {line.quantity !== null && line.quantity > 1 && (
         <>
           <span className="field-l">Cuántos</span>
