@@ -656,6 +656,15 @@ export const api = {
     request<MoveResult>('POST', `/api/containers/${id}/move`, data, key),
   retireContainer: (id: string, reason: string, key: string) =>
     request<ContainerDetail>('POST', `/api/containers/${id}/retire`, { reason }, key),
+  retireContainerWith: (
+    id: string,
+    data: {
+      reason?: string;
+      items: Array<{ balanceId: string; action: 'TRASH' | 'MOVE' | 'EXTERNAL'; toContainerId?: string; toLocationId?: string; destination?: string }>;
+      children: Array<{ containerId: string; toContainerId?: string; toLocationId?: string }>;
+    },
+    key: string,
+  ) => request<ContainerDetail>('POST', `/api/containers/${id}/retire`, data, key),
 
   locationDuplicateProposal: (id: string) =>
     request<{ code: string; prefix: string | null; segment: string; typePrefix: string | null; seq: number | null; name: string; descendantCount: number; childrenCopyable: boolean; blockingChildCode: string | null }>(

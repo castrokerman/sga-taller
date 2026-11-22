@@ -541,6 +541,50 @@ describe('el contenido va siempre en un contenedor', () => {
     expect((await pool.query(`SELECT count(*)::int AS n FROM stock_balance WHERE id = $1`, [bal])).rows[0].n).toBe(0);
   });
 
+  it('retirar un contenedor con cosas: cada una a la basura, a otro sitio del taller o a un sitio externo', async () => {
+    const fam = (await call('GET', '/api/material-families', almacen)).json().families[0].id;
+    const z = await loc('RETI', 'ZONA');
+    const caja = (await call('POST', '/api/containers', almacen, { typeCode: 'CAJA', locationId: z.id })).json().containers[0];
+    const otra = (await call('POST', '/api/containers', almacen, { typeCode: 'CAJA', locationId: z.id })).json().containers[0];
+    const bandeja = (await call('POST', '/api/containers', almacen, { typeCode: 'BANDEJA', parentContainerId: caja.id })).json().containers[0];
+    const mk = async (d: string) => (await call('POST', '/api/materials', almacen, { description: d, familyId: fam, unitCode: 'ud' })).json().material.id as string;
+    const [basura, mover, fuera] = [await mk('FICTICIO A la basura'), await mk('FICTICIO A otra caja'), await mk('FICTICIO A un cliente')];
+    const respId = (await pool.query(`SELECT id FROM app_user WHERE username = 'demo.proyecto'`)).rows[0].id;
+    const pr = await call('POST', '/api/projects', almacen, { code: 'FIC-RET', name: 'FICTICIO Retirar', responsibleIds: [respId] });
+    expect(pr.statusCode, pr.body).toBe(201);
+    for (const [m, q, extra] of [[basura, 3, {}], [mover, 5, { projectId: pr.json().id }], [fuera, 2, {}]] as const) {
+      expect((await call('POST', '/api/stock/receipt', almacen, { materialId: m, containerId: caja.id, quantity: q, ...extra })).statusCode).toBe(201);
+    }
+    const bal = async (m: string) => (await pool.query(`SELECT id, container_id, quantity::float AS q FROM stock_balance WHERE material_id = $1`, [m])).rows;
+    // Sin decir qué hacer, no deja.
+    const no = await call('POST', `/api/containers/${caja.id}/retire`, almacen, {});
+    expect(no.statusCode).toBe(409);
+    expect(no.json().error.message).toContain('di qué hacer');
+    const r = await call('POST', `/api/containers/${caja.id}/retire`, almacen, {
+      items: [
+        { balanceId: (await bal(basura))[0].id, action: 'TRASH' },
+        { balanceId: (await bal(mover))[0].id, action: 'MOVE', toContainerId: otra.id },
+        { balanceId: (await bal(fuera))[0].id, action: 'EXTERNAL', destination: 'FICTICIO Cliente Bilbao' },
+      ],
+      children: [{ containerId: bandeja.id, toLocationId: z.id }],
+    });
+    expect(r.statusCode, r.body).toBe(200);
+    expect((await call('GET', `/api/containers/${caja.id}`, almacen)).json().container.status).toBe('RETIRED');
+    expect(await bal(basura)).toEqual([]);
+    expect(await bal(fuera)).toEqual([]);
+    const moved = await bal(mover);
+    expect(moved).toMatchObject([{ container_id: otra.id, q: 5 }]);
+    // La reserva del proyecto viaja con el contenido.
+    expect((await pool.query(`SELECT quantity::float AS q FROM stock_allocation WHERE stock_balance_id = $1`, [moved[0].id])).rows[0].q).toBe(5);
+    expect((await call('GET', `/api/containers/${bandeja.id}`, almacen)).json().container.locationId).toBe(z.id);
+    const reasons = (await pool.query(
+      `SELECT mv.reason FROM stock_movement mv JOIN stock_movement_line l ON l.movement_id = mv.id WHERE l.material_id = ANY($1) AND mv.movement_type = 'WITHDRAWAL'`,
+      [[basura, fuera]],
+    )).rows.map((x) => x.reason);
+    expect(reasons.some((x) => x.startsWith('A la basura'))).toBe(true);
+    expect(reasons.some((x) => x.includes('FICTICIO Cliente Bilbao'))).toBe(true);
+  });
+
   it('cada tipo de ubicación puede limitar qué contenedores admite', async () => {
     const z = await loc('PALETS', 'ZONA');
     const ok = await call('PATCH', '/api/location-types/AREA', admin, { allowedContainerTypes: ['PALET'] });

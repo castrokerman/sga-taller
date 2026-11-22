@@ -6,6 +6,7 @@ import { useListControls } from '../components/ListControls';
 import { Scanner } from '../components/Scanner';
 import { MoveContainersPanel } from '../components/MoveContainers';
 import { Thumb } from '../components/Thumb';
+import { RetireContainer } from '../components/RetireContainer';
 import { DeleteButton } from '../components/DeleteButton';
 import { navigate } from '../router';
 import { CONTENTS_PHOTO_EVENT } from '../components/ContentsPhoto';
@@ -13,7 +14,7 @@ import { StockSection } from '../components/Stock';
 import { ItemExtras } from '../components/ItemExtras';
 import { BulkContainers, ContainerForm } from './Warehouse';
 
-type Panel = 'none' | 'move' | 'inside' | 'labels' | 'edit' | 'duplicate' | 'bulk' | 'project';
+type Panel = 'none' | 'move' | 'inside' | 'labels' | 'edit' | 'duplicate' | 'bulk' | 'project' | 'retire';
 
 const place = (location: string | null, container: string | null) => location ?? container ?? '—';
 
@@ -71,19 +72,6 @@ export function ContainerPage({ user, containerId }: { user: User; containerId: 
     setNotice(null);
     setError(null);
     setPanel(next);
-  };
-
-  const retire = async () => {
-    if (!detail) return;
-    const reason = window.prompt(`Motivo de la retirada de ${detail.container.code}:`, 'Contenedor desechado');
-    if (reason === null) return;
-    try {
-      await api.retireContainer(containerId, reason || 'Retirada del contenedor', newOperationKey());
-      await done('Contenedor retirado. Conserva su historial y su QR.');
-    } catch (e) {
-      setNotice(null);
-      setError(errorMessage(e));
-    }
   };
 
   if (!detail) return error ? <p className="alert alert-error">{error}</p> : <p className="muted">Cargando…</p>;
@@ -186,7 +174,7 @@ export function ContainerPage({ user, containerId }: { user: User; containerId: 
           </button>
         )}
         {active && can('container.manage') && (
-          <button className="btn btn-danger" onClick={retire}>
+          <button className="btn btn-danger" onClick={() => open('retire')}>
             Retirar
           </button>
         )}
@@ -212,6 +200,9 @@ export function ContainerPage({ user, containerId }: { user: User; containerId: 
       )}
       {panel === 'duplicate' && (
         <DuplicateContainerForm detail={detail} onCancel={() => setPanel('none')} onDone={(text) => done(text)} />
+      )}
+      {panel === 'retire' && (
+        <RetireContainer detail={detail} onCancel={() => setPanel('none')} onDone={(t) => done(t)} />
       )}
       {panel === 'edit' && (
         <EditContainerForm
