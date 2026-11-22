@@ -11,6 +11,7 @@ import { Thumb } from '../components/Thumb';
 import { MaterialForm } from './Materials';
 import { navigate } from '../router';
 import { ReverseButton } from './Movements';
+import { LoanChip, singleLoanable } from './Materials';
 
 type Op = Parameters<typeof OpPanel>[0]['op'];
 
@@ -88,7 +89,9 @@ export function MaterialPage({ user, materialId }: { user: User; materialId: str
           </span>
         )}
         <div>
-          <h2>{m.description}</h2>
+          <h2>
+            {m.description} {singleLoanable(m) && <LoanChip m={m} />}
+          </h2>
           <p className="muted nomargin">
             <span className="tag tag-type">{m.contentTypeName}</span> {m.internalRef} · {m.familyName}
             {m.unitTracked

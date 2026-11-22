@@ -53,9 +53,15 @@ let caja1: string;
 let caja2: string;
 let estanteria: string;
 
+/** Una familia del tipo de contenido indicado (las familias cuelgan de un tipo). */
+const familyFor = async (type: unknown) =>
+  type
+    ? ((await pool.query(`SELECT id FROM material_family WHERE content_type_code = $1 AND active ORDER BY name LIMIT 1`, [type])).rows[0]?.id as string | undefined) ?? familyId
+    : familyId;
+
 async function newMaterial(data: Record<string, unknown>) {
   return ok<{ material: { id: string; internalRef: string } }>(
-    await call('POST', '/api/materials', almacen, { familyId, unitCode: 'ud', ...data }), 201,
+    await call('POST', '/api/materials', almacen, { familyId: await familyFor(data.contentTypeCode), unitCode: 'ud', ...data }), 201,
   ).material;
 }
 
@@ -413,7 +419,7 @@ describe('buscador', () => {
 
 describe('tipos de contenido', () => {
   const mat = async (body: Record<string, unknown>) => {
-    const r = await call('POST', '/api/materials', almacen, { description: 'FICTICIO contenido', familyId, unitCode: 'ud', ...body });
+    const r = await call('POST', '/api/materials', almacen, { description: 'FICTICIO contenido', familyId: await familyFor(body.contentTypeCode), unitCode: 'ud', ...body });
     expect(r.statusCode, r.body).toBe(201);
     return r.json().material as { id: string; internalRef: string; contentTypeCode: string; contentTypeName: string };
   };
@@ -434,14 +440,39 @@ describe('tipos de contenido', () => {
     expect(h.internalRef).toMatch(/^HER-\d{6}$/);
     // El número sale de la misma secuencia: no se repite entre tipos.
     expect(h.internalRef.slice(4)).not.toBe(m.internalRef.slice(4));
-    const r = await call('PATCH', `/api/materials/${m.id}`, almacen, { contentTypeCode: 'EQUIPO' });
+    const r = await call('PATCH', `/api/materials/${m.id}`, almacen, { contentTypeCode: 'EQUIPO', familyId: await familyFor('EQUIPO') });
     expect(r.statusCode, r.body).toBe(200);
     expect(r.json().material.internalRef).toBe(`EQU-${m.internalRef.slice(4)}`);
     // Un código puesto a mano no se toca.
     const manual = await mat({ internalRef: 'FICT-LLAVE-17' });
-    const r2 = await call('PATCH', `/api/materials/${manual.id}`, almacen, { contentTypeCode: 'HERRAMIENTA' });
+    const r2 = await call('PATCH', `/api/materials/${manual.id}`, almacen, { contentTypeCode: 'HERRAMIENTA', familyId: await familyFor('HERRAMIENTA') });
     expect(r2.json().material.internalRef).toBe('FICT-LLAVE-17');
     expect((await call('POST', '/api/materials', almacen, { description: 'x', familyId, unitCode: 'ud', contentTypeCode: 'NO_EXISTE' })).statusCode).toBe(400);
+  });
+
+  it('las familias cuelgan de un tipo: un contenido va en una familia de su tipo', async () => {
+    const fams = (await call('GET', '/api/material-families', usuario)).json().families as Array<{ code: string; contentTypeCode: string; parentId: string | null }>;
+    expect(fams.find((f) => f.code === 'HERRAMIENTA')!.contentTypeCode).toBe('HERRAMIENTA');
+    expect(fams.find((f) => f.code === 'MEDICION')!.contentTypeCode).toBe('EQUIPO');
+    expect(fams.find((f) => f.code === 'TORNILLOS')!.contentTypeCode).toBe('MATERIAL'); // subfamilia: la de su familia
+    // Herramienta en una familia de material: no.
+    const bad = await call('POST', '/api/materials', almacen, { description: 'FICTICIO mal', familyId, contentTypeCode: 'HERRAMIENTA' });
+    expect(bad.statusCode).toBe(400);
+    expect(bad.json().error.code).toBe('FAMILIA_DE_OTRO_TIPO');
+    // Sin tipo, sale el de la familia; y una herramienta no necesita unidad.
+    const h = await call('POST', '/api/materials', almacen, { description: 'FICTICIO martillo', familyId: await familyFor('HERRAMIENTA') });
+    expect(h.statusCode, h.body).toBe(201);
+    expect(h.json().material).toMatchObject({ contentTypeCode: 'HERRAMIENTA', unitCode: 'ud' });
+    // Un material sí necesita unidad.
+    expect((await call('POST', '/api/materials', almacen, { description: 'FICTICIO sin unidad', familyId })).statusCode).toBe(400);
+    // Una familia nueva de primer nivel dice su tipo; sus subfamilias lo heredan.
+    const top = await call('POST', '/api/material-families', almacen, { name: 'FICTICIO Electrónica', contentTypeCode: 'EQUIPO' });
+    expect(top.json().family.contentTypeCode).toBe('EQUIPO');
+    const sub = await call('POST', '/api/material-families', almacen, { name: 'FICTICIO Osciloscopios', parentId: top.json().family.id });
+    expect(sub.json().family.contentTypeCode).toBe('EQUIPO');
+    await call('PATCH', `/api/material-families/${top.json().family.id}`, almacen, { contentTypeCode: 'HERRAMIENTA' });
+    const after = (await call('GET', '/api/material-families', usuario)).json().families.find((f: { id: string }) => f.id === sub.json().family.id);
+    expect(after.contentTypeCode).toBe('HERRAMIENTA');
   });
 
   it('los tipos se crean y se editan; cambiar el prefijo recodifica los automáticos', async () => {
@@ -471,7 +502,7 @@ describe('herramientas y equipos por unidad', () => {
 
   it('si entran tres iguales, son tres contenidos con su propio código y su QR', async () => {
     const r = await call('POST', '/api/materials', almacen, {
-      description: 'FICTICIO Llave dinamométrica 20-100 Nm', familyId, unitCode: 'ud', contentTypeCode: 'HERRAMIENTA', isLoanable: true, serialNumber: 'SN-1',
+      description: 'FICTICIO Llave dinamométrica 20-100 Nm', familyId: await familyFor('HERRAMIENTA'), contentTypeCode: 'HERRAMIENTA', isLoanable: true, serialNumber: 'SN-1',
     });
     const llave = r.json().material;
     expect(llave).toMatchObject({ unitTracked: true, serialNumber: 'SN-1' });
@@ -509,7 +540,7 @@ describe('herramientas y equipos por unidad', () => {
     // Un contenido de antes: un material con 3 unidades que pasa a ser Equipo.
     const m = await newMaterial({ description: 'FICTICIO Multímetro' });
     ok(await call('POST', '/api/stock/receipt', almacen, { materialId: m.id, containerId: caja2, quantity: 3 }), 201);
-    ok(await call('PATCH', `/api/materials/${m.id}`, almacen, { contentTypeCode: 'EQUIPO' }));
+    ok(await call('PATCH', `/api/materials/${m.id}`, almacen, { contentTypeCode: 'EQUIPO', familyId: await familyFor('EQUIPO') }));
     // Mientras no se separe, no puede aumentar.
     expect((await call('POST', '/api/stock/receipt', almacen, { materialId: m.id, containerId: caja2, quantity: 1 })).json().units[0].id).not.toBe(m.id);
     const s = await call('POST', `/api/materials/${m.id}/split-units`, almacen);

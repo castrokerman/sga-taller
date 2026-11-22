@@ -20,6 +20,23 @@ export function WarehousePage({ user, locationId }: { user: User; locationId?: s
   const [roots, setRoots] = useState<LocationSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const pref = (k: string) => {
+    try {
+      return window.localStorage.getItem(k) !== 'false';
+    } catch {
+      return true;
+    }
+  };
+  const [showLocs, setShowLocs] = useState(() => pref('sga.lista-ubicaciones'));
+  const [showConts, setShowConts] = useState(() => pref('sga.lista-contenedores'));
+  const setPref = (k: string, v: boolean, set: (v: boolean) => void) => {
+    set(v);
+    try {
+      window.localStorage.setItem(k, String(v));
+    } catch {
+      /* sin almacenamiento */
+    }
+  };
   const [panel, setPanel] = useState<Panel>('none');
 
   const can = (p: string) => user.permissions.includes(p);
@@ -188,7 +205,20 @@ export function WarehousePage({ user, locationId }: { user: User; locationId?: s
 
       {localTree && loc && <WarehouseTree key={loc.id} user={user} rootId={loc.id} onList={() => chooseView('lista')} />}
 
-      {!localTree && children.length > 0 && (
+      {loc && !localTree && children.length > 0 && (
+        <div className="show-bar">
+          <label className="check">
+            <input type="checkbox" checked={showLocs} disabled={!showConts} onChange={(e) => setPref('sga.lista-ubicaciones', e.target.checked, setShowLocs)} />
+            <span><strong>Mostrar ubicaciones</strong></span>
+          </label>
+          <label className="check">
+            <input type="checkbox" checked={showConts} disabled={!showLocs} onChange={(e) => setPref('sga.lista-contenedores', e.target.checked, setShowConts)} />
+            <span><strong>Mostrar contenedores</strong></span>
+          </label>
+        </div>
+      )}
+
+      {!localTree && children.length > 0 && (showLocs || !loc) && (
         <section>
           <div className="section-head">
             <h3>Ubicaciones</h3>
@@ -211,7 +241,7 @@ export function WarehousePage({ user, locationId }: { user: User; locationId?: s
         </section>
       )}
 
-      {loc && !localTree && (
+      {loc && !localTree && (showConts || children.length === 0) && (
         <section>
           <div className="section-head">
             <h3>Contenedores</h3>

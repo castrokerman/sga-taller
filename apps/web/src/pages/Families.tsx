@@ -1,20 +1,22 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { api, errorMessage, type Family, type Unit, type User } from '../api';
+import { api, errorMessage, type ContentType, type Family, type Unit, type User } from '../api';
 
 /** Familias de material: las crean y cambian los responsables, con subfamilias. */
 export function FamiliesPage({ user }: { user: User }) {
   const [families, setFamilies] = useState<Family[] | null>(null);
   const [units, setUnits] = useState<Unit[]>([]);
-  const [editing, setEditing] = useState<{ mode: 'new' | 'sub' | 'edit'; family?: Family } | null>(null);
+  const [types, setTypes] = useState<ContentType[]>([]);
+  const [editing, setEditing] = useState<{ mode: 'new' | 'sub' | 'edit'; family?: Family; type?: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const manage = user.permissions.includes('material.manage');
 
   const load = async () => {
     try {
-      const [f, u] = await Promise.all([api.families(), api.units()]);
+      const [f, u, t] = await Promise.all([api.families(), api.units(), api.contentTypes()]);
       setFamilies(f.families);
       setUnits(u.units);
+      setTypes(t.types);
     } catch (e) {
       setError(errorMessage(e));
     }
@@ -57,7 +59,10 @@ export function FamiliesPage({ user }: { user: User }) {
       <div className="page-head">
         <div>
           <h2>Familias de contenido</h2>
-          <p className="muted nomargin">Las creáis y cambiáis vosotros cuando queráis. Pueden tener subfamilias.</p>
+          <p className="muted nomargin">
+            El primer nivel son los tipos de contenido; debajo, sus familias y subfamilias. Al registrar un contenido solo se ofrecen las
+            familias de su tipo.
+          </p>
         </div>
         {manage && (
           <button className="btn btn-primary push-right" onClick={() => { setNotice(null); setEditing({ mode: 'new' }); }}>
@@ -74,6 +79,8 @@ export function FamiliesPage({ user }: { user: User }) {
           family={editing.family}
           families={families}
           units={units}
+          types={types}
+          initialType={editing.type}
           onCancel={() => setEditing(null)}
           onDone={done}
         />
@@ -89,9 +96,28 @@ export function FamiliesPage({ user }: { user: User }) {
             <span>Contenidos</span>
             <span />
           </div>
-          {families.map((f) => (
+          {[...types, ...(families.some((f) => !types.some((t) => t.code === f.contentTypeCode)) ? [{ code: '?', name: 'Otro tipo' } as ContentType] : [])].map((t) => {
+            const list = families.filter((f) => (t.code === '?' ? !types.some((x) => x.code === f.contentTypeCode) : f.contentTypeCode === t.code));
+            return (
+              <div key={t.code} className="famgroup">
+                <div className="famrow famtype">
+                  <span>
+                    <span className="tag tag-type">{t.name}</span>
+                    {list.length === 0 && <span className="muted small"> · sin familias: al registrar uno de este tipo se puede elegir cualquiera</span>}
+                  </span>
+                  <span className="hide-m" />
+                  <span>{list.filter((f) => !f.parentId).reduce((n, f) => n + f.materialCount, 0) || ''}</span>
+                  <span className="fa">
+                    {manage && t.code !== '?' && (
+                      <button className="btn btn-small" onClick={() => { setNotice(null); setEditing({ mode: 'new', type: t.code }); }}>
+                        + Familia de {t.name.toLowerCase()}
+                      </button>
+                    )}
+                  </span>
+                </div>
+                {list.map((f) => (
             <div key={f.id} className={`famrow ${f.active ? '' : 'off'}`}>
-              <span style={{ paddingLeft: `${(f.ancestorIds.length - 1) * 1.4}rem` }}>
+              <span style={{ paddingLeft: `${f.ancestorIds.length * 1.4}rem` }}>
                 {f.parentId ? '↳ ' : ''}
                 {f.parentId ? f.name : <b>{f.name}</b>}
                 {!f.active && ' (desactivada)'}
@@ -129,7 +155,10 @@ export function FamiliesPage({ user }: { user: User }) {
                 )}
               </span>
             </div>
-          ))}
+                ))}
+              </div>
+            );
+          })}
         </div>
       )}
       <p className="alert alert-info" style={{ marginTop: '1rem' }}>
@@ -145,10 +174,13 @@ function FamilyForm(props: {
   family?: Family;
   families: Family[];
   units: Unit[];
+  types: ContentType[];
+  initialType?: string;
   onCancel: () => void;
   onDone: (text: string) => void;
 }) {
   const f = props.mode === 'edit' ? props.family : undefined;
+  const [type, setType] = useState(f?.contentTypeCode ?? props.initialType ?? props.types[0]?.code ?? 'MATERIAL');
   const [name, setName] = useState(f?.name ?? '');
   const [parentId, setParentId] = useState(props.mode === 'sub' ? props.family!.id : f?.parentId ?? '');
   const [unit, setUnit] = useState(f?.defaultUnitCode ?? (props.mode === 'sub' ? props.family!.defaultUnitCode ?? 'ud' : 'ud'));
@@ -164,10 +196,10 @@ function FamilyForm(props: {
     setError(null);
     try {
       if (f) {
-        await api.updateFamily(f.id, { name: name.trim(), parentId: parentId || null, defaultUnitCode: unit || null });
+        await api.updateFamily(f.id, { name: name.trim(), parentId: parentId || null, defaultUnitCode: unit || null, ...(parentId ? {} : { contentTypeCode: type }) });
         props.onDone('Familia guardada');
       } else {
-        await api.createFamily({ name: name.trim(), parentId: parentId || undefined, defaultUnitCode: unit || undefined });
+        await api.createFamily({ name: name.trim(), parentId: parentId || undefined, defaultUnitCode: unit || undefined, ...(parentId ? {} : { contentTypeCode: type }) });
         props.onDone(`Familia «${name.trim()}» creada`);
       }
     } catch (err) {
@@ -184,6 +216,19 @@ function FamilyForm(props: {
         <span>Nombre</span>
         <input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} required autoFocus />
       </label>
+      {!parentId && (
+        <label className="field">
+          <span>Tipo de contenido</span>
+          <select value={type} onChange={(e) => setType(e.target.value)}>
+            {props.types.filter((t) => t.active || t.code === type).map((t) => (
+              <option key={t.code} value={t.code}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+          {f && f.childCount > 0 && <small className="muted">Sus subfamilias cambian de tipo con ella.</small>}
+        </label>
+      )}
       <div className="grid-2">
         <label className="field">
           <span>Dentro de</span>

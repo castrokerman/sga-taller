@@ -104,6 +104,7 @@ export function LoansPage({ user }: { user: User }) {
                     </a>
                     <div className="muted small">
                       {formatQty(l.quantity, l.unitCode)} · salió de {l.fromCode ?? '—'} el {formatDate(l.loanedAt)}
+                      {l.projectCode && <> · <span className="tag tag-project" title={l.projectName ?? ''}>🔒 {l.projectCode}</span></>}
                     </div>
                   </td>
                   {everyone && <td>{l.borrowerName}</td>}

@@ -140,6 +140,52 @@ export async function lockBalance(c: pg.PoolClient, id: string): Promise<Balance
 }
 
 /**
+ * Lo que puede sacar este usuario de un saldo: todo menos lo reservado para
+ * proyectos o personas que no son suyos. Los responsables de almacén lo
+ * pueden todo.
+ */
+export async function freeFor(c: pg.PoolClient, b: Balance, user: { id: string; permissions: string[] }): Promise<number | null> {
+  if (b.quantity === null) return null;
+  if (user.permissions.includes('project.manage')) return b.quantity;
+  const r = await c.query(
+    `SELECT coalesce(sum(a.quantity), 0)::float AS blocked
+       FROM stock_allocation a
+      WHERE a.stock_balance_id = $1 AND a.availability = 'RESTRICTED'
+        AND a.responsible_user_id IS DISTINCT FROM $2
+        AND NOT EXISTS (SELECT 1 FROM project_member pm
+                         WHERE pm.project_id = a.project_id AND pm.user_id = $2 AND pm.role = 'RESPONSIBLE')`,
+    [b.id, user.id],
+  );
+  return Math.max(0, b.quantity - r.rows[0].blocked);
+}
+
+/**
+ * Reserva lo que acaba de entrar para un proyecto o una persona. Sin ninguno,
+ * es de uso general del taller y no se reserva nada.
+ */
+export async function reserve(
+  c: pg.PoolClient, balance: { materialId: string; lotId: string | null; containerId: string | null; locationId: string | null },
+  quantity: number, who: { projectId?: string | null; responsibleUserId?: string | null },
+): Promise<void> {
+  if (!who.projectId && !who.responsibleUserId) return;
+  const b = (await c.query(
+    `SELECT id FROM stock_balance WHERE material_id = $1 AND lot_id IS NOT DISTINCT FROM $2
+        AND container_id IS NOT DISTINCT FROM $3 AND location_id IS NOT DISTINCT FROM $4`,
+    [balance.materialId, balance.lotId, balance.containerId, balance.locationId],
+  )).rows[0];
+  if (!b) return;
+  await c.query(
+    `INSERT INTO stock_allocation (stock_balance_id, project_id, availability, quantity, responsible_user_id)
+     VALUES ($1, $2, 'RESTRICTED', $3, $4)
+     ON CONFLICT (stock_balance_id, project_id, availability)
+     DO UPDATE SET quantity = stock_allocation.quantity + EXCLUDED.quantity,
+                   responsible_user_id = coalesce(EXCLUDED.responsible_user_id, stock_allocation.responsible_user_id),
+                   updated_at = now()`,
+    [b.id, who.projectId ?? null, quantity, who.responsibleUserId ?? null],
+  );
+}
+
+/**
  * Proyecto al que pertenece un contenedor: el suyo o el del primer contenedor
  * que lo contiene y tenga proyecto (una bolsa dentro de la caja del proyecto
  * también es del proyecto).
@@ -250,8 +296,17 @@ export async function applyLine(
       );
     } else if (after === 0 && m.tracking === 'EXACT') {
       // Un saldo exacto que se queda a cero desaparece: ya no hay nada en ese sitio.
+      // (Quien lo saca ya ha pasado la comprobación de lo reservado.)
+      if (delta < 0) await c.query(`DELETE FROM stock_allocation WHERE stock_balance_id = $1`, [row.id]);
       await deleteBalance(c, row.id);
     } else {
+      // Lo reservado nunca supera lo que queda (quien saca ya ha pasado la comprobación).
+      if (delta < 0) {
+        await c.query(
+          `UPDATE stock_allocation SET quantity = LEAST(quantity, $2), updated_at = now() WHERE stock_balance_id = $1 AND quantity > $2`,
+          [row.id, after],
+        );
+      }
       await c.query(
         `UPDATE stock_balance
             SET quantity = $2, updated_at = now(),

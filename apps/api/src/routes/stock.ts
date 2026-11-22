@@ -6,7 +6,7 @@ import { withTransaction } from '../db/tx.js';
 import { AppError, badRequest, conflict, forbidden, notFound } from '../errors.js';
 import { idempotent } from '../idempotency.js';
 import {
-  applyLine, assertCanTake, checkQuantity, unitTargets, createMovement, emptyDisposable, findOrCreateLot, getMaterial, lockBalance, placeCode, resolvePlace,
+  applyLine, assertCanTake, checkQuantity, freeFor, reserve, unitTargets, createMovement, emptyDisposable, findOrCreateLot, getMaterial, lockBalance, placeCode, resolvePlace,
   type Balance, type MaterialInfo,
 } from '../inventory/stock.js';
 import { getParameter } from '../warehouse/queries.js';
@@ -20,14 +20,20 @@ const text = (max: number) => ({ type: 'string', maxLength: max }) as const;
 const fmt = (n: number | null, unit: string) =>
   n === null ? '' : `${n.toLocaleString('es-ES', { maximumFractionDigits: 4 })} ${unit}`;
 
-/** Una retirada o un traslado no puede tocar lo restringido a un proyecto: eso necesita autorización. */
-function checkFree(b: Balance, m: MaterialInfo, quantity: number) {
-  if (m.tracking === 'NOT_TRACKED' || b.quantity === null || b.free === null) return;
-  if (quantity > b.free && b.free < b.quantity) {
+/**
+ * Una retirada, un traslado o un préstamo no puede tocar lo reservado para un
+ * proyecto o una persona, salvo sus responsables y los responsables de almacén.
+ */
+async function checkFree(c: pg.PoolClient, user: { id: string; permissions: string[] }, b: Balance, m: MaterialInfo, quantity: number) {
+  if (m.tracking === 'NOT_TRACKED' || b.quantity === null) return;
+  const free = await freeFor(c, b, user);
+  if (free !== null && quantity > free && free < b.quantity) {
     throw new AppError(
       409,
       'MATERIAL_RESTRINGIDO',
-      `Solo ${fmt(b.free, m.unitCode)} están libres; el resto está restringido a un proyecto y necesita autorización`,
+      free > 0
+        ? `Solo ${fmt(free, m.unitCode)} están libres; el resto está reservado para un proyecto o una persona: pídeselo a su responsable`
+        : `Está reservado para un proyecto o una persona: solo su responsable o el responsable de almacén pueden sacarlo`,
     );
   }
 }
@@ -121,6 +127,7 @@ export function stockRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
             materialId: uuid, containerId: uuid, locationId: uuid, quantity: qty,
             lotCode: text(60), reason: text(300), externalReference: text(80),
             isReturn: { type: 'boolean', default: false },
+            projectId: uuid, responsibleUserId: uuid,
           },
         },
       },
@@ -129,11 +136,22 @@ export function stockRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
       idempotent(pool, request, reply, async (): Promise<OpResult> => {
         const b = request.body as {
           materialId: string; containerId?: string; locationId?: string; quantity?: number; lotCode?: string;
-          reason?: string; externalReference?: string; isReturn: boolean;
+          reason?: string; externalReference?: string; isReturn: boolean; projectId?: string; responsibleUserId?: string;
         };
         if (b.isReturn && !request.user!.permissions.includes('stock.return')) throw forbidden();
         const out = await withTransaction(pool, async (c) => {
           const m = await getMaterial(c, b.materialId);
+          // Para un proyecto o una persona: se reserva para ellos. Si no, es de uso general del taller.
+          const project = b.projectId ? (await c.query(`SELECT code FROM project WHERE id = $1 AND status = 'ACTIVE'`, [b.projectId])).rows[0] : null;
+          if (b.projectId && !project) throw badRequest('El proyecto no existe o está cerrado', 'PROYECTO_NO_VALIDO');
+          const person = b.responsibleUserId
+            ? (await c.query(`SELECT full_name FROM app_user WHERE id = $1 AND active AND deleted_at IS NULL`, [b.responsibleUserId])).rows[0]
+            : null;
+          if (b.responsibleUserId && !person) throw badRequest('La persona responsable no existe', 'USUARIO_NO_EXISTE');
+          const who = { projectId: b.projectId ?? null, responsibleUserId: b.responsibleUserId ?? null };
+          const forWhom = project || person
+            ? `, reservado para ${[project && `el proyecto ${project.code}`, person?.full_name].filter(Boolean).join(' y ')}`
+            : '';
           if (m.status !== 'ACTIVE') throw conflict('El contenido está dado de baja', 'MATERIAL_OBSOLETO');
           const place = await resolvePlace(c, b);
           if (m.unitTracked) {
@@ -144,6 +162,7 @@ export function stockRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
             });
             for (const [i, u] of units.entries()) {
               await applyLine(c, mv, i + 1, { material: u, lotId: null, containerId: place.containerId, locationId: place.locationId, delta: 1, presence: true });
+              await reserve(c, { materialId: u.id, lotId: null, containerId: place.containerId, locationId: place.locationId }, 1, who);
               if (u.id !== m.id) {
                 await writeAudit(c, {
                   userId: request.user!.id, action: 'material.alta', entityType: 'material', entityId: u.id,
@@ -159,9 +178,9 @@ export function stockRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
               movementNumber: mv.number,
               remaining: 1,
               units: units.map((u) => ({ id: u.id, internalRef: u.internalRef })),
-              message: units.length === 1
+              message: (units.length === 1
                 ? `${b.isReturn ? 'Devolución' : 'Entrada'} registrada: ${m.description} (${refs[0]}) en ${place.code}`
-                : `Entrada registrada: ${units.length} unidades de ${m.description} en ${place.code}, cada una con su código: ${refs.join(', ')}`,
+                : `Entrada registrada: ${units.length} unidades de ${m.description} en ${place.code}, cada una con su código: ${refs.join(', ')}`) + forWhom,
             };
           }
           const quantity = checkQuantity(m, b.quantity);
@@ -173,13 +192,14 @@ export function stockRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
           const after = await applyLine(c, mv, 1, {
             material: m, lotId, containerId: place.containerId, locationId: place.locationId, delta: quantity, presence: true,
           });
+          if (quantity !== null) await reserve(c, { materialId: m.id, lotId, containerId: place.containerId, locationId: place.locationId }, quantity, who);
           await audit(c, request, b.isReturn ? 'stock.devolucion' : 'stock.entrada', mv.id, {
             movimiento: mv.number, material: m.internalRef, sitio: place.code, cantidad: quantity, lote: b.lotCode ?? null,
           });
           return {
             movementNumber: mv.number,
             remaining: after,
-            message: `${b.isReturn ? 'Devolución' : 'Entrada'} registrada: ${quantity === null ? m.description : `${fmt(quantity, m.unitCode)} de ${m.description}`} en ${place.code}`,
+            message: `${b.isReturn ? 'Devolución' : 'Entrada'} registrada: ${quantity === null ? m.description : `${fmt(quantity, m.unitCode)} de ${m.description}`} en ${place.code}${forWhom}`,
           };
         });
         reply.code(201);
@@ -216,7 +236,7 @@ export function stockRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
             if (b.exhausted) note = '. Marcado como agotado en ese sitio';
           } else {
             const wanted = checkQuantity(m, b.quantity)!;
-            checkFree(bal, m, wanted);
+            await checkFree(c, request.user!, bal, m, wanted);
             if (m.tracking === 'EXACT') {
               if (wanted > bal.quantity!) {
                 throw conflict(`Solo hay ${fmt(bal.quantity, m.unitCode)} en ${code}`, 'STOCK_INSUFICIENTE');
@@ -270,7 +290,7 @@ export function stockRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
           }
           const quantity = m.tracking === 'NOT_TRACKED' ? null : checkQuantity(m, b.quantity ?? bal.quantity)!;
           if (quantity !== null) {
-            checkFree(bal, m, quantity);
+            await checkFree(c, request.user!, bal, m, quantity);
             if (quantity > bal.quantity!) throw conflict(`Solo hay ${fmt(bal.quantity, m.unitCode)} en ${from}`, 'STOCK_INSUFICIENTE');
           }
           const mv = await createMovement(c, { type: 'TRANSFER', userId: request.user!.id, reason: b.reason });
@@ -413,14 +433,14 @@ export function stockRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
         body: {
           type: 'object', required: ['balanceId'], additionalProperties: false,
           properties: {
-            balanceId: uuid, quantity: qty, dueDate: { type: 'string', format: 'date' }, borrowerId: uuid, notes: text(300),
+            balanceId: uuid, quantity: qty, dueDate: { type: 'string', format: 'date' }, borrowerId: uuid, notes: text(300), projectId: uuid,
           },
         },
       },
     },
     (request, reply) =>
       idempotent(pool, request, reply, async (): Promise<OpResult> => {
-        const b = request.body as { balanceId: string; quantity?: number; dueDate?: string; borrowerId?: string; notes?: string };
+        const b = request.body as { balanceId: string; quantity?: number; dueDate?: string; borrowerId?: string; notes?: string; projectId?: string };
         const borrowerId = b.borrowerId ?? request.user!.id;
         if (borrowerId !== request.user!.id && !request.user!.permissions.includes('loan.manage')) {
           throw forbidden('Solo un responsable puede prestar a otra persona');
@@ -434,7 +454,7 @@ export function stockRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
           const borrower = await c.query(`SELECT full_name FROM app_user WHERE id = $1 AND active`, [borrowerId]);
           if (!borrower.rowCount) throw badRequest('La persona indicada no existe');
           const quantity = checkQuantity(m, b.quantity ?? 1)!;
-          checkFree(bal, m, quantity);
+          await checkFree(c, request.user!, bal, m, quantity);
           const code = await placeCode(c, bal.containerId, bal.locationId);
           if (quantity > bal.quantity!) throw conflict(`Solo hay ${fmt(bal.quantity, m.unitCode)} en ${code}`, 'STOCK_INSUFICIENTE');
 
@@ -449,22 +469,29 @@ export function stockRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
             due.setHours(20, 0, 0, 0);
           }
 
-          const mv = await createMovement(c, { type: 'LOAN_OUT', userId: request.user!.id, reason: `Préstamo a ${borrower.rows[0].full_name}` });
+          const project = b.projectId
+            ? (await c.query(`SELECT code, name FROM project WHERE id = $1 AND status = 'ACTIVE'`, [b.projectId])).rows[0]
+            : null;
+          if (b.projectId && !project) throw badRequest('El proyecto no existe o está cerrado', 'PROYECTO_NO_VALIDO');
+          const mv = await createMovement(c, {
+            type: 'LOAN_OUT', userId: request.user!.id,
+            reason: `Préstamo a ${borrower.rows[0].full_name}${project ? ` para el proyecto ${project.code}` : ''}`,
+          });
           await applyLine(c, mv, 1, { material: m, lotId: bal.lotId, containerId: bal.containerId, locationId: bal.locationId, delta: -quantity });
           const loan = await c.query(
-            `INSERT INTO tool_loan (material_id, lot_id, quantity, borrower_id, due_at, out_movement_id, notes, container_id, location_id)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
-            [m.id, bal.lotId, quantity, borrowerId, due, mv.id, b.notes?.trim() || null, bal.containerId, bal.locationId],
+            `INSERT INTO tool_loan (material_id, lot_id, quantity, borrower_id, due_at, out_movement_id, notes, container_id, location_id, project_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+            [m.id, bal.lotId, quantity, borrowerId, due, mv.id, b.notes?.trim() || null, bal.containerId, bal.locationId, b.projectId ?? null],
           );
           await writeAudit(c, {
             userId: request.user!.id, action: 'prestamo.salida', entityType: 'tool_loan', entityId: loan.rows[0].id,
-            after: { material: m.internalRef, cantidad: quantity, para: borrower.rows[0].full_name, devolver: due.toISOString(), movimiento: mv.number },
+            after: { material: m.internalRef, cantidad: quantity, para: borrower.rows[0].full_name, proyecto: project?.code ?? null, devolver: due.toISOString(), movimiento: mv.number },
             ip: request.ip, requestId: request.id,
           });
           return {
             movementNumber: mv.number,
             remaining: bal.quantity! - quantity,
-            message: `Prestado: ${fmt(quantity, m.unitCode)} de ${m.description} a ${borrower.rows[0].full_name}, hasta el ${due.toLocaleDateString('es-ES')}`,
+            message: `Prestado: ${fmt(quantity, m.unitCode)} de ${m.description} a ${borrower.rows[0].full_name}${project ? ` (proyecto ${project.code})` : ''}, hasta el ${due.toLocaleDateString('es-ES')}`,
           };
         });
         reply.code(201);
