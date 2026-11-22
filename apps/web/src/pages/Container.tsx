@@ -117,7 +117,7 @@ export function ContainerPage({ user, containerId }: { user: User; containerId: 
             </div>
           </div>
         )}
-        <span className={`badge ${c.contentsPhotoIds.length > 0 ? 'head-badge' : 'push-right'} ${active ? 'badge-ok' : 'badge-off'}`}>{active ? 'Activo' : 'Retirado'}</span>
+        <span className={`badge ${c.contentsPhotoIds.length > 0 ? 'head-badge' : 'push-right'} ${active ? 'badge-ok' : 'badge-off'}`}>{active ? 'Activo' : c.status === 'OUT' ? 'Fuera del taller' : 'Retirado'}</span>
       </div>
       {c.projectId && (
         <p className="alert alert-project">

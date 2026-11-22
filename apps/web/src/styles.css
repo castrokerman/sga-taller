@@ -739,3 +739,4 @@ h2 .loan-chip-wrap { flex-direction: row; align-items: center; gap: 0.5rem; vert
 .retire-item .pchips { margin: 0; }
 .doc-photo { display: inline-flex; gap: 0.5rem; align-items: center; margin-top: 0.35rem; }
 .doc-thumb { width: 26px; height: 26px; border-radius: 4px; object-fit: cover; vertical-align: middle; }
+.mode-card.on { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }

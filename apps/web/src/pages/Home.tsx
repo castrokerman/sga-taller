@@ -29,6 +29,8 @@ const GROUPS: Group[] = [
     tiles: [
       { icon: '📷', title: 'Escanear QR', text: '', path: 'escaner', permission: 'container.read' },
       { icon: '📥', title: 'Registrar entrada', text: 'Lo que llega al taller', path: 'entrada', permission: 'stock.receive' },
+      { icon: '📤', title: 'Registrar salida', text: 'Lo que se va del taller', path: 'salida', permission: 'stock.withdraw' },
+      { icon: '🔀', title: 'Mover contenedor', text: 'A otro sitio del taller', path: 'mover', permission: 'container.move' },
       { icon: '📬', title: 'Recepciones', text: 'Lo que falta por identificar', path: 'recepciones' },
       { icon: '🚚', title: 'Pre-recepciones', text: 'Avisar de lo que esperas que llegue', path: 'prerecepciones' },
       { icon: '🔎', title: 'Buscador', text: 'Dónde está cada cosa', path: 'buscar', permission: 'location.read' },

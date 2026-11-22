@@ -176,7 +176,7 @@ describe('migraciones', () => {
       `SELECT table_name FROM information_schema.tables
         WHERE table_schema = 'public' AND table_type = 'BASE TABLE' AND table_name <> 'schema_migrations'`,
     );
-    expect(tables.rowCount).toBe(43);
+    expect(tables.rowCount).toBe(45);
     const names = tables.rows.map((r) => r.table_name);
     for (const t of [
       'material', 'material_lot', 'storage_location', 'container', 'stock_balance', 'stock_allocation',

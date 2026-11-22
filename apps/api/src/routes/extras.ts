@@ -367,18 +367,26 @@ export function extrasRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
       const { all } = request.query as { all: boolean };
       const r = await pool.query(
         `SELECT nf.id, nf.created_at AS "createdAt", nf.read_at AS "readAt",
-                CASE WHEN nf.inbound_id IS NULL THEN 'note' ELSE 'inbound' END AS kind,
+                CASE WHEN nf.inbound_id IS NOT NULL THEN 'inbound' WHEN nf.departure_id IS NOT NULL THEN 'departure' ELSE 'note' END AS kind,
                 n.id AS "noteId", coalesce(n.body, nf.message) AS body, (n.parent_id IS NOT NULL) AS "isReply",
-                coalesce(n.entity_type, 'inbound') AS "entityType", coalesce(n.entity_id, nf.inbound_id) AS "entityId",
+                coalesce(n.entity_type, CASE WHEN nf.departure_id IS NOT NULL THEN 'departure' ELSE 'inbound' END) AS "entityType",
+                coalesce(n.entity_id, nf.inbound_id, nf.departure_id) AS "entityId",
                 u.full_name AS "createdBy",
-                CASE WHEN nf.inbound_id IS NULL THEN ${ENTITY_LABEL} ELSE 'REC-' || lpad(i.number::text, 6, '0') END AS "entityCode",
-                CASE WHEN nf.inbound_id IS NULL THEN ${ENTITY_NAME} ELSE i.description END AS "entityName",
+                CASE WHEN nf.inbound_id IS NOT NULL THEN 'REC-' || lpad(i.number::text, 6, '0')
+                     WHEN nf.departure_id IS NOT NULL THEN 'SAL-' || lpad(dp.number::text, 6, '0')
+                     ELSE ${ENTITY_LABEL} END AS "entityCode",
+                CASE WHEN nf.inbound_id IS NOT NULL THEN i.description
+                     WHEN nf.departure_id IS NOT NULL THEN dp.destination
+                     ELSE ${ENTITY_NAME} END AS "entityName",
                 i.status AS "inboundStatus",
-                (i.status = 'PENDING' AND (i.responsible_user_id = nf.user_id OR EXISTS (
-                   SELECT 1 FROM project_member pm WHERE pm.project_id = i.project_id AND pm.user_id = nf.user_id AND pm.role = 'RESPONSIBLE'))) AS "actionNeeded"
+                CASE WHEN nf.departure_id IS NOT NULL THEN dp.status = 'OUT'
+                     ELSE (i.status = 'PENDING' AND (i.responsible_user_id = nf.user_id OR EXISTS (
+                       SELECT 1 FROM project_member pm WHERE pm.project_id = i.project_id AND pm.user_id = nf.user_id AND pm.role = 'RESPONSIBLE')))
+                END AS "actionNeeded"
            FROM notification nf
            LEFT JOIN note n ON n.id = nf.note_id
            LEFT JOIN inbound_item i ON i.id = nf.inbound_id
+           LEFT JOIN departure dp ON dp.id = nf.departure_id
            JOIN app_user u ON u.id = coalesce(n.created_by, nf.created_by)
           WHERE nf.user_id = $1 AND ($2 OR nf.read_at IS NULL)
           ORDER BY (nf.read_at IS NULL) DESC, nf.created_at DESC

@@ -14,6 +14,7 @@ import { locationRoutes } from './routes/locations.js';
 import { materialRoutes } from './routes/materials.js';
 import { stockRoutes } from './routes/stock.js';
 import { typeRoutes } from './routes/types.js';
+import { departureRoutes } from './routes/departures.js';
 import { extrasRoutes } from './routes/extras.js';
 import { searchRoutes } from './routes/search.js';
 import { inboundRoutes } from './routes/inbound.js';
@@ -97,6 +98,7 @@ export async function buildApp(deps: { pool: pg.Pool; config: Config }): Promise
   materialRoutes(app, { pool });
   stockRoutes(app, { pool });
   typeRoutes(app, { pool });
+  departureRoutes(app, { pool });
   extrasRoutes(app, { pool });
   searchRoutes(app, { pool });
   inboundRoutes(app, { pool });
