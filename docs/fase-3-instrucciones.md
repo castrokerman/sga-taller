@@ -474,6 +474,11 @@ que se va a eliminar. Al terminar dice qué se ha eliminado y qué no, y por qu�
 
 Lo pueden hacer el **responsable de almacén** y el **administrador técnico**.
 
+También se puede eliminar **uno solo desde su ficha**: «Editar» → **«🗑
+Eliminar»** (en contenidos, contenedores y ubicaciones), con la misma
+confirmación y las mismas reglas. Al eliminarlo te lleva a la lista (o a
+donde estaba el contenedor) y lo avisa arriba.
+
 - **Contenidos:** si queda algo guardado, **se saca de su sitio** (queda como
   retirada en el historial) y se elimina. Si no tenía historial se borra del
   todo; si lo tenía (movimientos, préstamos, recepciones o **comentarios**,

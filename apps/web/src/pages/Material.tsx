@@ -12,6 +12,7 @@ import { MaterialForm } from './Materials';
 import { navigate } from '../router';
 import { ReverseButton } from './Movements';
 import { LoanChip, singleLoanable } from './Materials';
+import { DeleteButton } from '../components/DeleteButton';
 
 type Op = Parameters<typeof OpPanel>[0]['op'];
 
@@ -134,7 +135,24 @@ export function MaterialPage({ user, materialId }: { user: User; materialId: str
 
       {notice && (typeof notice === 'string' ? <p className="alert alert-ok">{notice}</p> : <OpNotice r={notice} user={user} />)}
       {panel === 'edit' && (
-        <MaterialForm title={`Editar ${m.internalRef}`} initial={m} materialId={m.id} onCancel={() => setPanel('none')} onDone={() => done('Cambios guardados')} />
+        <MaterialForm
+          title={`Editar ${m.internalRef}`}
+          initial={m}
+          materialId={m.id}
+          onCancel={() => setPanel('none')}
+          onDone={() => done('Cambios guardados')}
+          extra={can(user, 'material.delete') && (
+            <DeleteButton
+              what={`${m.internalRef} · ${m.description}`}
+              warning="Lo que quede guardado se saca de su sitio (queda como retirada en el historial). Si tiene historial se conserva, pero desaparece de listas, buscador y escáner."
+              run={async () => {
+                const r = await api.deleteMaterial(m.id);
+                return r.keptHistory ? `${r.ref} eliminado; su historial se conserva` : `${r.ref} eliminado del todo`;
+              }}
+              onDone={(msg) => { window.sessionStorage.setItem('sga.aviso', msg); navigate('contenidos'); }}
+            />
+          )}
+        />
       )}
       {panel === 'labels' && (
         <LabelPanel groups={[{ label: m.internalRef, items: [{ kind: 'material', id: m.id }] }]} onClose={() => setPanel('none')} />

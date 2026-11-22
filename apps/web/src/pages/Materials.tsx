@@ -1,3 +1,4 @@
+import type React from 'react';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { api, errorMessage, formatDate, formatQty, photoUrl, TRACKING_NAMES, type ContentType, type Family, type Material, type MaterialInput, type Unit, type User } from '../api';
 import { Highlight, optionsFrom, useListControls, type ListConfig } from '../components/ListControls';
@@ -290,6 +291,8 @@ export function MaterialForm(props: {
   canPhoto?: boolean;
   /** Tipo ya elegido antes (al registrar una entrada): no se vuelve a preguntar. */
   fixedType?: string;
+  /** Botón extra a la izquierda de las acciones (por ejemplo, eliminar). */
+  extra?: React.ReactNode;
   onCancel: () => void;
   onDone: (m: Material) => void;
 }) {
@@ -551,7 +554,8 @@ export function MaterialForm(props: {
       )}
       {canPhoto && <PhotoField label="Foto del contenido" file={photo} onChange={setPhoto} hint="Se guarda en su ficha. Puedes añadir más después." />}
       {error && <p className="alert alert-error">{error}</p>}
-      <div className="actions">
+      <div className="actions actions-wrap">
+        {props.extra}
         <button type="button" className="btn" onClick={props.onCancel}>
           Cancelar
         </button>

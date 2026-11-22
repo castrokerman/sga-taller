@@ -184,7 +184,7 @@ export function WarehousePage({ user, locationId }: { user: User; locationId?: s
         />
       )}
       {panel === 'edit' && loc && (
-        <EditLocationForm location={loc} canDeactivate={can('location.deactivate')} onCancel={() => setPanel('none')} onDone={(text) => done(text)} onGone={() => navigate(loc.parentId ? `almacen/${loc.parentId}` : 'almacen')} />
+        <EditLocationForm location={loc} canDeactivate={can('location.deactivate')} canDelete={can('location.deactivate') || can('material.delete')} onCancel={() => setPanel('none')} onDone={(text) => done(text)} onGone={() => navigate(loc.parentId ? `almacen/${loc.parentId}` : 'almacen')} />
       )}
       {panel === 'duplicate' && loc && (
         <DuplicateLocationForm location={loc} onCancel={() => setPanel('none')} onDone={(text) => done(text)} />
@@ -397,7 +397,7 @@ function LocationForm(props: { parent?: LocationSummary; siblings?: LocationSumm
   );
 }
 
-function EditLocationForm(props: { location: LocationSummary; canDeactivate: boolean; onCancel: () => void; onDone: (text: string) => void; onGone: () => void }) {
+function EditLocationForm(props: { location: LocationSummary; canDeactivate: boolean; canDelete: boolean; onCancel: () => void; onDone: (text: string) => void; onGone: () => void }) {
   const { location } = props;
   const nested = Boolean(location.parentId);
   const [code, setCode] = useState(location.segment);
@@ -524,7 +524,7 @@ function EditLocationForm(props: { location: LocationSummary; canDeactivate: boo
         </div>
       )}
       <div className="actions actions-wrap">
-        {props.canDeactivate && (
+        {props.canDelete && (
           <button type="button" className="btn btn-delete-ghost" onClick={() => setConfirmDelete(true)} disabled={busy || confirmDelete}>
             🗑 Eliminar
           </button>

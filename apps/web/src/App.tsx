@@ -27,6 +27,19 @@ export function App() {
   const [loading, setLoading] = useState(true);
   const [unread, setUnread] = useState(0);
   const raw = useRoute();
+  // Aviso que deja una pantalla antes de llevarte a otra (por ejemplo, «eliminado»).
+  const [flash, setFlash] = useState<string | null>(null);
+  useEffect(() => {
+    try {
+      const m = window.sessionStorage.getItem('sga.aviso');
+      if (m) {
+        window.sessionStorage.removeItem('sga.aviso');
+        setFlash(m);
+      } else setFlash(null);
+    } catch {
+      setFlash(null);
+    }
+  }, [raw.name, raw.id]);
   // «Contenidos» es el nombre nuevo de «Materiales»: las dos direcciones llevan al mismo sitio.
   const route = raw.name === 'contenidos' ? { ...raw, name: 'materiales' } : raw.name === 'contenido' ? { ...raw, name: 'material' } : raw;
 
@@ -102,6 +115,7 @@ export function App() {
 
   return (
     <Shell user={user} onLogout={logout} withNav unread={unread}>
+      {flash && <p className="alert alert-ok flash">{flash}</p>}
       {page}
     </Shell>
   );

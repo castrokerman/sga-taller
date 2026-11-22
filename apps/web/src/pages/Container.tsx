@@ -1,3 +1,4 @@
+import type React from 'react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { api, ApiError, errorMessage, formatDateTime, newOperationKey, photoUrl, type ContainerDetail, type Project, type ScanHit, type User } from '../api';
 import { Breadcrumbs, ContainerCard, containerListConfig, LabelPanel } from '../components/Common';
@@ -5,6 +6,8 @@ import { useListControls } from '../components/ListControls';
 import { Scanner } from '../components/Scanner';
 import { MoveContainersPanel } from '../components/MoveContainers';
 import { Thumb } from '../components/Thumb';
+import { DeleteButton } from '../components/DeleteButton';
+import { navigate } from '../router';
 import { CONTENTS_PHOTO_EVENT } from '../components/ContentsPhoto';
 import { StockSection } from '../components/Stock';
 import { ItemExtras } from '../components/ItemExtras';
@@ -210,7 +213,27 @@ export function ContainerPage({ user, containerId }: { user: User; containerId: 
       {panel === 'duplicate' && (
         <DuplicateContainerForm detail={detail} onCancel={() => setPanel('none')} onDone={(text) => done(text)} />
       )}
-      {panel === 'edit' && <EditContainerForm detail={detail} onCancel={() => setPanel('none')} onDone={() => done('Cambios guardados')} />}
+      {panel === 'edit' && (
+        <EditContainerForm
+          detail={detail}
+          onCancel={() => setPanel('none')}
+          onDone={() => done('Cambios guardados')}
+          extra={user.permissions.includes('material.delete') && (
+            <DeleteButton
+              what={c.code}
+              warning="Lo que lleve dentro se saca de su sitio (queda como retirada en el historial). Si tiene historial, queda retirado y su historial se conserva. Si lleva otros contenedores dentro, no se elimina."
+              run={async () => {
+                const r = await api.deleteContainer(c.id);
+                return r.keptHistory ? `${r.code} retirado; su historial se conserva` : `${r.code} eliminado del todo`;
+              }}
+              onDone={(msg) => {
+                window.sessionStorage.setItem('sga.aviso', msg);
+                navigate(c.parentContainerId ? `contenedor/${c.parentContainerId}` : c.locationId ? `almacen/${c.locationId}` : 'almacen');
+              }}
+            />
+          )}
+        />
+      )}
       {panel === 'labels' && (
         <LabelPanel
           onClose={() => setPanel('none')}
@@ -294,7 +317,7 @@ function MovePanel(props: { detail: ContainerDetail; onCancel: () => void; onDon
   );
 }
 
-function EditContainerForm(props: { detail: ContainerDetail; onCancel: () => void; onDone: () => void }) {
+function EditContainerForm(props: { detail: ContainerDetail; onCancel: () => void; onDone: () => void; extra?: React.ReactNode }) {
   const c = props.detail.container;
   const [description, setDescription] = useState(c.description ?? '');
   const [contentDescription, setContentDescription] = useState(c.contentDescription ?? '');
@@ -354,7 +377,8 @@ function EditContainerForm(props: { detail: ContainerDetail; onCancel: () => voi
         </label>
       </div>
       {error && <p className="alert alert-error">{error}</p>}
-      <div className="actions">
+      <div className="actions actions-wrap">
+        {props.extra}
         <button type="button" className="btn" onClick={props.onCancel}>
           Cancelar
         </button>
