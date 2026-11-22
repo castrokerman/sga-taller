@@ -8,6 +8,7 @@ import { idempotent } from '../idempotency.js';
 import { containerDetail, recordContainerMove } from '../warehouse/containers.js';
 import { CONTAINER_SELECT, containerChain, descendantCount, getParameter } from '../warehouse/queries.js';
 import { newQrToken } from '../warehouse/tokens.js';
+import { applyLine, assertCanTake, createMovement, getMaterial, reserve, resolvePlace, withdrawAll } from '../inventory/stock.js';
 
 const uuid = { type: 'string', format: 'uuid' } as const;
 const idParams = { type: 'object', required: ['id'], properties: { id: uuid } } as const;
@@ -72,6 +73,63 @@ async function resolveDestination(
     }
   }
   return { locationId: null, parentId: dest.parentContainerId!, label: parent.code };
+}
+
+/**
+ * Antes de retirar un contenedor: cada cosa que lleva va a la basura, a otro
+ * sitio del taller o a un sitio externo; cada contenedor de dentro, a otro
+ * sitio. Todo queda en el historial. Lo reservado conserva su reserva al
+ * trasladarse.
+ */
+async function emptyFirst(
+  c: pg.PoolClient, user: { id: string; permissions: string[] }, containerId: string, code: string,
+  items: Array<{ balanceId: string; action: 'TRASH' | 'MOVE' | 'EXTERNAL'; toContainerId?: string; toLocationId?: string; destination?: string }>,
+  children: Array<{ containerId: string; toContainerId?: string; toLocationId?: string }>,
+) {
+  await assertCanTake(c, user, containerId, 'sacar');
+  for (const ch of children) {
+    const k = (await c.query(`SELECT code, location_id, parent_container_id FROM container WHERE id = $1 AND parent_container_id = $2 AND status = 'ACTIVE' FOR UPDATE`, [ch.containerId, containerId])).rows[0];
+    if (!k) throw badRequest('Ese contenedor no está dentro', 'NO_ESTA_DENTRO');
+    if (Boolean(ch.toContainerId) === Boolean(ch.toLocationId)) throw badRequest(`Elige a dónde va ${k.code}`, 'SIN_DESTINO');
+    if (ch.toContainerId === containerId) throw badRequest(`${k.code} no puede quedarse en el contenedor que se retira`, 'SIN_DESTINO');
+    await c.query(`UPDATE container SET location_id = $2, parent_container_id = $3, updated_at = now() WHERE id = $1`, [ch.containerId, ch.toLocationId ?? null, ch.toContainerId ?? null]);
+    await recordContainerMove(c, {
+      userId: user.id, containerId: ch.containerId, fromLocationId: k.location_id, fromParentId: k.parent_container_id,
+      toLocationId: ch.toLocationId ?? null, toParentId: ch.toContainerId ?? null, reason: `Al retirar ${code}`,
+    });
+  }
+  for (const it of items) {
+    const bal = (await c.query(
+      `SELECT id, material_id, lot_id, quantity::float AS quantity FROM stock_balance WHERE id = $1 AND container_id = $2 FOR UPDATE`,
+      [it.balanceId, containerId],
+    )).rows[0] as { id: string; material_id: string; lot_id: string | null; quantity: number | null } | undefined;
+    if (!bal) throw badRequest('Esa línea no está dentro del contenedor', 'NO_ESTA_DENTRO');
+    const m = await getMaterial(c, bal.material_id);
+    const qty = bal.quantity;
+    if (it.action === 'MOVE') {
+      if (Boolean(it.toContainerId) === Boolean(it.toLocationId)) throw badRequest(`Elige a dónde va ${m.description}`, 'SIN_DESTINO');
+      if (it.toContainerId === containerId) throw badRequest(`${m.description} no puede quedarse en el contenedor que se retira`, 'SIN_DESTINO');
+      const place = await resolvePlace(c, { containerId: it.toContainerId, locationId: it.toLocationId });
+      const reservations = (await c.query(
+        `SELECT project_id, responsible_user_id, quantity::float AS quantity FROM stock_allocation WHERE stock_balance_id = $1 AND quantity > 0 AND availability = 'RESTRICTED'`,
+        [bal.id],
+      )).rows as Array<{ project_id: string | null; responsible_user_id: string | null; quantity: number }>;
+      const mv = await createMovement(c, { type: 'TRANSFER', userId: user.id, reason: `Al retirar ${code}` });
+      await applyLine(c, mv, 1, { material: m, lotId: bal.lot_id, containerId, locationId: null, delta: qty === null ? null : -qty, presence: false });
+      await applyLine(c, mv, 2, { material: m, lotId: bal.lot_id, containerId: place.containerId, locationId: place.locationId, delta: qty, presence: true });
+      for (const r of reservations) {
+        await reserve(c, { materialId: m.id, lotId: bal.lot_id, containerId: place.containerId, locationId: place.locationId }, r.quantity,
+          { projectId: r.project_id, responsibleUserId: r.responsible_user_id });
+      }
+    } else {
+      const dest = it.destination?.trim();
+      if (it.action === 'EXTERNAL' && !dest) throw badRequest(`Indica a dónde va ${m.description}`, 'SIN_DESTINO');
+      const why = it.action === 'TRASH' ? `A la basura al retirar ${code}` : `Sale del taller a ${dest} al retirar ${code}`;
+      await withdrawAll(c, user.id, [bal.id], why);
+      // Una herramienta o un equipo que se tira queda de baja.
+      if (it.action === 'TRASH' && m.unitTracked) await c.query(`UPDATE material SET status = 'OBSOLETE', updated_at = now() WHERE id = $1`, [m.id]);
+    }
+  }
 }
 
 export function containerRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
@@ -614,14 +672,42 @@ export function containerRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
         params: idParams,
         body: {
           type: 'object', additionalProperties: false,
-          properties: { reason: { type: 'string', maxLength: 300 } },
+          properties: {
+            reason: { type: 'string', maxLength: 300 },
+            // Qué hacer con cada cosa que lleva dentro.
+            items: {
+              type: 'array', maxItems: 500,
+              items: {
+                type: 'object', required: ['balanceId', 'action'], additionalProperties: false,
+                properties: {
+                  balanceId: uuid,
+                  action: { type: 'string', enum: ['TRASH', 'MOVE', 'EXTERNAL'] },
+                  toContainerId: uuid, toLocationId: uuid,
+                  destination: { type: 'string', maxLength: 200 },
+                },
+              },
+            },
+            // A dónde va cada contenedor que lleva dentro.
+            children: {
+              type: 'array', maxItems: 200,
+              items: {
+                type: 'object', required: ['containerId'], additionalProperties: false,
+                properties: { containerId: uuid, toContainerId: uuid, toLocationId: uuid },
+              },
+            },
+          },
         },
       },
     },
     (request, reply) =>
       idempotent(pool, request, reply, async () => {
         const { id } = request.params as { id: string };
-        const reason = (request.body as { reason?: string } | undefined)?.reason?.trim() || 'Retirada del contenedor';
+        const body = (request.body ?? {}) as {
+          reason?: string;
+          items?: Array<{ balanceId: string; action: 'TRASH' | 'MOVE' | 'EXTERNAL'; toContainerId?: string; toLocationId?: string; destination?: string }>;
+          children?: Array<{ containerId: string; toContainerId?: string; toLocationId?: string }>;
+        };
+        const reason = body.reason?.trim() || 'Retirada del contenedor';
 
         await withTransaction(pool, async (c) => {
           const r = await c.query(
@@ -631,6 +717,7 @@ export function containerRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
           const current = r.rows[0];
           if (!current) throw notFound('El contenedor no existe');
           if (current.status !== 'ACTIVE') throw conflict('El contenedor ya está retirado', 'CONTENEDOR_RETIRADO');
+          if (body.items?.length || body.children?.length) await emptyFirst(c, request.user!, id, current.code, body.items ?? [], body.children ?? []);
 
           const inside = await c.query(
             `SELECT (SELECT count(*)::int FROM container WHERE parent_container_id = $1 AND status = 'ACTIVE') AS children,
@@ -638,7 +725,7 @@ export function containerRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
             [id],
           );
           if (inside.rows[0].children > 0 || inside.rows[0].stock > 0) {
-            throw conflict('Solo se puede retirar un contenedor vacío', 'CONTENEDOR_NO_VACIO');
+            throw conflict('Aún lleva cosas dentro: di qué hacer con cada una antes de retirarlo', 'CONTENEDOR_NO_VACIO');
           }
 
           await c.query(
@@ -702,5 +789,52 @@ export function containerRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
   app.get('/api/users/basic', { preHandler: requirePermission('container.read') }, async () => {
     const r = await pool.query(`SELECT id, full_name AS "fullName" FROM app_user WHERE active ORDER BY full_name`);
     return { users: r.rows };
+  });
+
+  // ---- Eliminar ---------------------------------------------------------
+  // Lo que lleva dentro se saca con una retirada (queda en el historial). Sin
+  // historial, el contenedor se borra; con historial, queda retirado. Los
+  // contenedores que tenga dentro hay que vaciarlos o moverlos antes.
+  app.delete('/api/containers/:id', { preHandler: requirePermission('material.delete'), schema: { params: idParams } }, async (request) => {
+    const { id } = request.params as { id: string };
+    return withTransaction(pool, async (c) => {
+      const k = (await c.query(`SELECT code, status, location_id, parent_container_id FROM container WHERE id = $1 FOR UPDATE`, [id])).rows[0];
+      if (!k) throw notFound('El contenedor no existe');
+      const kids = (await c.query(`SELECT count(*)::int AS n FROM container WHERE parent_container_id = $1 AND status = 'ACTIVE'`, [id])).rows[0].n;
+      if (kids) throw conflict(`No se puede eliminar ${k.code}: lleva ${kids} contenedor${kids === 1 ? '' : 'es'} dentro. Elimínalos o muévelos antes`, 'CONTENEDOR_CON_CONTENEDORES');
+      const balances = (await c.query(`SELECT id FROM stock_balance WHERE container_id = $1`, [id])).rows.map((r) => r.id as string);
+      const out = await withdrawAll(c, request.user!.id, balances, `Contenedor eliminado: ${k.code}`);
+      await c.query(`DELETE FROM stock_balance WHERE container_id = $1`, [id]);
+      let how: 'borrado' | 'retirado' = 'borrado';
+      await c.query('SAVEPOINT borrar');
+      try {
+        // Los comentarios no se borran nunca (son historial): si tiene, se conserva oculto.
+        const notes = (await c.query(`SELECT 1 FROM note WHERE entity_type = 'container' AND entity_id = $1 LIMIT 1`, [id])).rowCount;
+        if (notes) throw Object.assign(new Error('tiene comentarios'), { code: '23503' });
+        await c.query(`DELETE FROM photo WHERE entity_type = 'container' AND entity_id = $1`, [id]);
+        await c.query(`DELETE FROM container WHERE id = $1`, [id]);
+      } catch (e) {
+        if ((e as { code?: string }).code !== '23503') throw e;
+        await c.query('ROLLBACK TO SAVEPOINT borrar');
+        if (k.status === 'ACTIVE') {
+          await c.query(
+            `UPDATE container SET status = 'RETIRED', location_id = NULL, parent_container_id = NULL, project_id = NULL,
+                    retired_at = now(), updated_at = now() WHERE id = $1`,
+            [id],
+          );
+          await recordContainerMove(c, {
+            userId: request.user!.id, containerId: id, fromLocationId: k.location_id, fromParentId: k.parent_container_id,
+            toLocationId: null, toParentId: null, reason: `Contenedor eliminado: ${k.code}`,
+          });
+        }
+        how = 'retirado';
+      }
+      await writeAudit(c, {
+        userId: request.user!.id, action: 'contenedor.eliminar', entityType: 'container', entityId: id,
+        before: { codigo: k.code }, after: { resultado: how === 'borrado' ? 'borrado del todo' : 'retirado, con su historial conservado', lineas_retiradas: out?.lines ?? 0 },
+        ip: request.ip, requestId: request.id,
+      });
+      return { ok: true, code: k.code, keptHistory: how === 'retirado', withdrawn: out?.lines ?? 0 };
+    });
   });
 }

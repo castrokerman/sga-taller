@@ -493,3 +493,21 @@ docker compose logs --tail 200
 | Instalación del certificado en móviles | **Sin comprobar**: los pasos son los habituales, pero los menús varían |
 | Impresión en papel y lectura de la etiqueta impresa | **Sin comprobar** |
 | Lector QR USB | **Sin comprobar** |
+
+## Retirar un contenedor que lleva cosas
+
+En la ficha del contenedor, **«Retirar»**. Si está vacío, se retira (conserva
+su historial y su QR). Si lleva cosas, sale la lista de lo que hay dentro y,
+**para cada una**, eliges:
+
+- **🗑 A la basura:** sale del inventario (queda como retirada en el
+  historial). Una herramienta o equipo con su código queda de baja.
+- **🚚 A otro sitio del taller:** eliges el sitio en la lista y se traslada
+  allí. Si estaba reservado para un proyecto, la reserva va con ello.
+- **📤 A un sitio externo:** escribes a dónde va (proveedor, cliente, obra…) y
+  sale del inventario con ese destino anotado.
+
+Los **contenedores de dentro** se mueven a otro sitio del taller con lo que
+lleven. Con varias cosas, «Lo mismo para todas» marca la misma opción en
+todas. El botón dice cuántas faltan por decidir; cuando no falta ninguna,
+«Retirar» lo hace todo de una vez.

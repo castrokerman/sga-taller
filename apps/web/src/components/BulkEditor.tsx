@@ -36,8 +36,19 @@ export function BulkEditor<T extends { id: string }>(props: {
   columns: Array<BulkColumn<T>>;
   onSave: (changes: BulkChanges) => Promise<string>;
   onClose: (message?: string) => void;
-  /** Botón por fila (por ejemplo, eliminar). Devuelve el mensaje a mostrar. */
-  rowAction?: { label: string; confirm: (row: T) => string; run: (row: T) => Promise<string> };
+  /**
+   * Eliminar: un botón «Eliminar…» que deja marcar filas y eliminarlas de una
+   * vez, siempre con confirmación. run devuelve el mensaje de cada una.
+   */
+  remove?: {
+    /** Cómo se llama una fila, para el aviso: «MAT-000012 · Tornillo M6». */
+    name: (row: T) => string;
+    /** Lo que se advierte antes de confirmar. */
+    warning: string;
+    run: (row: T) => Promise<string>;
+    /** Tras eliminar alguna: recargar la lista. */
+    onRemoved?: () => Promise<void> | void;
+  };
 }) {
   const { rows, columns } = props;
   const [edits, setEdits] = useState<Record<string, Record<string, CellValue>>>({});
@@ -48,26 +59,36 @@ export function BulkEditor<T extends { id: string }>(props: {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [rowBusy, setRowBusy] = useState<string | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [picked, setPicked] = useState<string[]>([]);
 
-  const runRow = async (row: T) => {
-    const a = props.rowAction!;
-    if (!window.confirm(a.confirm(row))) return;
-    setRowBusy(row.id);
+  const removePicked = async () => {
+    const r = props.remove!;
+    const chosen = rows.filter((x) => picked.includes(x.id));
+    if (!chosen.length) return;
+    const names = chosen.slice(0, 12).map((x) => `• ${r.name(x)}`).join('\n') + (chosen.length > 12 ? `\n… y ${chosen.length - 12} más` : '');
+    if (!window.confirm(`¿Seguro que quieres eliminar ${chosen.length === 1 ? 'esto' : `estos ${chosen.length}`}?\n\n${names}\n\n${r.warning}\nNo se puede deshacer.`)) return;
+    setBusy(true);
     setError(null);
     setNotice(null);
-    try {
-      setNotice(await a.run(row));
-      setEdits((all) => {
-        const next = { ...all };
-        delete next[row.id];
-        return next;
-      });
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setRowBusy(null);
+    const ok: string[] = [];
+    const bad: string[] = [];
+    for (const x of chosen) {
+      try {
+        ok.push(await r.run(x));
+      } catch (e) {
+        bad.push(`${r.name(x)}: ${errorMessage(e)}`);
+      }
     }
+    setBusy(false);
+    setPicked([]);
+    if (ok.length) {
+      setNotice(ok.length === 1 ? ok[0]! : `Eliminados ${ok.length}:\n${ok.join('\n')}`);
+      setEdits({});
+      await r.onRemoved?.();
+    }
+    if (bad.length) setError(`No se ${bad.length === 1 ? 'ha' : 'han'} podido eliminar:\n${bad.join('\n')}`);
+    else setPicking(false);
   };
 
   const value = (row: T, col: BulkColumn<T>) => edits[row.id]?.[col.key] ?? col.get(row);
@@ -141,21 +162,60 @@ export function BulkEditor<T extends { id: string }>(props: {
         </div>
       )}
 
+      {props.remove && (
+        <div className="bulk-remove">
+          {!picking ? (
+            <button type="button" className="btn btn-small btn-danger" disabled={busy} onClick={() => { setPicking(true); setPicked([]); setNotice(null); setError(null); }}>
+              Eliminar…
+            </button>
+          ) : (
+            <>
+              <span>Marca lo que quieres eliminar:</span>
+              <button type="button" className="btn btn-small btn-danger" disabled={busy || picked.length === 0} onClick={() => void removePicked()}>
+                {busy ? 'Eliminando…' : `Eliminar ${picked.length || ''} seleccionado${picked.length === 1 ? '' : 's'}`}
+              </button>
+              <button type="button" className="btn btn-small" disabled={busy} onClick={() => { setPicking(false); setPicked([]); }}>
+                Cancelar
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
       <div className="bulk-table">
         <table>
           <thead>
             <tr>
+              {picking && (
+                <th className="bulk-pick">
+                  <input
+                    type="checkbox"
+                    aria-label="Marcar todas"
+                    checked={rows.length > 0 && picked.length === rows.length}
+                    onChange={(e) => setPicked(e.target.checked ? rows.map((x) => x.id) : [])}
+                  />
+                </th>
+              )}
               {columns.map((c) => (
                 <th key={c.key} style={{ minWidth: c.width }}>
                   {c.label}
                 </th>
               ))}
-              {props.rowAction && <th />}
             </tr>
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.id} className={edits[row.id] ? 'row-changed' : undefined}>
+              <tr key={row.id} className={`${edits[row.id] ? 'row-changed' : ''} ${picked.includes(row.id) ? 'row-picked' : ''}`}>
+                {picking && (
+                  <td className="bulk-pick">
+                    <input
+                      type="checkbox"
+                      aria-label="Marcar para eliminar"
+                      checked={picked.includes(row.id)}
+                      onChange={(e) => setPicked(e.target.checked ? [...picked, row.id] : picked.filter((x) => x !== row.id))}
+                    />
+                  </td>
+                )}
                 {columns.map((c) => (
                   <td
                     key={c.key}
@@ -169,21 +229,14 @@ export function BulkEditor<T extends { id: string }>(props: {
                     )}
                   </td>
                 ))}
-                {props.rowAction && (
-                  <td>
-                    <button type="button" className="btn btn-small btn-danger" disabled={busy || rowBusy !== null} onClick={() => void runRow(row)}>
-                      {rowBusy === row.id ? '…' : props.rowAction.label}
-                    </button>
-                  </td>
-                )}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
-      {notice && <p className="alert alert-ok">{notice}</p>}
-      {error && <p className="alert alert-error">{error}</p>}
+      {notice && <p className="alert alert-ok pre-line">{notice}</p>}
+      {error && <p className="alert alert-error pre-line">{error}</p>}
       <div className="actions">
         {cells > 0 && (
           <button type="button" className="btn" onClick={() => setEdits({})} disabled={busy}>

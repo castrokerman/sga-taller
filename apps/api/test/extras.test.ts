@@ -120,6 +120,17 @@ describe('fotos', () => {
     expect((await call('GET', `/api/containers/${container}`, usuario)).json().container.photoId).toBeTruthy();
   });
 
+  it('una entrada puede llevar la foto de su albarán, que se ve en el historial', async () => {
+    const e = await call('POST', '/api/stock/receipt', almacen, { materialId: material, containerId: container, quantity: 2, externalReference: 'ALB-FICT-1' });
+    expect(e.statusCode, e.body).toBe(201);
+    const movementId = e.json().movementId;
+    expect(movementId).toBeTruthy();
+    const ph = await call('POST', '/api/photos', almacen, { entityType: 'movement', entityId: movementId, image: png(30, 30), thumbnail: png(10, 10), width: 30, height: 30 });
+    expect(ph.statusCode, ph.body).toBe(201);
+    const hist = (await call('GET', `/api/materials/${material}`, almacen)).json().movements;
+    expect(hist.find((m: { movementId: string }) => m.movementId === movementId).documentPhotoId).toBe(ph.json().photo.id);
+  });
+
   it('el contenedor tiene aparte la foto de su contenido, y cada movimiento dice qué contenedores cambian', async () => {
     const before = (await call('GET', `/api/containers/${container}`, usuario)).json().container;
     const r = await call('POST', '/api/photos', usuario, {

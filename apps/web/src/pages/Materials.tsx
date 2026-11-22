@@ -1,3 +1,4 @@
+import type React from 'react';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { api, errorMessage, formatDate, formatQty, photoUrl, TRACKING_NAMES, type ContentType, type Family, type Material, type MaterialInput, type Unit, type User } from '../api';
 import { Highlight, optionsFrom, useListControls, type ListConfig } from '../components/ListControls';
@@ -290,6 +291,8 @@ export function MaterialForm(props: {
   canPhoto?: boolean;
   /** Tipo ya elegido antes (al registrar una entrada): no se vuelve a preguntar. */
   fixedType?: string;
+  /** Botón extra a la izquierda de las acciones (por ejemplo, eliminar). */
+  extra?: React.ReactNode;
   onCancel: () => void;
   onDone: (m: Material) => void;
 }) {
@@ -551,7 +554,8 @@ export function MaterialForm(props: {
       )}
       {canPhoto && <PhotoField label="Foto del contenido" file={photo} onChange={setPhoto} hint="Se guarda en su ficha. Puedes añadir más después." />}
       {error && <p className="alert alert-error">{error}</p>}
-      <div className="actions">
+      <div className="actions actions-wrap">
+        {props.extra}
         <button type="button" className="btn" onClick={props.onCancel}>
           Cancelar
         </button>
@@ -612,16 +616,15 @@ function BulkMaterials(props: { rows: Material[]; families: Family[]; onClose: (
       rows={props.rows}
       onSave={save}
       onClose={props.onClose}
-      rowAction={props.canDelete ? {
-        label: 'Eliminar',
-        confirm: (m) => `¿Seguro que quieres eliminar ${m.internalRef} · ${m.description}?\n\nSi tiene historial (movimientos, préstamos, recepciones) se conserva, pero desaparece de listas, buscador y escáner. No se puede deshacer.`,
+      remove={props.canDelete ? {
+        name: (m) => `${m.internalRef} · ${m.description}`,
+        warning: 'Lo que quede guardado se saca de su sitio (queda como retirada en el historial). Si tiene historial se conserva, pero desaparece de listas, buscador y escáner.',
         run: async (m) => {
           const r = await api.deleteMaterial(m.id);
-          await props.onDeleted?.();
-          return r.keptHistory
-            ? `${r.ref} eliminado. Su historial se conserva.`
-            : `${r.ref} eliminado del todo: no tenía historial.`;
+          const out = r.withdrawn ? `, sacado de ${r.withdrawn} sitio${r.withdrawn === 1 ? '' : 's'}` : '';
+          return r.keptHistory ? `${r.ref} eliminado${out}; su historial se conserva` : `${r.ref} eliminado del todo${out}`;
         },
+        onRemoved: () => props.onDeleted?.(),
       } : undefined}
       columns={[
         { key: 'ref', label: 'Referencia', type: 'static', get: (m) => m.internalRef },

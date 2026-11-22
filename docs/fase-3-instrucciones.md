@@ -165,15 +165,28 @@ entrada»** → **«Sé lo que es»** te lleva paso a paso:
    (solo con las familias de su tipo y, en herramientas y equipos, sin pedir
    unidad: van de una en una). «Contenido ya registrado» es para reponer o
    aumentar: búscalo por nombre o referencia.
-3. **Dónde**: elígelo en la lista desplegable o escanea la etiqueta. Si
-   repites sitio, sale «El mismo que la última vez».
-4. **Cantidad y para quién**: con lote, albarán, nota y, si quieres, **foto
-   del contenido**. En «¿Para quién es?»: **«Uso general del taller»** (lo
+3. **¿En qué contenedor?** Tres opciones:
+   - **«Viene con un contenedor nuevo»** (palet, caja…): eliges el tipo y,
+     si quieres, una descripción. El contenedor se registra solo al terminar
+     la entrada, con su código nuevo.
+   - **«En un contenedor que ya existe»**: lo buscas por código o
+     descripción y el sitio queda **ya elegido** (el de ese contenedor).
+   - **«No necesita contenedor»**: se deja directamente en una ubicación.
+4. **Dónde**: si el contenedor es nuevo o no hay contenedor, elígelo en la
+   lista o escanea la etiqueta (si repites sitio, sale «El mismo que la
+   última vez»). Si el sitio ya tiene todos los contenedores que admite, la
+   app avisa y puedes **«Dejarlo igualmente»** o elegir otro.
+5. **Cantidad y para quién**: con lote, albarán (con **«📷 Foto del
+   albarán»**, que en el móvil abre la cámara), nota y, si quieres, **foto
+   del contenido**. La foto del albarán queda en el historial del contenido
+   (🧾 junto al número de albarán; al pasar el cursor se amplía). En «¿Para quién es?»: **«Uso general del taller»** (lo
    puede usar cualquiera) o **«Para un proyecto o una persona»**: queda
    reservado y solo lo sacan los responsables de ese proyecto, esa persona y
    el responsable de almacén.
 
-Al terminar puedes seguir con **otra entrada en el mismo sitio**, con **más
+Al terminar puedes seguir con **otra entrada en el mismo sitio** (si
+acabas de registrar un palet nuevo, «Otra entrada en PAL-…» mete más cosas
+en ese mismo palet), con **más
 del mismo contenido en otro sitio**, o empezar de cero.
 
 ### Varias cosas a la vez
@@ -464,18 +477,32 @@ Es una copia para consultar: lo que cambies en el Excel no vuelve al sistema.
 | Importación desde Excel | No incluida: se parte de cero. Si hace falta una carga masiva, se añade |
 
 
-## Eliminar contenidos
+## Eliminar desde «Editar en tabla»
 
-En «Contenidos» → «Editar en tabla», el administrador técnico y el
-responsable de almacén tienen un botón «Eliminar» en cada fila. Siempre pide
-confirmación.
+En las tablas de **contenidos**, **ubicaciones** y **contenedores** («Editar en
+tabla») hay un botón **«Eliminar…»**: al pulsarlo aparece una casilla en cada
+fila (y otra arriba para marcarlas todas). Marca las que quieras y pulsa
+**«Eliminar N seleccionados»**. Siempre pide confirmación, con la lista de lo
+que se va a eliminar. Al terminar dice qué se ha eliminado y qué no, y por qué.
 
-- Si el contenido no tiene historial, se borra del todo.
-- Si tiene historial (movimientos, préstamos, recepciones), desaparece de las
-  listas, el buscador y el escáner, pero su historial se conserva. Su ficha,
-  abierta desde un movimiento antiguo, avisa de que está eliminado.
-- Si aún queda algo guardado o prestado, no deja: primero hay que retirarlo o
-  que lo devuelvan.
+Lo pueden hacer el **responsable de almacén** y el **administrador técnico**.
+
+También se puede eliminar **uno solo desde su ficha**: «Editar» → **«🗑
+Eliminar»** (en contenidos, contenedores y ubicaciones), con la misma
+confirmación y las mismas reglas. Al eliminarlo te lleva a la lista (o a
+donde estaba el contenedor) y lo avisa arriba.
+
+- **Contenidos:** si queda algo guardado, **se saca de su sitio** (queda como
+  retirada en el historial) y se elimina. Si no tenía historial se borra del
+  todo; si lo tenía (movimientos, préstamos, recepciones o **comentarios**,
+  que nunca se borran), desaparece de listas, buscador y escáner y su
+  historial se conserva. Lo que esté **prestado** no se elimina: primero tiene que
+  volver.
+- **Contenedores:** lo que lleven dentro se saca (retirada en el historial).
+  Sin historial se borran; con historial quedan **retirados**. Los que llevan
+  otros contenedores dentro no se eliminan: vacíalos o muévelos antes.
+- **Ubicaciones:** solo las vacías (sin ubicaciones, contenedores ni
+  contenido dentro) y sin historial. Las demás, desactívalas.
 
 ## Tipos: ordenar y eliminar
 

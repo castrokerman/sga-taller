@@ -41,6 +41,8 @@ async function checkFree(c: pg.PoolClient, user: { id: string; permissions: stri
 /** Lo que se devuelve tras cada operación: el saldo que queda y avisos. */
 interface OpResult {
   movementNumber: number;
+  /** Para unir al movimiento una foto (del albarán). */
+  movementId?: string;
   message: string;
   remaining: number | null;
   /** Herramientas y equipos: las unidades que han entrado, cada una con su código (para sacar sus etiquetas). */
@@ -176,6 +178,7 @@ export function stockRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
             });
             return {
               movementNumber: mv.number,
+              movementId: mv.id,
               remaining: 1,
               units: units.map((u) => ({ id: u.id, internalRef: u.internalRef })),
               message: (units.length === 1
@@ -198,6 +201,7 @@ export function stockRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
           });
           return {
             movementNumber: mv.number,
+            movementId: mv.id,
             remaining: after,
             message: `${b.isReturn ? 'Devolución' : 'Entrada'} registrada: ${quantity === null ? m.description : `${fmt(quantity, m.unitCode)} de ${m.description}`} en ${place.code}${forWhom}`,
           };

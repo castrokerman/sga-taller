@@ -1,3 +1,4 @@
+import type React from 'react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { api, ApiError, errorMessage, formatDateTime, newOperationKey, photoUrl, type ContainerDetail, type Project, type ScanHit, type User } from '../api';
 import { Breadcrumbs, ContainerCard, containerListConfig, LabelPanel } from '../components/Common';
@@ -5,12 +6,15 @@ import { useListControls } from '../components/ListControls';
 import { Scanner } from '../components/Scanner';
 import { MoveContainersPanel } from '../components/MoveContainers';
 import { Thumb } from '../components/Thumb';
+import { RetireContainer } from '../components/RetireContainer';
+import { DeleteButton } from '../components/DeleteButton';
+import { navigate } from '../router';
 import { CONTENTS_PHOTO_EVENT } from '../components/ContentsPhoto';
 import { StockSection } from '../components/Stock';
 import { ItemExtras } from '../components/ItemExtras';
 import { BulkContainers, ContainerForm } from './Warehouse';
 
-type Panel = 'none' | 'move' | 'inside' | 'labels' | 'edit' | 'duplicate' | 'bulk' | 'project';
+type Panel = 'none' | 'move' | 'inside' | 'labels' | 'edit' | 'duplicate' | 'bulk' | 'project' | 'retire';
 
 const place = (location: string | null, container: string | null) => location ?? container ?? '—';
 
@@ -68,19 +72,6 @@ export function ContainerPage({ user, containerId }: { user: User; containerId: 
     setNotice(null);
     setError(null);
     setPanel(next);
-  };
-
-  const retire = async () => {
-    if (!detail) return;
-    const reason = window.prompt(`Motivo de la retirada de ${detail.container.code}:`, 'Contenedor desechado');
-    if (reason === null) return;
-    try {
-      await api.retireContainer(containerId, reason || 'Retirada del contenedor', newOperationKey());
-      await done('Contenedor retirado. Conserva su historial y su QR.');
-    } catch (e) {
-      setNotice(null);
-      setError(errorMessage(e));
-    }
   };
 
   if (!detail) return error ? <p className="alert alert-error">{error}</p> : <p className="muted">Cargando…</p>;
@@ -183,7 +174,7 @@ export function ContainerPage({ user, containerId }: { user: User; containerId: 
           </button>
         )}
         {active && can('container.manage') && (
-          <button className="btn btn-danger" onClick={retire}>
+          <button className="btn btn-danger" onClick={() => open('retire')}>
             Retirar
           </button>
         )}
@@ -210,7 +201,30 @@ export function ContainerPage({ user, containerId }: { user: User; containerId: 
       {panel === 'duplicate' && (
         <DuplicateContainerForm detail={detail} onCancel={() => setPanel('none')} onDone={(text) => done(text)} />
       )}
-      {panel === 'edit' && <EditContainerForm detail={detail} onCancel={() => setPanel('none')} onDone={() => done('Cambios guardados')} />}
+      {panel === 'retire' && (
+        <RetireContainer detail={detail} onCancel={() => setPanel('none')} onDone={(t) => done(t)} />
+      )}
+      {panel === 'edit' && (
+        <EditContainerForm
+          detail={detail}
+          onCancel={() => setPanel('none')}
+          onDone={() => done('Cambios guardados')}
+          extra={user.permissions.includes('material.delete') && (
+            <DeleteButton
+              what={c.code}
+              warning="Lo que lleve dentro se saca de su sitio (queda como retirada en el historial). Si tiene historial, queda retirado y su historial se conserva. Si lleva otros contenedores dentro, no se elimina."
+              run={async () => {
+                const r = await api.deleteContainer(c.id);
+                return r.keptHistory ? `${r.code} retirado; su historial se conserva` : `${r.code} eliminado del todo`;
+              }}
+              onDone={(msg) => {
+                window.sessionStorage.setItem('sga.aviso', msg);
+                navigate(c.parentContainerId ? `contenedor/${c.parentContainerId}` : c.locationId ? `almacen/${c.locationId}` : 'almacen');
+              }}
+            />
+          )}
+        />
+      )}
       {panel === 'labels' && (
         <LabelPanel
           onClose={() => setPanel('none')}
@@ -230,7 +244,7 @@ export function ContainerPage({ user, containerId }: { user: User; containerId: 
             </button>
           )}
         </div>
-        {panel === 'bulk' && <BulkContainers rows={insideList.visible} onClose={(m) => (m ? done(m) : setPanel('none'))} />}
+        {panel === 'bulk' && <BulkContainers rows={insideList.visible} canDelete={user.permissions.includes('material.delete')} onRemoved={() => load()} onClose={(m) => (m ? done(m) : setPanel('none'))} />}
         {detail.children.length > 0 ? (
           <>
             {detail.children.length > 1 && insideList.bar}
@@ -294,7 +308,7 @@ function MovePanel(props: { detail: ContainerDetail; onCancel: () => void; onDon
   );
 }
 
-function EditContainerForm(props: { detail: ContainerDetail; onCancel: () => void; onDone: () => void }) {
+function EditContainerForm(props: { detail: ContainerDetail; onCancel: () => void; onDone: () => void; extra?: React.ReactNode }) {
   const c = props.detail.container;
   const [description, setDescription] = useState(c.description ?? '');
   const [contentDescription, setContentDescription] = useState(c.contentDescription ?? '');
@@ -354,7 +368,8 @@ function EditContainerForm(props: { detail: ContainerDetail; onCancel: () => voi
         </label>
       </div>
       {error && <p className="alert alert-error">{error}</p>}
-      <div className="actions">
+      <div className="actions actions-wrap">
+        {props.extra}
         <button type="button" className="btn" onClick={props.onCancel}>
           Cancelar
         </button>

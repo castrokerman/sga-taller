@@ -726,3 +726,16 @@ h2 .loan-chip-wrap { flex-direction: row; align-items: center; gap: 0.5rem; vert
   .batch-row .batch-what, .batch-row .batch-where { grid-column: 2 / 4; }
   .batch-n, .batch-x { padding-top: 0.2rem; }
 }
+.bulk-remove { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0.4rem 0 0.6rem; }
+.bulk-pick { width: 2.2rem; text-align: center; }
+.row-picked td { background: #fdecea !important; }
+.pre-line { white-space: pre-line; }
+.delete-error { flex-basis: 100%; margin: 0.3rem 0 0; }
+.retire-all { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin: 0.5rem 0; }
+.retire-list { display: grid; gap: 0.6rem; margin: 0.6rem 0 1rem; }
+.retire-item { display: grid; gap: 0.45rem; padding: 0.7rem; border: 1px solid var(--line, #d9dde3); border-left: 4px solid #f0b429; border-radius: 10px; background: #fff; }
+.retire-item.ready { border-left-color: #2e9d5b; }
+.retire-what { display: flex; gap: 0.6rem; align-items: center; }
+.retire-item .pchips { margin: 0; }
+.doc-photo { display: inline-flex; gap: 0.5rem; align-items: center; margin-top: 0.35rem; }
+.doc-thumb { width: 26px; height: 26px; border-radius: 4px; object-fit: cover; vertical-align: middle; }

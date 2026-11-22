@@ -28,6 +28,16 @@ export function requirePermission(...codes: string[]) {
   };
 }
 
+/** Basta con uno de estos permisos. */
+export function requireAnyPermission(...codes: string[]) {
+  const auth = requireAuth();
+  return async (request: FastifyRequest, reply: FastifyReply) => {
+    await auth(request, reply);
+    const have = new Set(request.user!.permissions);
+    if (!codes.some((c) => have.has(c))) throw forbidden();
+  };
+}
+
 export const publicUser = (u: SessionUser) => ({
   id: u.id,
   username: u.username,

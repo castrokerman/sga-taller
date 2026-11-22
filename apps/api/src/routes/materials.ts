@@ -4,7 +4,7 @@ import { writeAudit } from '../audit.js';
 import { requirePermission } from '../auth/guard.js';
 import { withTransaction } from '../db/tx.js';
 import { AppError, badRequest, conflict, notFound } from '../errors.js';
-import { applyLine, copyUnit, createMovement, getMaterial } from '../inventory/stock.js';
+import { applyLine, copyUnit, createMovement, getMaterial, withdrawAll } from '../inventory/stock.js';
 
 const uuid = { type: 'string', format: 'uuid' } as const;
 const idParams = { type: 'object', required: ['id'], properties: { id: uuid } } as const;
@@ -339,14 +339,25 @@ export function materialRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
   app.delete('/api/material-families/:id', { preHandler: requirePermission(FAMILY_MANAGE), schema: { params: idParams } }, async (request) => {
     const { id } = request.params as { id: string };
     await withTransaction(pool, async (c) => {
-      const f = (await c.query(`SELECT name FROM material_family WHERE id = $1 FOR UPDATE`, [id])).rows[0];
+      const f = (await c.query(`SELECT name, parent_id, content_type_code FROM material_family WHERE id = $1 FOR UPDATE`, [id])).rows[0];
       if (!f) throw notFound('La familia no existe');
-      const used = await c.query(
-        `SELECT (SELECT count(*) FROM material WHERE family_id = $1)::int AS m, (SELECT count(*) FROM material_family WHERE parent_id = $1)::int AS k`,
+      const used = (await c.query(
+        `SELECT (SELECT count(*) FROM material WHERE family_id = $1 AND deleted_at IS NULL)::int AS m,
+                (SELECT count(*) FROM material WHERE family_id = $1 AND deleted_at IS NOT NULL)::int AS gone,
+                (SELECT count(*) FROM material_family WHERE parent_id = $1)::int AS k`,
         [id],
-      );
-      if (used.rows[0].m || used.rows[0].k) {
-        throw conflict('Esta familia tiene contenidos o subfamilias. Desactívala en lugar de borrarla', 'FAMILIA_EN_USO');
+      )).rows[0];
+      if (used.k) throw conflict(`«${f.name}» tiene subfamilias: bórralas o muévelas antes, o desactívala`, 'FAMILIA_EN_USO');
+      if (used.m) throw conflict(`«${f.name}» tiene ${used.m} contenido${used.m === 1 ? '' : 's'}: muévelos a otra familia antes, o desactívala`, 'FAMILIA_EN_USO');
+      if (used.gone) {
+        // Solo quedan contenidos eliminados (ocultos, con su historial): pasan a la familia de arriba,
+        // o a otra del mismo tipo, y siguen ocultos.
+        const to = f.parent_id ?? (await c.query(
+          `SELECT id FROM material_family WHERE id <> $1 ORDER BY (content_type_code = $2) DESC, (parent_id IS NULL) DESC, active DESC, name LIMIT 1`,
+          [id, f.content_type_code],
+        )).rows[0]?.id;
+        if (!to) throw conflict(`«${f.name}» es la única familia y aún la usan contenidos eliminados con historial`, 'FAMILIA_EN_USO');
+        await c.query(`UPDATE material SET family_id = $2 WHERE family_id = $1 AND deleted_at IS NOT NULL`, [id, to]);
       }
       await c.query(`DELETE FROM material_family WHERE id = $1`, [id]);
       await writeAudit(c, {
@@ -425,16 +436,13 @@ export function materialRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
     return withTransaction(pool, async (c) => {
       const m = (await c.query(`SELECT internal_ref, description, deleted_at FROM material WHERE id = $1 FOR UPDATE`, [id])).rows[0];
       if (!m || m.deleted_at) throw notFound('El contenido no existe');
-      const busy = (await c.query(
-        `SELECT (SELECT count(*) FROM stock_balance WHERE material_id = $1 AND (quantity > 0 OR quantity IS NULL))::int AS stock,
-                (SELECT count(*) FROM tool_loan WHERE material_id = $1 AND returned_at IS NULL)::int AS loans`,
-        [id],
-      )).rows[0];
-      const why = [
-        busy.stock && `aún hay en ${busy.stock} sitio${busy.stock === 1 ? '' : 's'}`,
-        busy.loans && `está prestado`,
-      ].filter(Boolean);
-      if (why.length) throw conflict(`No se puede eliminar ${m.internal_ref}: ${why.join(' y ')}. Retíralo o que lo devuelvan antes`, 'CONTENIDO_EN_USO');
+      // Lo prestado está fuera del almacén: primero tiene que volver.
+      const loans = (await c.query(`SELECT count(*)::int AS n FROM tool_loan WHERE material_id = $1 AND returned_at IS NULL`, [id])).rows[0].n;
+      if (loans) throw conflict(`No se puede eliminar ${m.internal_ref}: está prestado. Que lo devuelvan antes`, 'CONTENIDO_PRESTADO');
+
+      // Lo que aún esté guardado se saca de su sitio con una retirada, que queda en el historial.
+      const balances = (await c.query(`SELECT id FROM stock_balance WHERE material_id = $1`, [id])).rows.map((r) => r.id as string);
+      const out = await withdrawAll(c, request.user!.id, balances, `Contenido eliminado: ${m.internal_ref}`);
 
       // Saldos a cero que queden (estimados) no son historial.
       await c.query(`DELETE FROM stock_allocation WHERE stock_balance_id IN (SELECT id FROM stock_balance WHERE material_id = $1)`, [id]);
@@ -442,8 +450,10 @@ export function materialRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
       let how: 'borrado' | 'oculto' = 'borrado';
       await c.query('SAVEPOINT borrar');
       try {
+        // Los comentarios no se borran nunca (son historial): si tiene, se conserva oculto.
+        const notes = (await c.query(`SELECT 1 FROM note WHERE entity_type = 'material' AND entity_id = $1 LIMIT 1`, [id])).rowCount;
+        if (notes) throw Object.assign(new Error('tiene comentarios'), { code: '23503' });
         await c.query(`DELETE FROM photo WHERE entity_type = 'material' AND entity_id = $1`, [id]);
-        await c.query(`DELETE FROM note WHERE entity_type = 'material' AND entity_id = $1`, [id]);
         await c.query(`DELETE FROM material WHERE id = $1`, [id]);
       } catch (e) {
         if ((e as { code?: string }).code !== '23503') throw e;
@@ -456,7 +466,7 @@ export function materialRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
         before: { ref: m.internal_ref, descripcion: m.description }, after: { resultado: how === 'borrado' ? 'borrado del todo' : 'eliminado, con su historial conservado' },
         ip: request.ip, requestId: request.id,
       });
-      return { ok: true, ref: m.internal_ref, keptHistory: how === 'oculto' };
+      return { ok: true, ref: m.internal_ref, keptHistory: how === 'oculto', withdrawn: out?.lines ?? 0 };
     });
   });
 
@@ -714,7 +724,8 @@ export const MOVEMENT_LINE_SELECT = `
          mt.unit_code AS "unitCode", ml.quantity_tracking AS "quantityTracking",
          ml.quantity_delta::float AS "quantityDelta", ml.quantity_after::float AS "quantityAfter",
          lt.lot_code AS "lotCode", ml.container_id AS "containerId", ml.location_id AS "locationId",
-         coalesce(k.code, sl.code) AS "placeCode"
+         coalesce(k.code, sl.code) AS "placeCode",
+         (SELECT ph.id FROM photo ph WHERE ph.entity_type = 'movement' AND ph.entity_id = mv.id ORDER BY ph.position LIMIT 1) AS "documentPhotoId"
     FROM stock_movement_line ml
     JOIN stock_movement mv ON mv.id = ml.movement_id
     JOIN app_user u ON u.id = mv.performed_by

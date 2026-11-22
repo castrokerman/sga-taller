@@ -184,7 +184,7 @@ export function WarehousePage({ user, locationId }: { user: User; locationId?: s
         />
       )}
       {panel === 'edit' && loc && (
-        <EditLocationForm location={loc} canDeactivate={can('location.deactivate')} onCancel={() => setPanel('none')} onDone={(text) => done(text)} onGone={() => navigate(loc.parentId ? `almacen/${loc.parentId}` : 'almacen')} />
+        <EditLocationForm location={loc} canDeactivate={can('location.deactivate')} canDelete={can('location.deactivate') || can('material.delete')} onCancel={() => setPanel('none')} onDone={(text) => done(text)} onGone={() => navigate(loc.parentId ? `almacen/${loc.parentId}` : 'almacen')} />
       )}
       {panel === 'duplicate' && loc && (
         <DuplicateLocationForm location={loc} onCancel={() => setPanel('none')} onDone={(text) => done(text)} />
@@ -229,7 +229,7 @@ export function WarehousePage({ user, locationId }: { user: User; locationId?: s
             )}
           </div>
           {panel === 'bulk-loc' && (
-            <BulkLocations rows={locList.visible} canDeactivate={can('location.deactivate')} onClose={(m) => (m ? done(m) : setPanel('none'))} />
+            <BulkLocations rows={locList.visible} canDeactivate={can('location.deactivate')} canDelete={can('location.deactivate') || can('material.delete')} onRemoved={() => load()} onClose={(m) => (m ? done(m) : setPanel('none'))} />
           )}
           {children.length > 1 && locList.bar}
           <div className="items">
@@ -260,7 +260,7 @@ export function WarehousePage({ user, locationId }: { user: User; locationId?: s
             <MoveFromHere containers={containers} from={loc.id} onCancel={() => setPanel('none')} onDone={done} />
           )}
           {panel === 'bulk-cont' && (
-            <BulkContainers rows={contList.visible} onClose={(m) => (m ? done(m) : setPanel('none'))} />
+            <BulkContainers rows={contList.visible} canDelete={can('material.delete')} onRemoved={() => load()} onClose={(m) => (m ? done(m) : setPanel('none'))} />
           )}
           {containers.length > 0 ? (
             <>
@@ -397,7 +397,7 @@ function LocationForm(props: { parent?: LocationSummary; siblings?: LocationSumm
   );
 }
 
-function EditLocationForm(props: { location: LocationSummary; canDeactivate: boolean; onCancel: () => void; onDone: (text: string) => void; onGone: () => void }) {
+function EditLocationForm(props: { location: LocationSummary; canDeactivate: boolean; canDelete: boolean; onCancel: () => void; onDone: (text: string) => void; onGone: () => void }) {
   const { location } = props;
   const nested = Boolean(location.parentId);
   const [code, setCode] = useState(location.segment);
@@ -524,7 +524,7 @@ function EditLocationForm(props: { location: LocationSummary; canDeactivate: boo
         </div>
       )}
       <div className="actions actions-wrap">
-        {props.canDeactivate && (
+        {props.canDelete && (
           <button type="button" className="btn btn-delete-ghost" onClick={() => setConfirmDelete(true)} disabled={busy || confirmDelete}>
             🗑 Eliminar
           </button>
@@ -777,6 +777,9 @@ export function BulkLocations(props: {
   depth?: (l: LocationSummary) => number;
   hint?: string;
   onClose: (message?: string) => void;
+  /** Puede eliminar ubicaciones (vacías y sin historial). */
+  canDelete?: boolean;
+  onRemoved?: () => Promise<void> | void;
 }) {
   const [types, setTypes] = useState<LocationType[]>([]);
   useEffect(() => {
@@ -812,6 +815,12 @@ export function BulkLocations(props: {
       rows={props.rows}
       onSave={save}
       onClose={props.onClose}
+      remove={props.canDelete ? {
+        name: (l) => `${l.code}${l.name ? ` · ${l.name}` : ''}`,
+        warning: 'Solo se eliminan las ubicaciones vacías (sin ubicaciones, contenedores ni contenido dentro) y sin historial; las demás se desactivan.',
+        run: async (l) => `${(await api.deleteLocation(l.id)).code} eliminada`,
+        onRemoved: props.onRemoved,
+      } : undefined}
       columns={[
         { key: 'segment', label: 'Código', type: 'segment', indent: props.depth, width: '190px',
           // Dentro de otra: fijos el código de la superior y el prefijo del tipo; se edita el número.
@@ -829,7 +838,12 @@ export function BulkLocations(props: {
 }
 
 /** Edición en tabla de los contenedores de la lista. */
-export function BulkContainers(props: { rows: ContainerSummary[]; hint?: string; onClose: (message?: string) => void }) {
+export function BulkContainers(props: {
+  rows: ContainerSummary[]; hint?: string; onClose: (message?: string) => void;
+  /** Puede eliminar contenedores (lo de dentro se retira). */
+  canDelete?: boolean;
+  onRemoved?: () => Promise<void> | void;
+}) {
   const [users, setUsers] = useState<Array<{ id: string; fullName: string }> | null>(null);
   useEffect(() => {
     api.basicUsers().then((r) => setUsers(r.users)).catch(() => setUsers([]));
@@ -855,6 +869,16 @@ export function BulkContainers(props: { rows: ContainerSummary[]; hint?: string;
       rows={props.rows}
       onSave={save}
       onClose={props.onClose}
+      remove={props.canDelete ? {
+        name: (c) => `${c.code}${c.description ? ` · ${c.description}` : ''}`,
+        warning: 'Lo que lleve dentro se saca de su sitio (queda como retirada en el historial). Si el contenedor tiene historial, queda retirado y su historial se conserva. Los que lleven otros contenedores dentro no se eliminan.',
+        run: async (c) => {
+          const r = await api.deleteContainer(c.id);
+          const out = r.withdrawn ? `, con ${r.withdrawn} línea${r.withdrawn === 1 ? '' : 's'} de contenido retirada${r.withdrawn === 1 ? '' : 's'}` : '';
+          return r.keptHistory ? `${r.code} retirado${out}; su historial se conserva` : `${r.code} eliminado del todo${out}`;
+        },
+        onRemoved: props.onRemoved,
+      } : undefined}
       columns={[
         { key: 'code', label: 'Código', type: 'static', get: (c) => c.code },
         { key: 'type', label: 'Tipo', type: 'static', get: (c) => c.typeName },

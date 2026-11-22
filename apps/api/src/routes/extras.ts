@@ -11,11 +11,12 @@ import { idempotent } from '../idempotency.js';
  * que generan las anotaciones marcadas para notificar a responsables.
  */
 
-export type EntityType = 'location' | 'container' | 'material' | 'inbound';
+export type EntityType = 'location' | 'container' | 'material' | 'inbound' | 'movement';
 const ENTITY_TYPES = ['location', 'container', 'material'] as const;
 /** Las fotos también pueden ser de una recepción pendiente de identificar. */
-const PHOTO_ENTITY_TYPES = ['location', 'container', 'material', 'inbound'] as const;
+const PHOTO_ENTITY_TYPES = ['location', 'container', 'material', 'inbound', 'movement'] as const;
 const READ_PERMISSION: Record<Exclude<EntityType, 'inbound'>, string> = {
+  movement: 'stock.read',
   location: 'location.read',
   container: 'container.read',
   material: 'material.read',
@@ -25,6 +26,7 @@ const NOT_FOUND: Record<EntityType, string> = {
   container: 'El contenedor no existe',
   material: 'El contenido no existe',
   inbound: 'La recepción no existe',
+  movement: 'El movimiento no existe',
 };
 
 const uuid = { type: 'string', format: 'uuid' } as const;
@@ -71,6 +73,12 @@ async function getEntity(db: pg.Pool | pg.PoolClient, request: FastifyRequest, t
     return { type, id, code: r.rows[0].code, name: r.rows[0].description, responsibleUserId: null };
   }
   if (!request.user!.permissions.includes(READ_PERMISSION[type])) throw forbidden();
+  if (type === 'movement') {
+    // La foto del albarán va unida a la entrada (al movimiento).
+    const r = await db.query(`SELECT movement_number::int AS n, external_reference FROM stock_movement WHERE id = $1`, [id]);
+    if (!r.rows[0]) throw notFound(NOT_FOUND.movement);
+    return { type, id, code: `Movimiento n.º ${r.rows[0].n}`, name: r.rows[0].external_reference, responsibleUserId: null };
+  }
   const sql = {
     location: `SELECT code, name, NULL::uuid AS responsible FROM storage_location WHERE id = $1`,
     container: `SELECT code, description AS name, responsible_user_id AS responsible FROM container WHERE id = $1`,

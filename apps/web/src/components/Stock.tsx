@@ -11,6 +11,7 @@ import { Scanner } from './Scanner';
 import { PlaceSelect } from './PlaceSelect';
 import { Thumb } from './Thumb';
 import { ContentsPhotoPrompt } from './ContentsPhoto';
+import { attachDocPhoto, DocPhotoField } from './DocPhoto';
 
 /**
  * Material de un sitio (contenedor o ubicación) y todas las operaciones de
@@ -446,6 +447,7 @@ function ReceiptForm(props: {
   );
   const [qty, setQty] = useState('1');
   const [lot, setLot] = useState('');
+  const [docPhoto, setDocPhoto] = useState<File | null>(null);
   const [albaran, setAlbaran] = useState('');
   const [reason, setReason] = useState('');
   const [isReturn, setIsReturn] = useState(false);
@@ -473,15 +475,17 @@ function ReceiptForm(props: {
   const n = parseNumber(qty);
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    void run((key) =>
-      api.receive(
+    void run(async (key) => {
+      const r = await api.receive(
         {
           ...place.ref, materialId: material.id, quantity: untracked ? undefined : n, lotCode: lot.trim() || undefined,
           externalReference: albaran.trim() || undefined, reason: reason.trim() || undefined, isReturn,
         },
         key,
-      ),
-    );
+      );
+      r.message += await attachDocPhoto(r.movementId, docPhoto);
+      return r;
+    });
   };
 
   return (
@@ -515,6 +519,7 @@ function ReceiptForm(props: {
             Albarán o pedido <span className="muted">(opcional)</span>
           </span>
           <input value={albaran} onChange={(e) => setAlbaran(e.target.value)} maxLength={80} />
+          <DocPhotoField file={docPhoto} onChange={setDocPhoto} />
         </label>
       </div>
       <label className="field">

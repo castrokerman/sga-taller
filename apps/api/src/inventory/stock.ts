@@ -331,6 +331,33 @@ export async function applyLine(
   return after;
 }
 
+/**
+ * Saca todo lo que queda en estos saldos con una retirada (queda en el
+ * historial). Se usa al eliminar un contenido o un contenedor que aún tenía
+ * algo guardado. Devuelve el número de movimiento, o null si no había nada.
+ */
+export async function withdrawAll(c: pg.PoolClient, userId: string, balanceIds: string[], reason: string): Promise<{ number: number; lines: number } | null> {
+  if (!balanceIds.length) return null;
+  const rows = (await c.query(
+    `SELECT id, material_id, lot_id, container_id, location_id, quantity::float AS quantity
+       FROM stock_balance WHERE id = ANY($1) ORDER BY id FOR UPDATE`,
+    [balanceIds],
+  )).rows as Array<{ id: string; material_id: string; lot_id: string | null; container_id: string | null; location_id: string | null; quantity: number | null }>;
+  const live = rows.filter((r) => r.quantity === null || r.quantity > 0);
+  await c.query(`DELETE FROM stock_allocation WHERE stock_balance_id = ANY($1)`, [balanceIds]);
+  if (!live.length) return null;
+  const mv = await createMovement(c, { type: 'WITHDRAWAL', userId, reason });
+  let n = 1;
+  for (const r of live) {
+    const m = await getMaterial(c, r.material_id);
+    await applyLine(c, mv, n++, {
+      material: m, lotId: r.lot_id, containerId: r.container_id, locationId: r.location_id,
+      delta: r.quantity === null ? null : -r.quantity, presence: false,
+    });
+  }
+  return { number: mv.number, lines: live.length };
+}
+
 export async function deleteBalance(c: pg.PoolClient, id: string) {
   const a = await c.query(`SELECT 1 FROM stock_allocation WHERE stock_balance_id = $1 AND quantity > 0 LIMIT 1`, [id]);
   if (a.rowCount) {
