@@ -439,8 +439,10 @@ export function materialRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
       let how: 'borrado' | 'oculto' = 'borrado';
       await c.query('SAVEPOINT borrar');
       try {
+        // Los comentarios no se borran nunca (son historial): si tiene, se conserva oculto.
+        const notes = (await c.query(`SELECT 1 FROM note WHERE entity_type = 'material' AND entity_id = $1 LIMIT 1`, [id])).rowCount;
+        if (notes) throw Object.assign(new Error('tiene comentarios'), { code: '23503' });
         await c.query(`DELETE FROM photo WHERE entity_type = 'material' AND entity_id = $1`, [id]);
-        await c.query(`DELETE FROM note WHERE entity_type = 'material' AND entity_id = $1`, [id]);
         await c.query(`DELETE FROM material WHERE id = $1`, [id]);
       } catch (e) {
         if ((e as { code?: string }).code !== '23503') throw e;

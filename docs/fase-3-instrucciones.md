@@ -476,8 +476,9 @@ Lo pueden hacer el **responsable de almacén** y el **administrador técnico**.
 
 - **Contenidos:** si queda algo guardado, **se saca de su sitio** (queda como
   retirada en el historial) y se elimina. Si no tenía historial se borra del
-  todo; si lo tenía, desaparece de listas, buscador y escáner y su historial
-  se conserva. Lo que esté **prestado** no se elimina: primero tiene que
+  todo; si lo tenía (movimientos, préstamos, recepciones o **comentarios**,
+  que nunca se borran), desaparece de listas, buscador y escáner y su
+  historial se conserva. Lo que esté **prestado** no se elimina: primero tiene que
   volver.
 - **Contenedores:** lo que lleven dentro se saca (retirada en el historial).
   Sin historial se borran; con historial quedan **retirados**. Los que llevan

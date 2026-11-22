@@ -438,6 +438,13 @@ describe('el contenido va siempre en un contenedor', () => {
     expect(r1.json().keptHistory).toBe(false);
     expect((await call('GET', `/api/materials/${nuevo}`, almacen)).statusCode).toBe(404);
 
+    // Con comentarios (que nunca se borran): se elimina conservándolos.
+    const comentado = (await call('POST', '/api/materials', almacen, { description: 'FICTICIO Comentado', familyId: fam, unitCode: 'ud' })).json().material.id;
+    expect((await call('POST', '/api/notes', almacen, { entityType: 'material', entityId: comentado, body: 'FICTICIO comentario' })).statusCode).toBe(201);
+    const rc = await call('DELETE', `/api/materials/${comentado}`, almacen);
+    expect(rc.statusCode, rc.body).toBe(200);
+    expect(rc.json().keptHistory).toBe(true);
+
     // Con contenido guardado: se saca de su sitio (queda una retirada en el historial) y se elimina.
     const z = await loc('BORR', 'ZONA');
     const usado = (await call('POST', '/api/materials', almacen, { description: 'FICTICIO Con historial', familyId: fam, unitCode: 'ud' })).json().material.id;
