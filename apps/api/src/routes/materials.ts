@@ -4,7 +4,7 @@ import { writeAudit } from '../audit.js';
 import { requirePermission } from '../auth/guard.js';
 import { withTransaction } from '../db/tx.js';
 import { AppError, badRequest, conflict, notFound } from '../errors.js';
-import { applyLine, copyUnit, createMovement, getMaterial } from '../inventory/stock.js';
+import { applyLine, copyUnit, createMovement, getMaterial, withdrawAll } from '../inventory/stock.js';
 
 const uuid = { type: 'string', format: 'uuid' } as const;
 const idParams = { type: 'object', required: ['id'], properties: { id: uuid } } as const;
@@ -425,16 +425,13 @@ export function materialRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
     return withTransaction(pool, async (c) => {
       const m = (await c.query(`SELECT internal_ref, description, deleted_at FROM material WHERE id = $1 FOR UPDATE`, [id])).rows[0];
       if (!m || m.deleted_at) throw notFound('El contenido no existe');
-      const busy = (await c.query(
-        `SELECT (SELECT count(*) FROM stock_balance WHERE material_id = $1 AND (quantity > 0 OR quantity IS NULL))::int AS stock,
-                (SELECT count(*) FROM tool_loan WHERE material_id = $1 AND returned_at IS NULL)::int AS loans`,
-        [id],
-      )).rows[0];
-      const why = [
-        busy.stock && `aún hay en ${busy.stock} sitio${busy.stock === 1 ? '' : 's'}`,
-        busy.loans && `está prestado`,
-      ].filter(Boolean);
-      if (why.length) throw conflict(`No se puede eliminar ${m.internal_ref}: ${why.join(' y ')}. Retíralo o que lo devuelvan antes`, 'CONTENIDO_EN_USO');
+      // Lo prestado está fuera del almacén: primero tiene que volver.
+      const loans = (await c.query(`SELECT count(*)::int AS n FROM tool_loan WHERE material_id = $1 AND returned_at IS NULL`, [id])).rows[0].n;
+      if (loans) throw conflict(`No se puede eliminar ${m.internal_ref}: está prestado. Que lo devuelvan antes`, 'CONTENIDO_PRESTADO');
+
+      // Lo que aún esté guardado se saca de su sitio con una retirada, que queda en el historial.
+      const balances = (await c.query(`SELECT id FROM stock_balance WHERE material_id = $1`, [id])).rows.map((r) => r.id as string);
+      const out = await withdrawAll(c, request.user!.id, balances, `Contenido eliminado: ${m.internal_ref}`);
 
       // Saldos a cero que queden (estimados) no son historial.
       await c.query(`DELETE FROM stock_allocation WHERE stock_balance_id IN (SELECT id FROM stock_balance WHERE material_id = $1)`, [id]);
@@ -456,7 +453,7 @@ export function materialRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
         before: { ref: m.internal_ref, descripcion: m.description }, after: { resultado: how === 'borrado' ? 'borrado del todo' : 'eliminado, con su historial conservado' },
         ip: request.ip, requestId: request.id,
       });
-      return { ok: true, ref: m.internal_ref, keptHistory: how === 'oculto' };
+      return { ok: true, ref: m.internal_ref, keptHistory: how === 'oculto', withdrawn: out?.lines ?? 0 };
     });
   });
 

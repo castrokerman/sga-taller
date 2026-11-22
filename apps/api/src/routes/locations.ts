@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import { writeAudit } from '../audit.js';
-import { requirePermission } from '../auth/guard.js';
+import { requireAnyPermission, requirePermission } from '../auth/guard.js';
 import { withTransaction } from '../db/tx.js';
 import { AppError, badRequest, conflict, forbidden, notFound } from '../errors.js';
 import { idempotent } from '../idempotency.js';
@@ -682,7 +682,7 @@ export function locationRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
   // Solo administradores y solo si no deja huella: sin nada dentro, sin
   // material, sin anotaciones y sin movimientos en su historial. Si tiene algo
   // de eso, se desactiva en su lugar.
-  app.delete('/api/locations/:id', { preHandler: requirePermission('location.deactivate'), schema: { params: idParams } }, async (request) => {
+  app.delete('/api/locations/:id', { preHandler: requireAnyPermission('location.deactivate', 'material.delete'), schema: { params: idParams } }, async (request) => {
     const { id } = request.params as { id: string };
     return withTransaction(pool, async (c) => {
       const r = await c.query(`SELECT code, name FROM storage_location WHERE id = $1 FOR UPDATE`, [id]);

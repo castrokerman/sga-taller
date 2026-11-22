@@ -230,7 +230,7 @@ export function ContainerPage({ user, containerId }: { user: User; containerId: 
             </button>
           )}
         </div>
-        {panel === 'bulk' && <BulkContainers rows={insideList.visible} onClose={(m) => (m ? done(m) : setPanel('none'))} />}
+        {panel === 'bulk' && <BulkContainers rows={insideList.visible} canDelete={user.permissions.includes('material.delete')} onRemoved={() => load()} onClose={(m) => (m ? done(m) : setPanel('none'))} />}
         {detail.children.length > 0 ? (
           <>
             {detail.children.length > 1 && insideList.bar}

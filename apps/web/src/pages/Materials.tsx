@@ -612,16 +612,15 @@ function BulkMaterials(props: { rows: Material[]; families: Family[]; onClose: (
       rows={props.rows}
       onSave={save}
       onClose={props.onClose}
-      rowAction={props.canDelete ? {
-        label: 'Eliminar',
-        confirm: (m) => `¿Seguro que quieres eliminar ${m.internalRef} · ${m.description}?\n\nSi tiene historial (movimientos, préstamos, recepciones) se conserva, pero desaparece de listas, buscador y escáner. No se puede deshacer.`,
+      remove={props.canDelete ? {
+        name: (m) => `${m.internalRef} · ${m.description}`,
+        warning: 'Lo que quede guardado se saca de su sitio (queda como retirada en el historial). Si tiene historial se conserva, pero desaparece de listas, buscador y escáner.',
         run: async (m) => {
           const r = await api.deleteMaterial(m.id);
-          await props.onDeleted?.();
-          return r.keptHistory
-            ? `${r.ref} eliminado. Su historial se conserva.`
-            : `${r.ref} eliminado del todo: no tenía historial.`;
+          const out = r.withdrawn ? `, sacado de ${r.withdrawn} sitio${r.withdrawn === 1 ? '' : 's'}` : '';
+          return r.keptHistory ? `${r.ref} eliminado${out}; su historial se conserva` : `${r.ref} eliminado del todo${out}`;
         },
+        onRemoved: () => props.onDeleted?.(),
       } : undefined}
       columns={[
         { key: 'ref', label: 'Referencia', type: 'static', get: (m) => m.internalRef },

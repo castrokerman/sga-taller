@@ -350,6 +350,8 @@ export function WarehouseTree({ user, onList, rootId }: { user: User; onList: ()
               key={`l${editLocations.map((l) => l.id).join()}`}
               rows={editLocations}
               canDeactivate={user.permissions.includes('location.deactivate')}
+              canDelete={user.permissions.includes('location.deactivate') || user.permissions.includes('material.delete')}
+              onRemoved={() => load(false)}
               depth={(l) => depthOf.get(`l:${l.id}`) ?? 0}
               hint="Están las ubicaciones que se ven en el árbol: despliega, pliega o busca para elegir cuáles. Lo cambiado se marca en amarillo y se guarda todo junto. Si cambias el código de una, cambian los de las de dentro."
               onClose={(m) => (m ? closeEditor(m) : setEditing(false))}
@@ -360,6 +362,8 @@ export function WarehouseTree({ user, onList, rootId }: { user: User; onList: ()
               key={`c${editContainers.map((c) => c.id).join()}`}
               rows={editContainers}
               hint="Están los contenedores que se ven en el árbol. Se guardan aparte de las ubicaciones."
+              canDelete={user.permissions.includes('material.delete')}
+              onRemoved={() => load(false)}
               onClose={(m) => (m ? closeEditor(m) : setEditing(false))}
             />
           )}

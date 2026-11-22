@@ -626,7 +626,8 @@ export const api = {
     request<{ type: ContainerType }>('POST', '/api/container-types', data),
 
   boxLoose: (id: string, typeCode = 'CAJA') => request<{ containerId: string; code: string; lines: number }>('POST', `/api/locations/${id}/box-loose`, { typeCode }),
-  deleteMaterial: (id: string) => request<{ ok: true; ref: string; keptHistory: boolean }>('DELETE', `/api/materials/${id}`),
+  deleteMaterial: (id: string) => request<{ ok: true; ref: string; keptHistory: boolean; withdrawn: number }>('DELETE', `/api/materials/${id}`),
+  deleteContainer: (id: string) => request<{ ok: true; code: string; keptHistory: boolean; withdrawn: number }>('DELETE', `/api/containers/${id}`),
   deleteLocation: (id: string) => request<{ ok: true; code: string }>('DELETE', `/api/locations/${id}`),
   rootLocations: () => request<{ locations: LocationSummary[] }>('GET', '/api/locations'),
   location: (id: string) => request<LocationDetail>('GET', `/api/locations/${id}`),

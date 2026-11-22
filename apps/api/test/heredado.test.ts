@@ -253,10 +253,10 @@ describe('prefijo por tipo de ubicación', () => {
     admin = { sga_session: res.cookies.find((c) => c.name === 'sga_session')!.value };
   });
 
-  it('eliminar: solo administradores y solo si no deja huella; si no, se desactiva', async () => {
+  it('eliminar: administradores y responsables de almacén, y solo si no deja huella; si no, se desactiva', async () => {
     const z = await loc('BORRA', 'ZONA');
     const e = await loc('E1', 'ESTANTERIA', z.id);
-    expect((await call('DELETE', `/api/locations/${e.id}`, almacen)).statusCode).toBe(403);
+    expect((await call('DELETE', `/api/locations/${e.id}`, usuario)).statusCode).toBe(403);
     // Con algo dentro, no.
     const full = await call('DELETE', `/api/locations/${z.id}`, admin);
     expect(full.statusCode).toBe(409);
@@ -438,23 +438,34 @@ describe('el contenido va siempre en un contenedor', () => {
     expect(r1.json().keptHistory).toBe(false);
     expect((await call('GET', `/api/materials/${nuevo}`, almacen)).statusCode).toBe(404);
 
-    // Con contenido guardado no se puede; tras retirarlo sí, y el historial queda.
+    // Con contenido guardado: se saca de su sitio (queda una retirada en el historial) y se elimina.
     const z = await loc('BORR', 'ZONA');
     const usado = (await call('POST', '/api/materials', almacen, { description: 'FICTICIO Con historial', familyId: fam, unitCode: 'ud' })).json().material.id;
     expect((await call('POST', '/api/stock/receipt', almacen, { materialId: usado, locationId: z.id, quantity: 4 })).statusCode).toBe(201);
-    const no = await call('DELETE', `/api/materials/${usado}`, admin);
-    expect(no.statusCode).toBe(409);
-    expect(no.json().error.message).toContain('aún hay en 1 sitio');
-    const bal = (await pool.query(`SELECT id FROM stock_balance WHERE material_id = $1`, [usado])).rows[0].id;
-    expect((await call('POST', '/api/stock/withdraw', almacen, { balanceId: bal, quantity: 4, reason: 'FICTICIO consumo' })).statusCode).toBe(200);
-    const r2 = await call('DELETE', `/api/materials/${usado}`, admin);
+    const r2 = await call('DELETE', `/api/materials/${usado}`, almacen);
     expect(r2.statusCode, r2.body).toBe(200);
-    expect(r2.json().keptHistory).toBe(true);
+    expect(r2.json()).toMatchObject({ keptHistory: true, withdrawn: 1 });
+    expect((await pool.query(`SELECT count(*)::int AS n FROM stock_balance WHERE material_id = $1`, [usado])).rows[0].n).toBe(0);
     const ficha = (await call('GET', `/api/materials/${usado}`, almacen)).json().material;
     expect(ficha.deletedAt).toBeTruthy();
     const lista = (await call('GET', '/api/materials?includeObsolete=true', almacen)).json().materials;
     expect(lista.some((m: { id: string }) => m.id === usado)).toBe(false);
     expect((await pool.query(`SELECT count(*)::int AS n FROM stock_movement_line WHERE material_id = $1`, [usado])).rows[0].n).toBe(2);
+
+    // Un contenedor con contenido: lo de dentro se retira y el contenedor queda retirado (tiene historial).
+    const caja = (await call('POST', '/api/containers', almacen, { typeCode: 'CAJA', locationId: z.id })).json().containers[0];
+    const dentro = (await call('POST', '/api/materials', almacen, { description: 'FICTICIO Dentro de la caja', familyId: fam, unitCode: 'ud' })).json().material.id;
+    expect((await call('POST', '/api/stock/receipt', almacen, { materialId: dentro, containerId: caja.id, quantity: 3 })).statusCode).toBe(201);
+    const sub = (await call('POST', '/api/containers', almacen, { typeCode: 'BANDEJA', parentContainerId: caja.id })).json().containers[0];
+    expect((await call('DELETE', `/api/containers/${caja.id}`, usuario)).statusCode).toBe(403);
+    const no = await call('DELETE', `/api/containers/${caja.id}`, almacen);
+    expect(no.statusCode).toBe(409);
+    expect(no.json().error.message).toContain('contenedor dentro');
+    expect((await call('DELETE', `/api/containers/${sub.id}`, almacen)).statusCode).toBe(200);
+    const k = await call('DELETE', `/api/containers/${caja.id}`, almacen);
+    expect(k.statusCode, k.body).toBe(200);
+    expect(k.json().withdrawn).toBe(1);
+    expect((await pool.query(`SELECT count(*)::int AS n FROM stock_balance WHERE material_id = $1`, [dentro])).rows[0].n).toBe(0);
   });
 
   it('los tipos sin uso se eliminan, los usados no; y se reordenan a mano', async () => {

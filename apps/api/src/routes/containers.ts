@@ -8,6 +8,7 @@ import { idempotent } from '../idempotency.js';
 import { containerDetail, recordContainerMove } from '../warehouse/containers.js';
 import { CONTAINER_SELECT, containerChain, descendantCount, getParameter } from '../warehouse/queries.js';
 import { newQrToken } from '../warehouse/tokens.js';
+import { withdrawAll } from '../inventory/stock.js';
 
 const uuid = { type: 'string', format: 'uuid' } as const;
 const idParams = { type: 'object', required: ['id'], properties: { id: uuid } } as const;
@@ -702,5 +703,50 @@ export function containerRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
   app.get('/api/users/basic', { preHandler: requirePermission('container.read') }, async () => {
     const r = await pool.query(`SELECT id, full_name AS "fullName" FROM app_user WHERE active ORDER BY full_name`);
     return { users: r.rows };
+  });
+
+  // ---- Eliminar ---------------------------------------------------------
+  // Lo que lleva dentro se saca con una retirada (queda en el historial). Sin
+  // historial, el contenedor se borra; con historial, queda retirado. Los
+  // contenedores que tenga dentro hay que vaciarlos o moverlos antes.
+  app.delete('/api/containers/:id', { preHandler: requirePermission('material.delete'), schema: { params: idParams } }, async (request) => {
+    const { id } = request.params as { id: string };
+    return withTransaction(pool, async (c) => {
+      const k = (await c.query(`SELECT code, status, location_id, parent_container_id FROM container WHERE id = $1 FOR UPDATE`, [id])).rows[0];
+      if (!k) throw notFound('El contenedor no existe');
+      const kids = (await c.query(`SELECT count(*)::int AS n FROM container WHERE parent_container_id = $1 AND status = 'ACTIVE'`, [id])).rows[0].n;
+      if (kids) throw conflict(`No se puede eliminar ${k.code}: lleva ${kids} contenedor${kids === 1 ? '' : 'es'} dentro. Elimínalos o muévelos antes`, 'CONTENEDOR_CON_CONTENEDORES');
+      const balances = (await c.query(`SELECT id FROM stock_balance WHERE container_id = $1`, [id])).rows.map((r) => r.id as string);
+      const out = await withdrawAll(c, request.user!.id, balances, `Contenedor eliminado: ${k.code}`);
+      await c.query(`DELETE FROM stock_balance WHERE container_id = $1`, [id]);
+      let how: 'borrado' | 'retirado' = 'borrado';
+      await c.query('SAVEPOINT borrar');
+      try {
+        await c.query(`DELETE FROM photo WHERE entity_type = 'container' AND entity_id = $1`, [id]);
+        await c.query(`DELETE FROM note WHERE entity_type = 'container' AND entity_id = $1`, [id]);
+        await c.query(`DELETE FROM container WHERE id = $1`, [id]);
+      } catch (e) {
+        if ((e as { code?: string }).code !== '23503') throw e;
+        await c.query('ROLLBACK TO SAVEPOINT borrar');
+        if (k.status === 'ACTIVE') {
+          await c.query(
+            `UPDATE container SET status = 'RETIRED', location_id = NULL, parent_container_id = NULL, project_id = NULL,
+                    retired_at = now(), updated_at = now() WHERE id = $1`,
+            [id],
+          );
+          await recordContainerMove(c, {
+            userId: request.user!.id, containerId: id, fromLocationId: k.location_id, fromParentId: k.parent_container_id,
+            toLocationId: null, toParentId: null, reason: `Contenedor eliminado: ${k.code}`,
+          });
+        }
+        how = 'retirado';
+      }
+      await writeAudit(c, {
+        userId: request.user!.id, action: 'contenedor.eliminar', entityType: 'container', entityId: id,
+        before: { codigo: k.code }, after: { resultado: how === 'borrado' ? 'borrado del todo' : 'retirado, con su historial conservado', lineas_retiradas: out?.lines ?? 0 },
+        ip: request.ip, requestId: request.id,
+      });
+      return { ok: true, code: k.code, keptHistory: how === 'retirado', withdrawn: out?.lines ?? 0 };
+    });
   });
 }

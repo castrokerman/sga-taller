@@ -726,3 +726,7 @@ h2 .loan-chip-wrap { flex-direction: row; align-items: center; gap: 0.5rem; vert
   .batch-row .batch-what, .batch-row .batch-where { grid-column: 2 / 4; }
   .batch-n, .batch-x { padding-top: 0.2rem; }
 }
+.bulk-remove { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0.4rem 0 0.6rem; }
+.bulk-pick { width: 2.2rem; text-align: center; }
+.row-picked td { background: #fdecea !important; }
+.pre-line { white-space: pre-line; }
