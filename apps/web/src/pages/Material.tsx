@@ -26,13 +26,27 @@ export function MaterialPage({ user, materialId }: { user: User; materialId: str
   const [op, setOp] = useState<Op | null>(null);
   const [notice, setNotice] = useState<OpResult | string | null>(null);
 
+  const canReceive = can(user, 'stock.receive');
   const load = useCallback(async () => {
     try {
-      setD(await api.material(materialId));
+      const got = await api.material(materialId);
+      setD(got);
+      // Recién creado desde «Contenidos»: se abre la entrada para decir dónde está.
+      let openReceipt = false;
+      try {
+        openReceipt = window.sessionStorage.getItem('sga.abrirEntrada') === materialId;
+        if (openReceipt) window.sessionStorage.removeItem('sga.abrirEntrada');
+      } catch {
+        /* sin almacenamiento */
+      }
+      if (openReceipt && canReceive) {
+        setOp({ kind: 'receipt', material: got.material });
+        setNotice('Contenido creado. Ahora di dónde está: hasta que no se registra la entrada no cuenta en el almacén ni se puede prestar');
+      }
     } catch (e) {
       setError(errorMessage(e));
     }
-  }, [materialId]);
+  }, [materialId, canReceive]);
 
   useEffect(() => {
     setD(null);
@@ -109,6 +123,18 @@ export function MaterialPage({ user, materialId }: { user: User; materialId: str
           {m.isLoanable && <span className="badge badge-ok">Prestable</span>}
         </div>
       </div>
+
+      {d.stock.length === 0 && m.status === 'ACTIVE' && !op && m.onLoan === 0 && (
+        <div className="alert alert-warn">
+          <strong>Aún no está en el almacén.</strong> Dar de alta un contenido solo lo añade al catálogo: para que cuente
+          {m.isLoanable ? ', se pueda prestar' : ''} y se pueda sacar, registra dónde está con una entrada.{' '}
+          {can(user, 'stock.receive') && (
+            <button className="btn btn-small btn-primary" onClick={() => start({ kind: 'receipt', material: m })}>
+              Registrar la entrada
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="toolbar">
         {can(user, 'stock.receive') && m.status === 'ACTIVE' && (

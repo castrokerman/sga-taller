@@ -189,6 +189,15 @@ acabas de registrar un palet nuevo, «Otra entrada en PAL-…» mete más cosas
 en ese mismo palet), con **más
 del mismo contenido en otro sitio**, o empezar de cero.
 
+### Dar de alta no es meter en el almacén
+
+Crear un contenido en **«Contenidos» → «+ Nuevo contenido»** solo lo añade al
+catálogo (0 en almacén, «Sin stock»). Para que cuente, se pueda prestar o
+sacar, hay que registrar **dónde está** con una entrada. Por eso, al crear un
+contenido desde «Contenidos», la app abre directamente su entrada: eliges el
+sitio y lo registras. Si lo dejas para luego, la ficha avisa en amarillo
+«Aún no está en el almacén» con el botón **«Registrar la entrada»**.
+
 ### Registrar salida (desde el inicio)
 
 Para lo que se va del taller. En el inicio, **«Registrar salida»**:

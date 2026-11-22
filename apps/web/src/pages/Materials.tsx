@@ -128,7 +128,14 @@ export function MaterialsPage({ user }: { user: User }) {
           canPhoto={user.permissions.includes('photo.add')}
           initial={family ? { familyId: family.id, unitCode: family.defaultUnitCode ?? undefined } : undefined}
           onCancel={() => setCreating(false)}
-          onDone={(m) => navigate(`material/${m.id}`)}
+          onDone={(m) => {
+            try {
+              window.sessionStorage.setItem('sga.abrirEntrada', m.id);
+            } catch {
+              /* sin almacenamiento */
+            }
+            navigate(`material/${m.id}`);
+          }}
         />
       )}
 
