@@ -335,6 +335,12 @@ export function History({ user, lines, showMaterial, onReversed }: { user: User;
                 {l.performedBy} · {formatDateTime(l.performedAt)} · n.º {l.movementNumber}
                 {l.reason && ` · «${l.reason}»`}
                 {l.externalReference && ` · ${l.externalReference}`}
+                {l.documentPhotoId && (
+                  <span className="doc-in-history" title="Foto del albarán">
+                    {' · 🧾 '}
+                    <Thumb photoId={l.documentPhotoId} className="doc-thumb" alt="Albarán" />
+                  </span>
+                )}
                 {l.lotCode && ` · lote ${l.lotCode}`}
                 {l.reversedByNumber && <span className="badge badge-off"> Revertido con el n.º {l.reversedByNumber}</span>}
               </small>

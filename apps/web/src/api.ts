@@ -346,6 +346,8 @@ export interface StockLine {
 
 export interface MovementLine {
   movementId: string;
+  /** Foto del albarán o pedido de la entrada. */
+  documentPhotoId: string | null;
   movementNumber: number;
   movementType: string;
   performedAt: string;
@@ -408,6 +410,8 @@ export interface OpResult {
   emptyDisposable?: string | null;
   /** Herramientas y equipos: las unidades que han entrado, cada una con su código. */
   units?: UnitRef[];
+  /** El movimiento (para unirle la foto del albarán). */
+  movementId?: string;
   /** Contenedores cuyo contenido ha cambiado con esta operación. */
   containers?: Array<{ id: string; code: string }>;
 }
@@ -418,7 +422,7 @@ export interface PlaceRef { containerId?: string; locationId?: string }
 
 // ---- Fotos, anotaciones y avisos -----------------------------------------------
 
-export type EntityType = 'location' | 'container' | 'material';
+export type EntityType = 'location' | 'container' | 'material' | 'movement';
 
 export interface Photo {
   id: string;

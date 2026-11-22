@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { api, errorMessage, formatDateTime, type AppNotification } from '../api';
 import { navigate } from '../router';
 
-const LINK: Record<AppNotification['entityType'], string> = { location: 'almacen', container: 'contenedor', material: 'contenido', inbound: 'recepcion' };
-const KIND: Record<AppNotification['entityType'], string> = { location: 'Ubicación', container: 'Contenedor', material: 'Contenido', inbound: 'Recepción' };
+const LINK: Record<AppNotification['entityType'], string> = { location: 'almacen', container: 'contenedor', material: 'contenido', inbound: 'recepcion', movement: 'movimientos' };
+const KIND: Record<AppNotification['entityType'], string> = { location: 'Ubicación', container: 'Contenedor', material: 'Contenido', inbound: 'Recepción', movement: 'Movimiento' };
 
 /** Avisos recibidos: comentarios en los que alguien pidió avisarte, respuestas y recepciones. */
 export function NotificationsPage({ onChanged }: { onChanged: () => void }) {

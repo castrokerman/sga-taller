@@ -165,15 +165,28 @@ entrada»** → **«Sé lo que es»** te lleva paso a paso:
    (solo con las familias de su tipo y, en herramientas y equipos, sin pedir
    unidad: van de una en una). «Contenido ya registrado» es para reponer o
    aumentar: búscalo por nombre o referencia.
-3. **Dónde**: elígelo en la lista desplegable o escanea la etiqueta. Si
-   repites sitio, sale «El mismo que la última vez».
-4. **Cantidad y para quién**: con lote, albarán, nota y, si quieres, **foto
-   del contenido**. En «¿Para quién es?»: **«Uso general del taller»** (lo
+3. **¿En qué contenedor?** Tres opciones:
+   - **«Viene con un contenedor nuevo»** (palet, caja…): eliges el tipo y,
+     si quieres, una descripción. El contenedor se registra solo al terminar
+     la entrada, con su código nuevo.
+   - **«En un contenedor que ya existe»**: lo buscas por código o
+     descripción y el sitio queda **ya elegido** (el de ese contenedor).
+   - **«No necesita contenedor»**: se deja directamente en una ubicación.
+4. **Dónde**: si el contenedor es nuevo o no hay contenedor, elígelo en la
+   lista o escanea la etiqueta (si repites sitio, sale «El mismo que la
+   última vez»). Si el sitio ya tiene todos los contenedores que admite, la
+   app avisa y puedes **«Dejarlo igualmente»** o elegir otro.
+5. **Cantidad y para quién**: con lote, albarán (con **«📷 Foto del
+   albarán»**, que en el móvil abre la cámara), nota y, si quieres, **foto
+   del contenido**. La foto del albarán queda en el historial del contenido
+   (🧾 junto al número de albarán; al pasar el cursor se amplía). En «¿Para quién es?»: **«Uso general del taller»** (lo
    puede usar cualquiera) o **«Para un proyecto o una persona»**: queda
    reservado y solo lo sacan los responsables de ese proyecto, esa persona y
    el responsable de almacén.
 
-Al terminar puedes seguir con **otra entrada en el mismo sitio**, con **más
+Al terminar puedes seguir con **otra entrada en el mismo sitio** (si
+acabas de registrar un palet nuevo, «Otra entrada en PAL-…» mete más cosas
+en ese mismo palet), con **más
 del mismo contenido en otro sitio**, o empezar de cero.
 
 ### Varias cosas a la vez

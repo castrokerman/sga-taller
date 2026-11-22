@@ -737,3 +737,5 @@ h2 .loan-chip-wrap { flex-direction: row; align-items: center; gap: 0.5rem; vert
 .retire-item.ready { border-left-color: #2e9d5b; }
 .retire-what { display: flex; gap: 0.6rem; align-items: center; }
 .retire-item .pchips { margin: 0; }
+.doc-photo { display: inline-flex; gap: 0.5rem; align-items: center; margin-top: 0.35rem; }
+.doc-thumb { width: 26px; height: 26px; border-radius: 4px; object-fit: cover; vertical-align: middle; }

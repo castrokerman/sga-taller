@@ -724,7 +724,8 @@ export const MOVEMENT_LINE_SELECT = `
          mt.unit_code AS "unitCode", ml.quantity_tracking AS "quantityTracking",
          ml.quantity_delta::float AS "quantityDelta", ml.quantity_after::float AS "quantityAfter",
          lt.lot_code AS "lotCode", ml.container_id AS "containerId", ml.location_id AS "locationId",
-         coalesce(k.code, sl.code) AS "placeCode"
+         coalesce(k.code, sl.code) AS "placeCode",
+         (SELECT ph.id FROM photo ph WHERE ph.entity_type = 'movement' AND ph.entity_id = mv.id ORDER BY ph.position LIMIT 1) AS "documentPhotoId"
     FROM stock_movement_line ml
     JOIN stock_movement mv ON mv.id = ml.movement_id
     JOIN app_user u ON u.id = mv.performed_by
