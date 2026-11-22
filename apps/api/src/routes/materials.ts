@@ -339,14 +339,25 @@ export function materialRoutes(app: FastifyInstance, deps: { pool: pg.Pool }) {
   app.delete('/api/material-families/:id', { preHandler: requirePermission(FAMILY_MANAGE), schema: { params: idParams } }, async (request) => {
     const { id } = request.params as { id: string };
     await withTransaction(pool, async (c) => {
-      const f = (await c.query(`SELECT name FROM material_family WHERE id = $1 FOR UPDATE`, [id])).rows[0];
+      const f = (await c.query(`SELECT name, parent_id, content_type_code FROM material_family WHERE id = $1 FOR UPDATE`, [id])).rows[0];
       if (!f) throw notFound('La familia no existe');
-      const used = await c.query(
-        `SELECT (SELECT count(*) FROM material WHERE family_id = $1)::int AS m, (SELECT count(*) FROM material_family WHERE parent_id = $1)::int AS k`,
+      const used = (await c.query(
+        `SELECT (SELECT count(*) FROM material WHERE family_id = $1 AND deleted_at IS NULL)::int AS m,
+                (SELECT count(*) FROM material WHERE family_id = $1 AND deleted_at IS NOT NULL)::int AS gone,
+                (SELECT count(*) FROM material_family WHERE parent_id = $1)::int AS k`,
         [id],
-      );
-      if (used.rows[0].m || used.rows[0].k) {
-        throw conflict('Esta familia tiene contenidos o subfamilias. Desactívala en lugar de borrarla', 'FAMILIA_EN_USO');
+      )).rows[0];
+      if (used.k) throw conflict(`«${f.name}» tiene subfamilias: bórralas o muévelas antes, o desactívala`, 'FAMILIA_EN_USO');
+      if (used.m) throw conflict(`«${f.name}» tiene ${used.m} contenido${used.m === 1 ? '' : 's'}: muévelos a otra familia antes, o desactívala`, 'FAMILIA_EN_USO');
+      if (used.gone) {
+        // Solo quedan contenidos eliminados (ocultos, con su historial): pasan a la familia de arriba,
+        // o a otra del mismo tipo, y siguen ocultos.
+        const to = f.parent_id ?? (await c.query(
+          `SELECT id FROM material_family WHERE id <> $1 ORDER BY (content_type_code = $2) DESC, (parent_id IS NULL) DESC, active DESC, name LIMIT 1`,
+          [id, f.content_type_code],
+        )).rows[0]?.id;
+        if (!to) throw conflict(`«${f.name}» es la única familia y aún la usan contenidos eliminados con historial`, 'FAMILIA_EN_USO');
+        await c.query(`UPDATE material SET family_id = $2 WHERE family_id = $1 AND deleted_at IS NOT NULL`, [id, to]);
       }
       await c.query(`DELETE FROM material_family WHERE id = $1`, [id]);
       await writeAudit(c, {

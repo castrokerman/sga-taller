@@ -450,6 +450,23 @@ describe('tipos de contenido', () => {
     expect((await call('POST', '/api/materials', almacen, { description: 'x', familyId, unitCode: 'ud', contentTypeCode: 'NO_EXISTE' })).statusCode).toBe(400);
   });
 
+  it('una familia en la que solo quedan contenidos eliminados se puede borrar', async () => {
+    const fam = await call('POST', '/api/material-families', almacen, { name: 'FICTICIO Temporal', contentTypeCode: 'MATERIAL' });
+    const famId = fam.json().family.id;
+    const m = await call('POST', '/api/materials', almacen, { description: 'FICTICIO en temporal', familyId: famId, unitCode: 'ud' });
+    // Con historial (un comentario): al eliminarlo queda oculto, pero sigue en la familia.
+    await call('POST', '/api/notes', almacen, { entityType: 'material', entityId: m.json().material.id, body: 'FICTICIO' });
+    expect((await call('DELETE', `/api/materials/${m.json().material.id}`, almacen)).json().keptHistory).toBe(true);
+    const r = await call('DELETE', `/api/material-families/${famId}`, almacen);
+    expect(r.statusCode, r.body).toBe(200);
+    // Con un contenido vivo, no.
+    const fam2 = (await call('POST', '/api/material-families', almacen, { name: 'FICTICIO Con contenido', contentTypeCode: 'MATERIAL' })).json().family.id;
+    await call('POST', '/api/materials', almacen, { description: 'FICTICIO vivo', familyId: fam2, unitCode: 'ud' });
+    const no = await call('DELETE', `/api/material-families/${fam2}`, almacen);
+    expect(no.statusCode).toBe(409);
+    expect(no.json().error.message).toContain('1 contenido');
+  });
+
   it('las familias cuelgan de un tipo: un contenido va en una familia de su tipo', async () => {
     const fams = (await call('GET', '/api/material-families', usuario)).json().families as Array<{ code: string; contentTypeCode: string; parentId: string | null }>;
     expect(fams.find((f) => f.code === 'HERRAMIENTA')!.contentTypeCode).toBe('HERRAMIENTA');
